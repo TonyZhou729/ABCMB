@@ -1,0 +1,47 @@
+name: Run Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      JAX_PLATFORM_NAME: "cpu"
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+      XLA_FLAGS: "--xla_cpu_enable_fast_math=false"
+      JAX_ENABLE_X64: "true"
+      # JAX_DISABLE_JIT: "1"
+      JAX_DEBUG_NANS: "false"
+      JAX_TRACEBACK_FILTERING: "off"
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+
+    strategy:
+      matrix:
+        python-version: ['3.11.11']
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}/diff_recomb
+        run: |
+          cd pytests
+          pytest -s -vv
