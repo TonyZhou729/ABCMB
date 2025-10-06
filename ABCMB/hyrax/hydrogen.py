@@ -141,120 +141,35 @@ class hydrogen_model(eqx.Module):
         # Start computing xe at different phases
         ################## move to H ################## 
 
-        ### SAHA EQUILIBRIUM PHASE ###
-        xe_output_equil, lna_output_equil = self.Saha_equilibrium(self.last_4He_lna+self.integration_spacing, BG)
-
-        xe_4He_equil = self.xe_4He.concat(array_with_padding(xe_output_equil))
-        lna_4He_equil = self.lna_4He.concat(array_with_padding(lna_output_equil))
-        ### END OF SAHA EQUILIBRIUM PHASE ###
-
         ### POST SAHA EXPANSION PHASE ###
         # this one starts at the last lna from above, no off-by-one
-        xe_output_post, lna_output_post = self.post_Saha_expansion(lna_4He_equil.lastval+self.integration_spacing, BG)
-        
-        xe_output_post_padded = array_with_padding(xe_output_post)
-        lna_output_post_padded = array_with_padding(lna_output_post)
-        xe_equil_and_post = xe_4He_equil.concat(array_with_padding(xe_output_post))
-        lna_equil_and_post = lna_4He_equil.concat(array_with_padding(lna_output_post))
+        xe_output_post, lna_output_post = self.post_Saha_expansion(self.last_4He_lna+self.integration_spacing, BG)
+
+        xe_4He_and_post = self.xe_4He.concat(array_with_padding(xe_output_post))
+        lna_4He_and_post = self.lna_4He.concat(array_with_padding(lna_output_post))
 
         ### END OF POST SAHA EXPANSION PHASE ###
 
         ### HYREC2 EMLA + FULL TWO PHOTON PHASE ###
-        xe_output_2g, lna_output_2g = self.solve_emla_twophoton(lna_equil_and_post.lastval, -jnp.log(self.twog_redshift), xe_equil_and_post.lastval, BG, rtol, atol, solver, max_steps)
+        xe_output_2g, lna_output_2g = self.solve_emla_twophoton(lna_4He_and_post.lastval, -jnp.log(self.twog_redshift), xe_4He_and_post.lastval, BG, rtol, atol, solver, max_steps)
 
-        xe_equil_post_2g = xe_equil_and_post.concat(array_with_padding(xe_output_2g))
-        lna_equil_post_2g = lna_equil_and_post.concat(array_with_padding(lna_output_2g))
-        ### HYREC2 EMLA + FULL TWO PHOTON PHASE ###
+        xe_4He_post_2g = xe_4He_and_post.concat(array_with_padding(xe_output_2g))
+        lna_4He_post_2g = lna_4He_and_post.concat(array_with_padding(lna_output_2g))
+        ### END HYREC2 EMLA + FULL TWO PHOTON PHASE ###
 
         ### HYREC2 EMLA ONLY PHASE ###
-        xe_output_late, Tm_output_late = self.solve_emla(self.lna_axis_late , xe_equil_post_2g.lastval, BG, rtol, atol, solver, max_steps)
+        xe_output_late, Tm_output_late = self.solve_emla(self.lna_axis_late , xe_4He_post_2g.lastval, BG, rtol, atol, solver, max_steps)
+
 
         lna_Tm = array_with_padding(self.lna_axis_late)
         Tm = array_with_padding(Tm_output_late)
 
-        xe_equil_post_2g_late = xe_equil_post_2g.concat(array_with_padding(xe_output_late))
-        lna_equil_post_2g_late = lna_equil_post_2g.concat(array_with_padding(self.lna_axis_late))
+        xe_4He_post_2g_late = xe_4He_post_2g.concat(array_with_padding(xe_output_late))
+        lna_4He_post_2g_late = lna_4He_post_2g.concat(array_with_padding(self.lna_axis_late))
         ### END OF HYREC2 EMLA ONLY PHASE ###
 
-        return (xe_equil_post_2g_late, lna_equil_post_2g_late, Tm, lna_Tm)
+        return (xe_4He_post_2g_late, lna_4He_post_2g_late, Tm, lna_Tm)
 
-    def Saha_equilibrium(self, starting_lna, BG, z_stop = 2501):
-        """
-        Compute hydrogen ionization fraction in Saha equilibrium.
-
-        Calculates ionization fraction assuming instantaneous equilibrium
-        between ionization and recombination until specified redshift.
-
-        Parameters:
-        -----------
-        starting_lna : float
-            Initial log scale factor
-        BG : cosmology.Background
-            Background cosmology module
-        z_stop : float, optional
-            Redshift at which to stop Saha calculation (default: 2501)
-
-        Returns:
-        --------
-        tuple
-            (xe_output, lna_output) - ionization fraction and log scale factor arrays
-        """
-        # note this is *not* the same as recomb_functions.xe_Saha, output
-        # is arrays of both xe and lna
-
-        # Initial conditions
-        TCMB = BG.TCMB(starting_lna)
-        nH = BG.nH(starting_lna)
-        xe0, _ = recomb_functions.xe_Saha(TCMB, nH)
-
-        # Pre-allocate xe_output
-        xe_output = jnp.ones_like(self.concrete_axis_size)*jnp.inf
-        Tm_output = jnp.ones_like(self.concrete_axis_size)*jnp.inf
-        lna_output = jnp.ones_like(self.concrete_axis_size)*jnp.inf
-        iz = int(0)
-        xe = xe0
-        stop = False
-
-        def compute_xe(carry):
-            xe_output, lna_output, xe, iz, stop = carry
-
-            lna = starting_lna + iz*self.integration_spacing
-            z = jnp.exp(-lna) - 1.
-
-            # Cosmological parameters
-            TCMB = BG.TCMB(lna)
-            nH = BG.nH(lna)
-
-            xe, _ = recomb_functions.xe_Saha(TCMB, nH)
-
-            # Store current xe value in the output array
-            xe_output = xe_output.at[iz].set(xe)
-            lna_output = lna_output.at[iz].set(lna)
-
-            # Check difference
-            diff = z - z_stop # z always begins greater than z_stop
-            stop = diff < 0  # Stop when diff gets below 0
-
-            # Increment index
-            iz = iz + 1
-
-            return (xe_output, lna_output, xe, iz, stop)
-
-        def stop_condition(state):
-            _, _, _, iz, stop = state
-            return (iz < self.concrete_axis_size.size) & (~stop)  # Continue until stop condition is met or we run out of space
-
-        # Initial state: (xe_output, xe, iz, stop flag)
-        initial_state = (xe_output, lna_output, xe, iz, stop)
-
-        # Run the while loop until the stop condition is met
-        final_state = lax.while_loop(stop_condition, compute_xe, initial_state)
-
-        # Unpack the final state
-        xe_output_final, lna_output_final, _, _, _ = final_state
-
-        # Return the electron fraction array and the stopping `lna` value
-        return xe_output_final, lna_output_final
 
     def post_Saha_expansion(self, starting_lna, BG, threshold=1e-5):
         """
@@ -284,7 +199,7 @@ class hydrogen_model(eqx.Module):
         # Initial conditions
         TCMB = BG.TCMB(starting_lna)
         nH = BG.nH(starting_lna)
-        xe0, _ = recomb_functions.xe_Saha(TCMB, nH)  # Assume initially in Saha equilibrium
+        xe0, _ = recomb_functions.xe_Saha(TCMB, nH)  # Saha equilibrium is our intial condition
 
         # Pre-allocate xe_output 
         xe_output = jnp.ones_like(self.concrete_axis_size)*jnp.inf
