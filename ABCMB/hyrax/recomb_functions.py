@@ -2,7 +2,7 @@ import numpy as np
 import jax.numpy as jnp
 from jax import config, pure_callback, devices, device_put
 from jax.scipy.ndimage import map_coordinates
-from ABCMB import constants as cnst
+from JaxCMB import constants as cnst
 import jax.experimental.host_callback as hcb
 import os
 file_dir = os.path.dirname(__file__)
@@ -37,94 +37,6 @@ TR_axis = jnp.linspace(jnp.log(TR_MIN), jnp.log(TR_MAX), NTR)
 T_RATIO_axis = jnp.linspace(T_RATIO_MIN, T_RATIO_MAX, NTM)
 A2s_table = alpha_tab.reshape((NTR, NTM, 4))
 A2p_table = alpha_tab.reshape((NTR, NTM, 4))
-
-def alpha_H(Tm):
-    """
-    Case-B recombination coefficient for hydrogen.
-
-    Dimensions: cm^3 s^{-1}
-
-    WARNING: Assumes input Tm to be in eV.
-    
-    Parameters
-    ----------
-    Tm : float
-        Matter temperature.
-
-    Returns
-    -------
-    alpha_H : float
-        Case B recombination coefficient for hydrogen at given matter temperature.        
-    """
-    fudge_factor = 1.0 # Recommended by arXiv:1011.3758
-
-    T_in_K = Tm / cnst.kB # Convert matter temperature to Kelvin
-
-    # Compute the coefficient in cm^3/s
-    alpha_H = fudge_factor * 4.309e-13 * (1.0e-4 * T_in_K)**(-0.6166) \
-              / (1.+0.6703*(1.0e-4*T_in_K)**0.5300)
-
-    return alpha_H
-
-def beta_H(TCMB):
-    """
-    Case-B photoionization coefficient for hydrogen.
-
-    Dimensions: s^{-1}
-
-    WARNING: Assumes input TCMB to be in eV. 
-    
-    Parameters
-    ----------
-    TCMB : float
-        CMB temperature.
-
-    Returns
-    -------
-    beta_H : float
-        Case B photoionization coefficient for hydrogen at given CMB (radiation) temperature.        
-    """
-
-    # Electron de Broglie wavelength at given CMB temperature, in cm (keep in mind h=2pi*hbar)
-    lambda_dB = 2.*jnp.pi*cnst.hbar*cnst.c / jnp.sqrt(2.*jnp.pi*cnst.mu_e*TCMB)
-
-    beta_H = (1./cnst.lambda_dB)**3 * jnp.exp(-cnst.rydberg/4./TCMB) * alpha_H(TCMB) / 4.
-
-    return beta_H
-
-def peebles_C(z, xHII, H, nH):
-    """
-    Peebles C factor, probability for an n=2 hydrogen atom to reach the ground state before becoming photoionized, a function of redshift and ionized proton fraction.
-    
-    Dimensions: None
-
-    Parameters
-    ----------
-    z : float/jnp.array
-        Requested redshift(s).
-    xHII : float
-        Ionized hydrogen fraction.
-    H : float/jnp.array
-        Value(s) of Hubble at given redshift(s).
-    nH : float/jnp.array
-        Value(s) of hydrogen number density at given redshift(s)
-
-    Returns
-    -------
-    C : float/jnp.array
-        Peebles C factor.
-    """
-
-    # (2p to 1s rate) x (1 - xHII), in s^{-1}
-    rate_2p1s_times_x1s = 8*jnp.pi*H / (3 * (nH*(cnst.c/cnst.lya_freq)**3))
-
-    # s^{-1}
-    rate_exc = 3. * rate_2p1s_times_x1s/4. + (1.-xHII) * cnst.R2s1s/4.
-    
-    # Ionization rate, in s^{-1}
-    rate_ion = (1-xHII) * beta_H(TCMB(z))
-
-    return rate_exc / (rate_exc + rate_ion)
 
 def Gamma_compton(xe, TCMB, YHe):
     """
