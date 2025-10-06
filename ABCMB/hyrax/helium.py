@@ -4,7 +4,7 @@ import equinox as eqx
 
 from diffrax import diffeqsolve, SaveAt, ODETerm, Kvaerno3, PIDController, DiscreteTerminatingEvent, ForwardMode
 
-from JaxCMB import constants as cnst
+from ABCMB import constants as cnst
 from . import recomb_functions
 from .array_with_padding import array_with_padding
 config.update("jax_enable_x64", True)
