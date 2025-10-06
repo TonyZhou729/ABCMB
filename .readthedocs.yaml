@@ -1,6 +1,11 @@
 # .readthedocs.yaml
 version: 2
 
+git:
+  clone:
+    depth: 1
+    branch: main
+
 build:
   os: ubuntu-22.04
   tools:
