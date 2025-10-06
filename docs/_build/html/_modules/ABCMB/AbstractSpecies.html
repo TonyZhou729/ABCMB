@@ -1,0 +1,1564 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ABCMB.AbstractSpecies &#8212; ABCMB 0.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="../../_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="../../_static/alabaster.css?v=27fed22d" />
+    <script src="../../_static/documentation_options.js?v=837179f8"></script>
+    <script src="../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+   
+  <link rel="stylesheet" href="../../_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for ABCMB.AbstractSpecies</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">abc</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">jax</span><span class="w"> </span><span class="kn">import</span> <span class="n">config</span><span class="p">,</span> <span class="n">lax</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">jax.numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">jnp</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">equinox</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">eqx</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">constants</span> <span class="k">as</span> <span class="n">cnst</span>
+
+<span class="n">config</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="s2">&quot;jax_enable_x64&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+
+<span class="c1">### ABSTRACT BASE CLASSES AND INTERFACES ###</span>
+
+<div class="viewcode-block" id="AbstractFluid">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.AbstractFluid">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">AbstractFluid</span><span class="p">(</span><span class="n">eqx</span><span class="o">.</span><span class="n">Module</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Abstract base class for fluid species in cosmological simulations.</span>
+
+<span class="sd">    Defines an interface for computing fluid thermodynamic properties.</span>
+
+<span class="sd">    Methods:</span>
+<span class="sd">    --------</span>
+<span class="sd">    rho : Compute energy density (units: eV cm^{-3})</span>
+<span class="sd">    P : Compute pressure (units: eV cm^{-3})</span>
+<span class="sd">    cs2 : Compute sound speed squared (units: dimensionless)</span>
+<span class="sd">    w : Compute equation of state parameter (units: dimensionless)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="AbstractFluid.rho">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.AbstractFluid.rho">[docs]</a>
+    <span class="nd">@abc</span><span class="o">.</span><span class="n">abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">rho</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute energy density.</span>
+
+<span class="sd">        Calculates the energy density of the fluid species at a given</span>
+<span class="sd">        cosmological epoch using the logarithm of the scale factor.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            Energy density (units: eV cm^{-3})</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;Fluid species must implement an energy density function.&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="AbstractFluid.P">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.AbstractFluid.P">[docs]</a>
+    <span class="nd">@abc</span><span class="o">.</span><span class="n">abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">P</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute pressure.</span>
+
+<span class="sd">        Calculates the pressure of the fluid species at a given</span>
+<span class="sd">        cosmological epoch using the logarithm of the scale factor.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            Pressure (units: eV cm^{-3})</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;Fluid species must implement a pressure function.&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="AbstractFluid.cs2">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.AbstractFluid.cs2">[docs]</a>
+    <span class="nd">@abc</span><span class="o">.</span><span class="n">abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">cs2</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute sound speed squared.</span>
+
+<span class="sd">        Calculates the squared sound speed of the fluid species at a given</span>
+<span class="sd">        cosmological epoch using the logarithm of the scale factor.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            Sound speed squared (units: dimensionless)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;Fluid species must implement a sound speed squared.&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="AbstractFluid.w">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.AbstractFluid.w">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">w</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute equation of state parameter.</span>
+
+<span class="sd">        Calculates the ratio of pressure to energy density, representing</span>
+<span class="sd">        the equation of state for the fluid species.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            Equation of state parameter (units: dimensionless)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">P</span><span class="p">(</span><span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">)</span><span class="o">/</span><span class="bp">self</span><span class="o">.</span><span class="n">rho</span><span class="p">(</span><span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">)</span></div>
+</div>
+
+
+<div class="viewcode-block" id="AbstractPerturbedFluid">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.AbstractPerturbedFluid">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">AbstractPerturbedFluid</span><span class="p">(</span><span class="n">AbstractFluid</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Abstract base class for fluid species with perturbations.</span>
+
+<span class="sd">    Defines methods for computing perturbation mode properties</span>
+<span class="sd">    used in this code.</span>
+
+<span class="sd">    Methods:</span>
+<span class="sd">    --------</span>
+<span class="sd">    y_ini : Compute initial perturbation mode conditions (units: dimensionless)</span>
+<span class="sd">    y_prime : Compute perturbation mode time derivatives (units: dimensionless)</span>
+<span class="sd">    rho_delta : Compute density perturbation (units: eV cm^{-3})</span>
+<span class="sd">    rho_plus_P_theta : Compute velocity perturbation (units: eV cm^{-3})</span>
+<span class="sd">    rho_plus_P_sigma : Compute shear perturbation (units: eV cm^{-3})</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Some abstract fields that won&#39;t be instanced until a child class calls __init__</span>
+    <span class="c1"># All subclasses must have these fields</span>
+    <span class="c1"># Declared abstract for now since some methods still reference these fields.</span>
+    <span class="n">delta_idx</span>     <span class="p">:</span> <span class="n">eqx</span><span class="o">.</span><span class="n">AbstractVar</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span>
+    <span class="n">num_ell_modes</span> <span class="p">:</span> <span class="n">eqx</span><span class="o">.</span><span class="n">AbstractVar</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span>
+
+<div class="viewcode-block" id="AbstractPerturbedFluid.y_ini">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.AbstractPerturbedFluid.y_ini">[docs]</a>
+    <span class="nd">@abc</span><span class="o">.</span><span class="n">abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">y_ini</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">tau_ini</span><span class="p">,</span> <span class="n">om</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute initial conditions for perturbation modes.</span>
+
+<span class="sd">        Calculates the initial state of perturbation modes at early cosmological times.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        k : float</span>
+<span class="sd">            Wavenumber (units: Mpc^{-1})</span>
+<span class="sd">        tau_ini : float</span>
+<span class="sd">            Initial conformal time (units: Mpc)</span>
+<span class="sd">        om : float</span>
+<span class="sd">            Matter density parameter</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        array</span>
+<span class="sd">            Initial perturbation mode values (units: dimensionless)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;Fluid species must implement the initial conditions of their perturbation modes.&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="AbstractPerturbedFluid.y_prime">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.AbstractPerturbedFluid.y_prime">[docs]</a>
+    <span class="nd">@abc</span><span class="o">.</span><span class="n">abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">y_prime</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">metric_h_prime</span><span class="p">,</span> <span class="n">metric_eta_prime</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute time derivatives of perturbation modes.</span>
+
+<span class="sd">        Calculates how perturbation modes evolve with cosmological time.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        k : float</span>
+<span class="sd">            Wavenumber (units: Mpc^{-1})</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        metric_h_prime : float</span>
+<span class="sd">            Derivative of metric h</span>
+<span class="sd">        metric_eta_prime : float</span>
+<span class="sd">            Derivative of metric eta</span>
+<span class="sd">        y : array</span>
+<span class="sd">            Current perturbation mode values</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        array</span>
+<span class="sd">            Time derivatives of perturbation modes (units: dimensionless)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;Fluid species must implement a perturbation derivative function.&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="AbstractPerturbedFluid.rho_delta">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.AbstractPerturbedFluid.rho_delta">[docs]</a>
+    <span class="nd">@abc</span><span class="o">.</span><span class="n">abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">rho_delta</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute density perturbation.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        y : array</span>
+<span class="sd">            Perturbation mode values</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            Density perturbation (units: eV cm^{-3})</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;Fluid species must implement a perturbation derivative function.&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="AbstractPerturbedFluid.rho_plus_P_theta">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.AbstractPerturbedFluid.rho_plus_P_theta">[docs]</a>
+    <span class="nd">@abc</span><span class="o">.</span><span class="n">abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">rho_plus_P_theta</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute velocity perturbation.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        y : array</span>
+<span class="sd">            Perturbation mode values</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            Velocity perturbation (units: eV cm^{-3})</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;Fluid species must implement a perturbation derivative function.&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="AbstractPerturbedFluid.rho_plus_P_sigma">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.AbstractPerturbedFluid.rho_plus_P_sigma">[docs]</a>
+    <span class="nd">@abc</span><span class="o">.</span><span class="n">abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">rho_plus_P_sigma</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute shear perturbation.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        y : array</span>
+<span class="sd">            Perturbation mode values</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            Shear perturbation (units: eV cm^{-3})</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;Fluid species must implement a perturbation derivative function.&quot;</span><span class="p">)</span></div>
+</div>
+
+
+<div class="viewcode-block" id="AbstractStandardPerturbedFluid">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.AbstractStandardPerturbedFluid">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">AbstractStandardPerturbedFluid</span><span class="p">(</span><span class="n">AbstractPerturbedFluid</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Standard implementation of perturbation methods for fluid species.</span>
+
+<span class="sd">    Provides default computations for perturbation-related methods</span>
+<span class="sd">    used in this code.</span>
+
+<span class="sd">    Methods:</span>
+<span class="sd">    --------</span>
+<span class="sd">    rho_delta : Compute standard density perturbation (units: eV cm^{-3})</span>
+<span class="sd">    rho_plus_P_theta : Compute standard velocity perturbation (units: eV cm^{-3})</span>
+<span class="sd">    rho_plus_P_sigma : Compute standard shear perturbation (units: eV cm^{-3})</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Called by diffrax, child classes should never override. Okay to implement here.</span>
+<div class="viewcode-block" id="AbstractStandardPerturbedFluid.rho_delta">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.AbstractStandardPerturbedFluid.rho_delta">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">rho_delta</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute density perturbation.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        y : array</span>
+<span class="sd">            Perturbation mode values</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            Density perturbation (units: eV cm^{-3})</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">rho</span><span class="p">(</span><span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">)</span> <span class="o">*</span> <span class="n">y</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">delta_idx</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="AbstractStandardPerturbedFluid.rho_plus_P_theta">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.AbstractStandardPerturbedFluid.rho_plus_P_theta">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">rho_plus_P_theta</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute velocity perturbation.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        y : array</span>
+<span class="sd">            Perturbation mode values</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            Velocity perturbation (units: eV cm^{-3})</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">num_ell_modes</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">,</span>
+            <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">rho</span><span class="p">(</span><span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">)</span><span class="o">+</span><span class="bp">self</span><span class="o">.</span><span class="n">P</span><span class="p">(</span><span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">))</span> <span class="o">*</span> <span class="n">y</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">delta_idx</span><span class="o">+</span><span class="mi">1</span><span class="p">],</span>
+            <span class="mf">0.</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="AbstractStandardPerturbedFluid.rho_plus_P_sigma">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.AbstractStandardPerturbedFluid.rho_plus_P_sigma">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">rho_plus_P_sigma</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute shear perturbation.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        y : array</span>
+<span class="sd">            Perturbation mode values</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            Shear perturbation (units: eV cm^{-3})</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">num_ell_modes</span> <span class="o">&gt;</span> <span class="mi">2</span><span class="p">,</span>
+            <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">rho</span><span class="p">(</span><span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">)</span><span class="o">+</span><span class="bp">self</span><span class="o">.</span><span class="n">P</span><span class="p">(</span><span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">))</span> <span class="o">*</span> <span class="n">y</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">delta_idx</span><span class="o">+</span><span class="mi">2</span><span class="p">],</span>
+            <span class="mf">0.</span>
+        <span class="p">)</span></div>
+</div>
+
+
+<span class="c1">### BEGINNING OF CONCRETE CLASSES ###</span>
+
+<div class="viewcode-block" id="DarkEnergy">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.DarkEnergy">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">DarkEnergy</span><span class="p">(</span><span class="n">AbstractFluid</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Dark energy fluid species implementation.</span>
+
+<span class="sd">    Represents a constant energy density fluid with negative pressure.</span>
+
+<span class="sd">    Methods:</span>
+<span class="sd">    --------</span>
+<span class="sd">    rho : Compute dark energy density (units: eV cm^{-3})</span>
+<span class="sd">    P : Compute dark energy pressure (units: eV cm^{-3})</span>
+<span class="sd">    cs2 : Compute sound speed squared (units: dimensionless)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+<div class="viewcode-block" id="DarkEnergy.rho">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.DarkEnergy.rho">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">rho</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute dark energy density.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            Dark energy density (units: eV cm^{-3})</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;omega_Lambda&#39;</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="mf">3.</span><span class="o">*</span><span class="n">cnst</span><span class="o">.</span><span class="n">H0_over_h</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="mf">8.</span><span class="o">/</span><span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="n">cnst</span><span class="o">.</span><span class="n">G</span><span class="p">)</span></div>
+
+    
+<div class="viewcode-block" id="DarkEnergy.P">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.DarkEnergy.P">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">P</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute dark energy pressure.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            Dark energy pressure (units: eV cm^{-3})</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">rho</span><span class="p">(</span><span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="DarkEnergy.cs2">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.DarkEnergy.cs2">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">cs2</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute sound speed squared.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            Sound speed squared (units: dimensionless)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="mf">0.</span></div>
+</div>
+
+
+<div class="viewcode-block" id="ColdDarkMatter">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.ColdDarkMatter">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ColdDarkMatter</span><span class="p">(</span><span class="n">AbstractStandardPerturbedFluid</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Cold dark matter fluid species implementation.</span>
+
+<span class="sd">    Non-relativistic, pressureless dark matter with density</span>
+<span class="sd">    perturbations but no velocity or shear modes.</span>
+
+<span class="sd">    Methods:</span>
+<span class="sd">    --------</span>
+<span class="sd">    rho : Compute cold dark matter density (units: eV cm^{-3})</span>
+<span class="sd">    P : Compute cold dark matter pressure (units: eV cm^{-3})</span>
+<span class="sd">    cs2 : Compute sound speed squared (units: dimensionless)</span>
+<span class="sd">    y_ini : Compute initial perturbation conditions (units: dimensionless)</span>
+<span class="sd">    y_prime : Compute perturbation time derivatives (units: dimensionless)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">delta_idx</span> <span class="p">:</span> <span class="nb">int</span>
+    <span class="n">num_ell_modes</span> <span class="o">=</span> <span class="mi">1</span>
+
+<div class="viewcode-block" id="ColdDarkMatter.rho">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.ColdDarkMatter.rho">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">rho</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute cold dark matter density.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            Cold dark matter density (units: eV cm^{-3})</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;omega_cdm&#39;</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="mf">3.</span><span class="o">*</span><span class="n">cnst</span><span class="o">.</span><span class="n">H0_over_h</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="mf">8.</span><span class="o">/</span><span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="n">cnst</span><span class="o">.</span><span class="n">G</span><span class="p">)</span> <span class="o">/</span> <span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span><span class="o">**</span><span class="mi">3</span></div>
+
+
+<div class="viewcode-block" id="ColdDarkMatter.P">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.ColdDarkMatter.P">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">P</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute cold dark matter pressure.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            Cold dark matter pressure (units: eV cm^{-3})</span>
+
+<span class="sd">        Notes:</span>
+<span class="sd">        ------</span>
+<span class="sd">        Cold dark matter is pressureless, so this always returns zero.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="mf">0.</span></div>
+
+
+<div class="viewcode-block" id="ColdDarkMatter.cs2">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.ColdDarkMatter.cs2">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">cs2</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute sound speed squared.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            Sound speed squared (units: dimensionless)</span>
+
+<span class="sd">        Notes:</span>
+<span class="sd">        ------</span>
+<span class="sd">        For cold dark matter, sound speed is always zero due to its</span>
+<span class="sd">        non-relativistic and pressureless nature.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="mf">0.</span></div>
+
+    
+<div class="viewcode-block" id="ColdDarkMatter.y_ini">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.ColdDarkMatter.y_ini">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">y_ini</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">tau_ini</span><span class="p">,</span> <span class="n">om</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute initial conditions for cold dark matter perturbations.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        k : float</span>
+<span class="sd">            Wavenumber (units: Mpc^{-1})</span>
+<span class="sd">        tau_ini : float</span>
+<span class="sd">            Initial conformal time (units: Mpc)</span>
+<span class="sd">        om : float</span>
+<span class="sd">            Matter density parameter</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        array</span>
+<span class="sd">            Initial density perturbation (units: dimensionless)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">delta</span> <span class="o">=</span> <span class="o">-</span><span class="p">(</span><span class="n">k</span><span class="o">*</span><span class="n">tau_ini</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="mf">4.</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.</span><span class="o">-</span><span class="n">om</span><span class="o">*</span><span class="n">tau_ini</span><span class="o">/</span><span class="mf">5.</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">delta</span><span class="p">])</span></div>
+
+
+<div class="viewcode-block" id="ColdDarkMatter.y_prime">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.ColdDarkMatter.y_prime">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">y_prime</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">metric_h_prime</span><span class="p">,</span> <span class="n">metric_eta_prime</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute time derivatives of cold dark matter perturbations.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        k : float</span>
+<span class="sd">            Wavenumber (units: Mpc^{-1})</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        metric_h_prime : float</span>
+<span class="sd">            Derivative of metric h</span>
+<span class="sd">        metric_eta_prime : float</span>
+<span class="sd">            Derivative of metric eta</span>
+<span class="sd">        y : array</span>
+<span class="sd">            Current perturbation mode values</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        array</span>
+<span class="sd">            Time derivative of density perturbation (units: dimensionless)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="o">-</span><span class="mf">0.5</span><span class="o">*</span><span class="n">metric_h_prime</span><span class="p">])</span></div>
+</div>
+
+
+<div class="viewcode-block" id="MasslessNeutrinos">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.MasslessNeutrinos">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">MasslessNeutrinos</span><span class="p">(</span><span class="n">AbstractStandardPerturbedFluid</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Massless neutrinos fluid species implementation.</span>
+
+<span class="sd">    Represents relativistic neutrinos with multiple angular momentum modes.</span>
+
+<span class="sd">    Methods:</span>
+<span class="sd">    --------</span>
+<span class="sd">    rho : Compute neutrino density (units: eV cm^{-3})</span>
+<span class="sd">    P : Compute neutrino pressure (units: eV cm^{-3})</span>
+<span class="sd">    cs2 : Compute sound speed squared (units: dimensionless)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">delta_idx</span> <span class="p">:</span> <span class="nb">int</span>
+    <span class="n">num_ell_modes</span> <span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">eqx</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mi">7</span><span class="p">,</span> <span class="n">static</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+<div class="viewcode-block" id="MasslessNeutrinos.rho">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.MasslessNeutrinos.rho">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">rho</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute neutrino density.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            Neutrino density (units: eV cm^{-3})</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;omega_nu&#39;</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="mf">3.</span><span class="o">*</span><span class="n">cnst</span><span class="o">.</span><span class="n">H0_over_h</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="mf">8.</span><span class="o">/</span><span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="n">cnst</span><span class="o">.</span><span class="n">G</span><span class="p">)</span> <span class="o">/</span> <span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span><span class="o">**</span><span class="mi">4</span></div>
+
+    
+<div class="viewcode-block" id="MasslessNeutrinos.P">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.MasslessNeutrinos.P">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">P</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute neutrino pressure.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            Neutrino pressure (units: eV cm^{-3})</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">rho</span><span class="p">(</span><span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">)</span><span class="o">/</span><span class="mf">3.</span></div>
+
+
+<div class="viewcode-block" id="MasslessNeutrinos.cs2">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.MasslessNeutrinos.cs2">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">cs2</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute sound speed squared.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            Sound speed squared (units: dimensionless)</span>
+
+<span class="sd">        Notes:</span>
+<span class="sd">        ------</span>
+<span class="sd">        For massless neutrinos, sound speed is always 1/3 due to</span>
+<span class="sd">        their relativistic equation of state.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="mf">1.</span><span class="o">/</span><span class="mf">3.</span></div>
+
+
+<div class="viewcode-block" id="MasslessNeutrinos.y_ini">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.MasslessNeutrinos.y_ini">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">y_ini</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">tau_ini</span><span class="p">,</span> <span class="n">om</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+        <span class="n">R_nu</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;R_nu&#39;</span><span class="p">]</span>
+
+        <span class="n">delta</span> <span class="o">=</span> <span class="o">-</span> <span class="p">(</span><span class="n">k</span><span class="o">*</span><span class="n">tau_ini</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="mf">3.</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.</span><span class="o">-</span><span class="n">om</span><span class="o">*</span><span class="n">tau_ini</span><span class="o">/</span><span class="mf">5.</span><span class="p">)</span>
+        <span class="n">theta</span> <span class="o">=</span> <span class="o">-</span> <span class="n">k</span><span class="o">*</span><span class="p">(</span><span class="n">k</span><span class="o">*</span><span class="n">tau_ini</span><span class="p">)</span><span class="o">**</span><span class="mi">3</span><span class="o">/</span><span class="mf">36.</span><span class="o">/</span><span class="p">(</span><span class="mf">4.</span><span class="o">*</span><span class="n">R_nu</span><span class="o">+</span><span class="mf">15.</span><span class="p">)</span> \
+                <span class="o">*</span> <span class="p">(</span><span class="mf">4.</span><span class="o">*</span><span class="n">R_nu</span><span class="o">+</span><span class="mf">11.</span><span class="o">+</span><span class="mf">12.</span><span class="o">-</span><span class="mf">3.</span><span class="o">*</span><span class="p">(</span><span class="mf">8.</span><span class="o">*</span><span class="n">R_nu</span><span class="o">**</span><span class="mi">2</span><span class="o">+</span><span class="mf">50.</span><span class="o">*</span><span class="n">R_nu</span><span class="o">+</span><span class="mf">275.</span><span class="p">)</span><span class="o">/</span><span class="mf">20.</span><span class="o">/</span><span class="p">(</span><span class="mf">2.</span><span class="o">*</span><span class="n">R_nu</span><span class="o">+</span><span class="mf">15.</span><span class="p">)</span><span class="o">*</span><span class="n">tau_ini</span><span class="o">*</span><span class="n">om</span><span class="p">)</span>
+        <span class="n">sigma</span> <span class="o">=</span> <span class="p">(</span><span class="n">k</span><span class="o">*</span><span class="n">tau_ini</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="p">(</span><span class="mf">45.</span><span class="o">+</span><span class="mf">12.</span><span class="o">*</span><span class="n">R_nu</span><span class="p">)</span> <span class="o">*</span> <span class="mf">2.</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.</span><span class="o">+</span><span class="p">(</span><span class="mf">4.</span><span class="o">*</span><span class="n">R_nu</span><span class="o">-</span><span class="mf">5.</span><span class="p">)</span><span class="o">/</span><span class="mf">4.</span><span class="o">/</span><span class="p">(</span><span class="mf">2.</span><span class="o">*</span><span class="n">R_nu</span><span class="o">+</span><span class="mf">15.</span><span class="p">)</span><span class="o">*</span><span class="n">tau_ini</span><span class="o">*</span><span class="n">om</span><span class="p">)</span>
+        
+        <span class="c1"># Return the four non-zero ell modes, and all higher ell-modes are zero to start.</span>
+        <span class="c1"># For the neutrinos we track Fnu_2 = 2*sigma, for better structure within the hierarchy.</span>
+        <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">concatenate</span><span class="p">((</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">delta</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">sigma</span><span class="p">]),</span> <span class="n">jnp</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_ell_modes</span><span class="o">-</span><span class="mi">3</span><span class="p">)))</span></div>
+
+
+<div class="viewcode-block" id="MasslessNeutrinos.y_prime">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.MasslessNeutrinos.y_prime">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">y_prime</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">metric_h_prime</span><span class="p">,</span> <span class="n">metric_eta_prime</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+        <span class="n">aH</span>    <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">aH</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span>
+        <span class="n">tau</span>   <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">tau</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span>
+
+        <span class="n">L</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_ell_modes</span><span class="p">)</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">delta_idx</span>
+        <span class="n">F</span> <span class="o">=</span> <span class="n">y</span><span class="p">[</span><span class="n">L</span><span class="p">]</span>
+        <span class="n">delta</span> <span class="o">=</span> <span class="n">F</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">theta</span> <span class="o">=</span> <span class="n">F</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">sigma</span> <span class="o">=</span> <span class="n">F</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+
+        <span class="c1"># density, velocity, shear perturbations</span>
+        <span class="n">delta_prime</span> <span class="o">=</span> <span class="o">-</span><span class="mf">4.</span><span class="o">/</span><span class="mf">3.</span><span class="o">/</span><span class="n">aH</span><span class="o">*</span><span class="n">theta</span> <span class="o">-</span> <span class="mf">2.</span><span class="o">/</span><span class="mf">3.</span><span class="o">*</span><span class="n">metric_h_prime</span>
+        <span class="n">theta_prime</span> <span class="o">=</span> <span class="n">k</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="n">aH</span><span class="o">*</span><span class="p">(</span><span class="n">delta</span><span class="o">/</span><span class="mf">4.</span><span class="o">-</span><span class="n">sigma</span><span class="p">)</span>
+        <span class="n">sigma_prime</span> <span class="o">=</span> <span class="mf">4.</span><span class="o">/</span><span class="mf">15.</span><span class="o">/</span><span class="n">aH</span><span class="o">*</span><span class="n">theta</span> <span class="o">-</span> <span class="mf">3.</span><span class="o">/</span><span class="mf">10.</span><span class="o">*</span><span class="n">k</span><span class="o">/</span><span class="n">aH</span><span class="o">*</span><span class="n">F</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span> <span class="o">+</span> <span class="mf">2.</span><span class="o">/</span><span class="mf">15.</span><span class="o">*</span><span class="n">metric_h_prime</span> <span class="o">+</span> <span class="mf">4.</span><span class="o">/</span><span class="mf">5.</span><span class="o">*</span><span class="n">metric_eta_prime</span>
+        <span class="n">F3_prime</span> <span class="o">=</span> <span class="mf">1.</span><span class="o">/</span><span class="mf">7.</span> <span class="o">*</span> <span class="n">k</span><span class="o">/</span><span class="n">aH</span> <span class="o">*</span> <span class="p">(</span><span class="mf">6.</span><span class="o">*</span><span class="n">sigma</span> <span class="o">-</span> <span class="mf">4.</span><span class="o">*</span><span class="n">F</span><span class="p">[</span><span class="mi">4</span><span class="p">])</span>
+
+        <span class="c1"># Rest of the Boltzmann Hierarchy</span>
+        <span class="n">lmax</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_ell_modes</span><span class="o">-</span><span class="mi">1</span>
+        <span class="n">L</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="n">lmax</span><span class="p">)</span>
+        <span class="n">Fl_prime</span>    <span class="o">=</span> <span class="mf">1.</span><span class="o">/</span><span class="p">(</span><span class="mf">2.</span><span class="o">*</span><span class="n">L</span><span class="o">+</span><span class="mf">1.</span><span class="p">)</span><span class="o">*</span><span class="n">k</span><span class="o">/</span><span class="n">aH</span> <span class="o">*</span> <span class="p">(</span><span class="n">L</span><span class="o">*</span><span class="n">F</span><span class="p">[</span><span class="n">L</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">-</span><span class="p">(</span><span class="n">L</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">*</span><span class="n">F</span><span class="p">[</span><span class="n">L</span><span class="o">+</span><span class="mi">1</span><span class="p">])</span>
+        <span class="n">Flmax_prime</span> <span class="o">=</span> <span class="n">k</span><span class="o">/</span><span class="n">aH</span><span class="o">*</span><span class="n">F</span><span class="p">[</span><span class="n">lmax</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="p">(</span><span class="n">lmax</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">/</span><span class="n">aH</span><span class="o">/</span><span class="n">tau</span><span class="o">*</span><span class="n">F</span><span class="p">[</span><span class="n">lmax</span><span class="p">]</span>
+
+        <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">concatenate</span><span class="p">((</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">delta_prime</span><span class="p">,</span> <span class="n">theta_prime</span><span class="p">,</span> <span class="n">sigma_prime</span><span class="p">,</span> <span class="n">F3_prime</span><span class="p">]),</span> <span class="n">Fl_prime</span><span class="p">,</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">Flmax_prime</span><span class="p">])))</span></div>
+</div>
+
+
+<div class="viewcode-block" id="MassiveNeutrinos">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.MassiveNeutrinos">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">MassiveNeutrinos</span><span class="p">(</span><span class="n">AbstractPerturbedFluid</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Massive neutrinos fluid species implementation.</span>
+
+<span class="sd">    Non-relativistic neutrinos with multiple angular momentum modes.</span>
+
+<span class="sd">    Methods:</span>
+<span class="sd">    --------</span>
+<span class="sd">    rho : Compute massive neutrino density (units: eV cm^{-3})</span>
+<span class="sd">    P : Compute massive neutrino pressure (units: eV cm^{-3})</span>
+<span class="sd">    cs2 : Compute sound speed squared (units: dimensionless)</span>
+<span class="sd">    y_ini : Compute initial perturbation conditions (units: dimensionless)</span>
+<span class="sd">    y_prime : Compute perturbation time derivatives (units: dimensionless)</span>
+<span class="sd">    rho_delta : Compute density perturbation (units: eV cm^{-3})</span>
+<span class="sd">    rho_plus_P_theta : Compute velocity perturbation (units: eV cm^{-3})</span>
+<span class="sd">    rho_plus_P_sigma : Compute shear perturbation (units: eV cm^{-3})</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">delta_idx</span> <span class="p">:</span> <span class="nb">int</span>
+
+    <span class="n">num_q_bins</span> <span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">eqx</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">static</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">num_ells_per_bin</span> <span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">eqx</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">static</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">num_ell_modes</span> <span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">eqx</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">static</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="n">q_3p</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.913201</span><span class="p">,</span> <span class="mf">3.37517</span><span class="p">,</span> <span class="mf">7.79184</span><span class="p">])</span>
+    <span class="n">w_3p</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.0687359</span><span class="p">,</span> <span class="mf">3.31435</span><span class="p">,</span> <span class="mf">2.29911</span><span class="p">])</span>
+    <span class="n">q_5p</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.583165</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">,</span> <span class="mf">4.0</span><span class="p">,</span> <span class="mf">7.26582</span><span class="p">,</span> <span class="mf">13.0</span><span class="p">])</span>
+    <span class="n">w_5p</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.0081201</span><span class="p">,</span> <span class="mf">0.689407</span><span class="p">,</span> <span class="mf">2.8063</span><span class="p">,</span> <span class="mf">2.05156</span><span class="p">,</span> <span class="mf">0.12681</span><span class="p">])</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">delta_idx</span><span class="p">,</span> <span class="n">num_q_bins</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">num_ells_per_bin</span><span class="o">=</span><span class="mi">7</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">delta_idx</span> <span class="o">=</span> <span class="n">delta_idx</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_q_bins</span> <span class="o">=</span> <span class="n">num_q_bins</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_ells_per_bin</span> <span class="o">=</span> <span class="n">num_ells_per_bin</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_ell_modes</span> <span class="o">=</span> <span class="n">num_q_bins</span> <span class="o">*</span> <span class="n">num_ells_per_bin</span>
+
+<div class="viewcode-block" id="MassiveNeutrinos.rho">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.MassiveNeutrinos.rho">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">rho</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute massive neutrino density.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        lna : float or ArrayLike</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float or ArrayLike</span>
+<span class="sd">            Massive neutrino density (units: eV cm^{-3})</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="c1"># Ensure lna is at least 1D for broadcasting</span>
+        <span class="n">lna_arr</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">atleast_1d</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span>          <span class="c1"># shape (N,)</span>
+        <span class="n">a</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">lna_arr</span><span class="p">)[:,</span> <span class="kc">None</span><span class="p">]</span>          <span class="c1"># shape (N, 1)</span>
+        <span class="n">T</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;T_ncdm&#39;</span><span class="p">]</span> <span class="o">/</span> <span class="n">a</span>             <span class="c1"># shape (N, 1)</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;m_ncdm&#39;</span><span class="p">]</span> <span class="o">/</span> <span class="n">T</span>             <span class="c1"># shape (N, 1)</span>
+
+        <span class="c1"># q_5p, w_5p are shape (5,) → broadcast with (N, 1)</span>
+        <span class="n">integrand</span> <span class="o">=</span> <span class="p">(</span><span class="mf">1.</span> <span class="o">+</span> <span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">q_5p</span><span class="p">))</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">q_5p</span><span class="o">**</span><span class="mi">2</span> \
+                    <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">q_5p</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="n">x</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>           <span class="c1"># (N, 5)</span>
+
+        <span class="c1"># Dot product along last axis with w_5p</span>
+        <span class="n">integral</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">integrand</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">w_5p</span><span class="p">)</span>               <span class="c1"># (N,)</span>
+
+        <span class="n">rho_val</span> <span class="o">=</span> <span class="mf">4.</span> <span class="o">*</span> <span class="n">T</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span><span class="o">**</span><span class="mi">4</span> <span class="o">/</span> <span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="o">**</span><span class="mi">2</span> <span class="o">*</span> <span class="n">integral</span> <span class="o">/</span> <span class="n">cnst</span><span class="o">.</span><span class="n">hbar</span><span class="o">**</span><span class="mi">3</span> <span class="o">/</span> <span class="n">cnst</span><span class="o">.</span><span class="n">c</span><span class="o">**</span><span class="mi">3</span>
+
+        <span class="c1"># Remove extra dimension if original input was scalar</span>
+        <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="n">rho_val</span><span class="p">)</span> <span class="k">if</span> <span class="n">jnp</span><span class="o">.</span><span class="n">ndim</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="n">rho_val</span></div>
+
+
+<div class="viewcode-block" id="MassiveNeutrinos.P">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.MassiveNeutrinos.P">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">P</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute massive neutrino pressure.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        lna : float or ArrayLike</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float or ArrayLike</span>
+<span class="sd">            Massive neutrino pressure (units: eV cm^{-3})</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="c1"># Ensure lna is at least 1D for broadcasting</span>
+        <span class="n">lna_arr</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">atleast_1d</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span>          <span class="c1"># shape (N,)</span>
+        <span class="n">a</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">lna_arr</span><span class="p">)[:,</span> <span class="kc">None</span><span class="p">]</span>          <span class="c1"># shape (N, 1)</span>
+        <span class="n">T</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;T_ncdm&#39;</span><span class="p">]</span> <span class="o">/</span> <span class="n">a</span>             <span class="c1"># shape (N, 1)</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;m_ncdm&#39;</span><span class="p">]</span> <span class="o">/</span> <span class="n">T</span>             <span class="c1"># shape (N, 1)</span>
+
+        <span class="c1"># q_5p, w_5p are shape (5,) → broadcast with (N, 1)</span>
+        <span class="n">integrand</span> <span class="o">=</span> <span class="p">(</span><span class="mf">1.</span> <span class="o">+</span> <span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">q_5p</span><span class="p">))</span> <span class="o">/</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">q_5p</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="n">x</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span> <span class="c1"># (N, 5)</span>
+
+        <span class="c1"># Dot product along last axis with w_5p</span>
+        <span class="n">integral</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">integrand</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">w_5p</span><span class="p">)</span>               <span class="c1"># (N,)</span>
+
+        <span class="n">P_val</span> <span class="o">=</span> <span class="mf">4.</span><span class="o">/</span><span class="mf">3.</span> <span class="o">*</span> <span class="n">T</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span><span class="o">**</span><span class="mi">4</span> <span class="o">/</span> <span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="o">**</span><span class="mi">2</span> <span class="o">*</span> <span class="n">integral</span> <span class="o">/</span> <span class="n">cnst</span><span class="o">.</span><span class="n">hbar</span><span class="o">**</span><span class="mi">3</span> <span class="o">/</span> <span class="n">cnst</span><span class="o">.</span><span class="n">c</span><span class="o">**</span><span class="mi">3</span>
+
+        <span class="c1"># Remove extra dimension if original input was scalar</span>
+        <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="n">P_val</span><span class="p">)</span> <span class="k">if</span> <span class="n">jnp</span><span class="o">.</span><span class="n">ndim</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="n">P_val</span></div>
+
+
+<div class="viewcode-block" id="MassiveNeutrinos.cs2">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.MassiveNeutrinos.cs2">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">cs2</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute sound speed squared.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        lna : float or ArrayLike</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float or ArrayLike</span>
+<span class="sd">            Sound speed squared (units: dimensionless)</span>
+
+<span class="sd">        Notes:</span>
+<span class="sd">        ------</span>
+<span class="sd">        Uses equation of state parameter w as approximation.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">w</span><span class="p">(</span><span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">)</span> <span class="c1"># ZZ : Is this correct?</span></div>
+
+
+<div class="viewcode-block" id="MassiveNeutrinos.y_ini">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.MassiveNeutrinos.y_ini">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">y_ini</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">tau_ini</span><span class="p">,</span> <span class="n">om</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute initial conditions for massive neutrino perturbations.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        k : float</span>
+<span class="sd">            Wavenumber (units: Mpc^{-1})</span>
+<span class="sd">        tau_ini : float</span>
+<span class="sd">            Initial conformal time (units: Mpc)</span>
+<span class="sd">        om : float</span>
+<span class="sd">            Matter density parameter</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        array</span>
+<span class="sd">            Initial perturbation mode values (units: dimensionless)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_ell_modes</span><span class="p">)</span>
+
+        <span class="c1"># Initial conditions for massless neutrinos first, needed here.</span>
+        <span class="n">R_nu</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;R_nu&#39;</span><span class="p">]</span>
+
+        <span class="n">delta</span> <span class="o">=</span> <span class="o">-</span> <span class="p">(</span><span class="n">k</span><span class="o">*</span><span class="n">tau_ini</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="mf">3.</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.</span><span class="o">-</span><span class="n">om</span><span class="o">*</span><span class="n">tau_ini</span><span class="o">/</span><span class="mf">5.</span><span class="p">)</span>
+        <span class="n">theta</span> <span class="o">=</span> <span class="o">-</span> <span class="n">k</span><span class="o">*</span><span class="p">(</span><span class="n">k</span><span class="o">*</span><span class="n">tau_ini</span><span class="p">)</span><span class="o">**</span><span class="mi">3</span><span class="o">/</span><span class="mf">36.</span><span class="o">/</span><span class="p">(</span><span class="mf">4.</span><span class="o">*</span><span class="n">R_nu</span><span class="o">+</span><span class="mf">15.</span><span class="p">)</span> \
+                <span class="o">*</span> <span class="p">(</span><span class="mf">4.</span><span class="o">*</span><span class="n">R_nu</span><span class="o">+</span><span class="mf">11.</span><span class="o">+</span><span class="mf">12.</span><span class="o">-</span><span class="mf">3.</span><span class="o">*</span><span class="p">(</span><span class="mf">8.</span><span class="o">*</span><span class="n">R_nu</span><span class="o">**</span><span class="mi">2</span><span class="o">+</span><span class="mf">50.</span><span class="o">*</span><span class="n">R_nu</span><span class="o">+</span><span class="mf">275.</span><span class="p">)</span><span class="o">/</span><span class="mf">20.</span><span class="o">/</span><span class="p">(</span><span class="mf">2.</span><span class="o">*</span><span class="n">R_nu</span><span class="o">+</span><span class="mf">15.</span><span class="p">)</span><span class="o">*</span><span class="n">tau_ini</span><span class="o">*</span><span class="n">om</span><span class="p">)</span>
+        <span class="n">sigma</span> <span class="o">=</span> <span class="p">(</span><span class="n">k</span><span class="o">*</span><span class="n">tau_ini</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="p">(</span><span class="mf">45.</span><span class="o">+</span><span class="mf">12.</span><span class="o">*</span><span class="n">R_nu</span><span class="p">)</span> <span class="o">*</span> <span class="mf">2.</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.</span><span class="o">+</span><span class="p">(</span><span class="mf">4.</span><span class="o">*</span><span class="n">R_nu</span><span class="o">-</span><span class="mf">5.</span><span class="p">)</span><span class="o">/</span><span class="mf">4.</span><span class="o">/</span><span class="p">(</span><span class="mf">2.</span><span class="o">*</span><span class="n">R_nu</span><span class="o">+</span><span class="mf">15.</span><span class="p">)</span><span class="o">*</span><span class="n">tau_ini</span><span class="o">*</span><span class="n">om</span><span class="p">)</span>
+
+        <span class="n">dlogf0_dlogq</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">q_3p</span> <span class="o">/</span> <span class="p">(</span><span class="mf">1.</span><span class="o">+</span><span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">q_3p</span><span class="p">))</span> <span class="c1"># Log derivative of the fermi-dirac distribution.</span>
+
+        <span class="n">idx_q1</span> <span class="o">=</span> <span class="mi">0</span> <span class="c1"># Psi0 index of first q</span>
+        <span class="n">idx_q2</span> <span class="o">=</span> <span class="n">idx_q1</span> <span class="o">+</span> <span class="mi">7</span> <span class="c1"># Psi0 index of second q</span>
+        <span class="n">idx_q3</span> <span class="o">=</span> <span class="n">idx_q2</span> <span class="o">+</span> <span class="mi">7</span> <span class="c1"># Psi0 index of third q</span>
+
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">):</span>
+            <span class="n">q</span>  <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">q_3p</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="c1"># This momentum bin.</span>
+            <span class="n">iq</span> <span class="o">=</span> <span class="n">i</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">num_ells_per_bin</span> <span class="c1"># Index in diffrax array of this momentum bin.</span>
+            <span class="c1"># ZZ : Techniclly Psi1 requires epsilon/q = 1/v, but at early times this should be 1. Should check this accuracy!</span>
+            <span class="n">first_three</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">delta</span><span class="o">/</span><span class="mf">4.</span><span class="p">,</span> <span class="n">theta</span><span class="o">/</span><span class="mf">3.</span><span class="p">,</span> <span class="n">sigma</span><span class="o">/</span><span class="mf">2.</span><span class="p">])</span> <span class="o">*</span> <span class="n">q</span> <span class="o">/</span> <span class="p">(</span><span class="mf">1.</span><span class="o">+</span><span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">q</span><span class="p">))</span>
+            <span class="n">res</span> <span class="o">=</span> <span class="n">res</span><span class="o">.</span><span class="n">at</span><span class="p">[</span><span class="n">iq</span><span class="p">:</span><span class="n">iq</span><span class="o">+</span><span class="mi">3</span><span class="p">]</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">first_three</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">res</span></div>
+
+
+<div class="viewcode-block" id="MassiveNeutrinos.y_prime">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.MassiveNeutrinos.y_prime">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">y_prime</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">metric_h_prime</span><span class="p">,</span> <span class="n">metric_eta_prime</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute time derivatives of massive neutrino perturbations.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        k : float</span>
+<span class="sd">            Wavenumber (units: Mpc^{-1})</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        metric_h_prime : float</span>
+<span class="sd">            Derivative of metric h</span>
+<span class="sd">        metric_eta_prime : float</span>
+<span class="sd">            Derivative of metric eta</span>
+<span class="sd">        y : array</span>
+<span class="sd">            Current perturbation mode values</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        array</span>
+<span class="sd">            Time derivatives of perturbation modes (units: dimensionless)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_ell_modes</span><span class="p">)</span>
+
+        <span class="n">a</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span>
+        <span class="n">T</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;T_ncdm&#39;</span><span class="p">]</span> <span class="o">/</span> <span class="n">a</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;m_ncdm&#39;</span><span class="p">]</span> <span class="o">/</span> <span class="n">T</span>
+        <span class="n">aH</span>  <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">aH</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span>
+        <span class="n">tau</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">tau</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span>
+
+        <span class="c1"># Iterate through momentum bins</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">):</span>
+            <span class="n">q</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">q_3p</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+            <span class="n">epsilon</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">q</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="n">x</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+            <span class="n">dlnf0_dlnq</span> <span class="o">=</span> <span class="o">-</span><span class="n">q</span> <span class="o">/</span> <span class="p">(</span><span class="n">q</span><span class="o">+</span><span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">q</span><span class="p">))</span>
+
+            <span class="c1"># NOTE: The entries are [Psi0, k * Psi1, Psi2, ...]. If accessing Psi1 make sure to divide out k</span>
+            <span class="n">L</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_ells_per_bin</span><span class="p">)</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">delta_idx</span> <span class="o">+</span> <span class="n">i</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">num_ells_per_bin</span>
+            <span class="n">Psi</span> <span class="o">=</span> <span class="n">y</span><span class="p">[</span><span class="n">L</span><span class="p">]</span>
+
+            <span class="n">Psi0_prime</span> <span class="o">=</span> <span class="o">-</span><span class="n">q</span><span class="o">*</span><span class="n">k</span><span class="o">/</span><span class="n">epsilon</span><span class="o">/</span><span class="n">aH</span><span class="o">*</span><span class="n">Psi</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">metric_h_prime</span><span class="o">/</span><span class="mf">6.</span> <span class="o">*</span> <span class="n">dlnf0_dlnq</span>
+            <span class="n">kPsi1_prime</span> <span class="o">=</span> <span class="n">q</span><span class="o">*</span><span class="n">k</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="mf">3.</span><span class="o">/</span><span class="n">epsilon</span><span class="o">/</span><span class="n">aH</span> <span class="o">*</span> <span class="p">(</span><span class="n">Psi</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="mf">2.</span><span class="o">*</span><span class="n">Psi</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+            <span class="n">Psi2_prime</span> <span class="o">=</span> <span class="n">q</span><span class="o">*</span><span class="n">k</span><span class="o">/</span><span class="mf">5.</span><span class="o">/</span><span class="n">epsilon</span><span class="o">/</span><span class="n">aH</span> <span class="o">*</span> <span class="p">(</span><span class="mf">2.</span><span class="o">*</span><span class="n">Psi</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">/</span><span class="n">k</span> <span class="o">-</span> <span class="mf">3.</span><span class="o">*</span><span class="n">Psi</span><span class="p">[</span><span class="mi">3</span><span class="p">])</span> <span class="o">-</span> <span class="p">(</span><span class="n">metric_h_prime</span><span class="o">/</span><span class="mf">15.</span> <span class="o">+</span> <span class="mf">2.</span><span class="o">*</span><span class="n">metric_eta_prime</span><span class="o">/</span><span class="mf">5.</span><span class="p">)</span> <span class="o">*</span> <span class="n">dlnf0_dlnq</span>
+            
+            <span class="c1"># Intermediate hierarchy, 3&lt;=L&lt;lmax</span>
+            <span class="n">lmax</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_ells_per_bin</span> <span class="o">-</span> <span class="mi">1</span>
+            <span class="n">L_inter</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="n">lmax</span><span class="p">)</span> <span class="c1"># Doesn&#39;t include lmax.</span>
+            <span class="n">Psi_inter_prime</span> <span class="o">=</span> <span class="n">q</span><span class="o">*</span><span class="n">k</span><span class="o">/</span><span class="n">epsilon</span><span class="o">/</span><span class="n">aH</span><span class="o">/</span><span class="p">(</span><span class="mi">2</span><span class="o">*</span><span class="n">L_inter</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">L_inter</span><span class="o">*</span><span class="n">Psi</span><span class="p">[</span><span class="n">L_inter</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="p">(</span><span class="n">L_inter</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">*</span><span class="n">Psi</span><span class="p">[</span><span class="n">L_inter</span><span class="o">+</span><span class="mi">1</span><span class="p">])</span>
+
+            <span class="c1"># lmax mode</span>
+            <span class="n">Psi_lmax_prime</span> <span class="o">=</span> <span class="n">q</span><span class="o">*</span><span class="n">k</span><span class="o">/</span><span class="n">aH</span><span class="o">/</span><span class="n">epsilon</span><span class="o">*</span><span class="n">Psi</span><span class="p">[</span><span class="n">lmax</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="p">(</span><span class="n">lmax</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">/</span><span class="n">aH</span><span class="o">/</span><span class="n">tau</span><span class="o">*</span><span class="n">Psi</span><span class="p">[</span><span class="n">lmax</span><span class="p">]</span>
+
+            <span class="c1"># Putting it all together</span>
+            <span class="n">subres</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">concatenate</span><span class="p">((</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">Psi0_prime</span><span class="p">,</span> <span class="n">kPsi1_prime</span><span class="p">,</span> <span class="n">Psi2_prime</span><span class="p">]),</span> <span class="n">Psi_inter_prime</span><span class="p">,</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">Psi_lmax_prime</span><span class="p">])))</span>
+            <span class="n">res</span> <span class="o">=</span> <span class="n">res</span><span class="o">.</span><span class="n">at</span><span class="p">[</span><span class="n">i</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">num_ells_per_bin</span><span class="p">:(</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">num_ells_per_bin</span><span class="p">]</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">subres</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">res</span></div>
+
+
+<div class="viewcode-block" id="MassiveNeutrinos.rho_delta">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.MassiveNeutrinos.rho_delta">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">rho_delta</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute massive neutrino density perturbation.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        y : array</span>
+<span class="sd">            Perturbation mode values</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            Density perturbation (units: eV cm^{-3})</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">a</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span>
+        <span class="n">T</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;T_ncdm&#39;</span><span class="p">]</span> <span class="o">/</span> <span class="n">a</span>  <span class="c1"># (N,)</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;m_ncdm&#39;</span><span class="p">]</span> <span class="o">/</span> <span class="n">T</span>  <span class="c1"># (N,)</span>
+
+        <span class="n">res</span> <span class="o">=</span> <span class="mf">0.</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_q_bins</span><span class="p">):</span>
+            <span class="n">q</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">q_3p</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+            <span class="n">w</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">w_3p</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+            <span class="n">epsilon</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">q</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="n">x</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+            <span class="n">Psi0</span> <span class="o">=</span> <span class="n">y</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">delta_idx</span> <span class="o">+</span> <span class="n">i</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">num_ells_per_bin</span><span class="p">]</span>
+
+            <span class="n">res</span> <span class="o">+=</span> <span class="n">w</span><span class="o">*</span><span class="p">(</span><span class="mf">1.</span><span class="o">+</span><span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">q</span><span class="p">))</span><span class="o">*</span><span class="n">epsilon</span><span class="o">/</span><span class="n">q</span><span class="o">**</span><span class="mi">2</span> <span class="o">*</span> <span class="n">Psi0</span>
+        <span class="k">return</span> <span class="n">res</span> <span class="o">*</span> <span class="mf">4.</span><span class="o">/</span><span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="o">**</span><span class="mi">2</span> <span class="o">*</span> <span class="n">T</span><span class="o">**</span><span class="mi">4</span> <span class="o">/</span> <span class="n">cnst</span><span class="o">.</span><span class="n">hbar</span><span class="o">**</span><span class="mi">3</span> <span class="o">/</span> <span class="n">cnst</span><span class="o">.</span><span class="n">c</span><span class="o">**</span><span class="mi">3</span></div>
+
+
+<div class="viewcode-block" id="MassiveNeutrinos.rho_plus_P_theta">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.MassiveNeutrinos.rho_plus_P_theta">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">rho_plus_P_theta</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute massive neutrino velocity perturbation.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        y : array</span>
+<span class="sd">            Perturbation mode values</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            Velocity perturbation (units: eV cm^{-3})</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">a</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span>
+        <span class="n">T</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;T_ncdm&#39;</span><span class="p">]</span> <span class="o">/</span> <span class="n">a</span>  <span class="c1"># (N,)</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;m_ncdm&#39;</span><span class="p">]</span> <span class="o">/</span> <span class="n">T</span>  <span class="c1"># (N,)</span>
+
+        <span class="n">res</span> <span class="o">=</span> <span class="mf">0.</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_q_bins</span><span class="p">):</span>
+            <span class="n">q</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">q_3p</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+            <span class="n">w</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">w_3p</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+            <span class="n">kPsi1</span> <span class="o">=</span> <span class="n">y</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">delta_idx</span><span class="o">+</span><span class="mi">1</span> <span class="o">+</span> <span class="n">i</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">num_ells_per_bin</span><span class="p">]</span>
+
+            <span class="n">res</span> <span class="o">+=</span> <span class="n">w</span><span class="o">*</span><span class="p">(</span><span class="mf">1.</span><span class="o">+</span><span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">q</span><span class="p">))</span><span class="o">/</span><span class="n">q</span> <span class="o">*</span> <span class="n">kPsi1</span>
+        <span class="k">return</span> <span class="n">res</span> <span class="o">*</span> <span class="mf">4.</span><span class="o">/</span><span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="o">**</span><span class="mi">2</span> <span class="o">*</span> <span class="n">T</span><span class="o">**</span><span class="mi">4</span> <span class="o">/</span> <span class="n">cnst</span><span class="o">.</span><span class="n">hbar</span><span class="o">**</span><span class="mi">3</span> <span class="o">/</span> <span class="n">cnst</span><span class="o">.</span><span class="n">c</span><span class="o">**</span><span class="mi">3</span></div>
+
+
+<div class="viewcode-block" id="MassiveNeutrinos.rho_plus_P_sigma">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.MassiveNeutrinos.rho_plus_P_sigma">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">rho_plus_P_sigma</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute massive neutrino shear perturbation.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        y : array</span>
+<span class="sd">            Perturbation mode values</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            Shear perturbation (units: eV cm^{-3})</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">a</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span>
+        <span class="n">T</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;T_ncdm&#39;</span><span class="p">]</span> <span class="o">/</span> <span class="n">a</span>  <span class="c1"># (N,)</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;m_ncdm&#39;</span><span class="p">]</span> <span class="o">/</span> <span class="n">T</span>  <span class="c1"># (N,)</span>
+
+        <span class="n">res</span> <span class="o">=</span> <span class="mf">0.</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_q_bins</span><span class="p">):</span>
+            <span class="n">q</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">q_3p</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+            <span class="n">w</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">w_3p</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+            <span class="n">epsilon</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">q</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="n">x</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+            <span class="n">Psi2</span> <span class="o">=</span> <span class="n">y</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">delta_idx</span><span class="o">+</span><span class="mi">2</span> <span class="o">+</span> <span class="n">i</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">num_ells_per_bin</span><span class="p">]</span>
+
+            <span class="n">res</span> <span class="o">+=</span> <span class="n">w</span><span class="o">*</span><span class="p">(</span><span class="mf">1.</span><span class="o">+</span><span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">q</span><span class="p">))</span><span class="o">/</span><span class="n">epsilon</span> <span class="o">*</span> <span class="n">Psi2</span>
+        <span class="k">return</span> <span class="n">res</span> <span class="o">*</span> <span class="mf">8.</span><span class="o">/</span><span class="mf">3.</span><span class="o">/</span><span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="o">**</span><span class="mi">2</span> <span class="o">*</span> <span class="n">T</span><span class="o">**</span><span class="mi">4</span> <span class="o">/</span> <span class="n">cnst</span><span class="o">.</span><span class="n">hbar</span><span class="o">**</span><span class="mi">3</span> <span class="o">/</span> <span class="n">cnst</span><span class="o">.</span><span class="n">c</span><span class="o">**</span><span class="mi">3</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="Baryon">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.Baryon">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">Baryon</span><span class="p">(</span><span class="n">AbstractStandardPerturbedFluid</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Baryon fluid species implementation.</span>
+
+<span class="sd">    Non-relativistic baryons with density and velocity perturbations.</span>
+
+<span class="sd">    Methods:</span>
+<span class="sd">    --------</span>
+<span class="sd">    rho : Compute baryon density (units: eV cm^{-3})</span>
+<span class="sd">    P : Compute baryon pressure (units: eV cm^{-3})</span>
+<span class="sd">    cs2 : Compute sound speed squared (units: dimensionless)</span>
+<span class="sd">    mean_mass : Compute mean baryon mass (units: eV)</span>
+<span class="sd">    y_ini : Compute initial perturbation conditions (units: dimensionless)</span>
+<span class="sd">    y_prime : Compute perturbation time derivatives (units: dimensionless)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">delta_idx</span> <span class="p">:</span> <span class="nb">int</span>
+    <span class="c1">#coupled_delta_idx : int # Index of coupled photon</span>
+    <span class="n">photon</span> <span class="p">:</span> <span class="n">AbstractPerturbedFluid</span>
+    <span class="n">num_ell_modes</span> <span class="o">=</span> <span class="mi">2</span>
+
+<div class="viewcode-block" id="Baryon.rho">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.Baryon.rho">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">rho</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute baryon density.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            Baryon density (units: eV cm^{-3})</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;omega_b&#39;</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="mf">3.</span><span class="o">*</span><span class="n">cnst</span><span class="o">.</span><span class="n">H0_over_h</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="mf">8.</span><span class="o">/</span><span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="n">cnst</span><span class="o">.</span><span class="n">G</span><span class="p">)</span> <span class="o">/</span> <span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span><span class="o">**</span><span class="mi">3</span></div>
+
+
+<div class="viewcode-block" id="Baryon.P">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.Baryon.P">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">P</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute baryon pressure.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            Baryon pressure (units: eV cm^{-3})</span>
+
+<span class="sd">        Notes:</span>
+<span class="sd">        ------</span>
+<span class="sd">        Baryon pressure is neglected, standard practice for SM baryons.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="mf">0.</span></div>
+
+
+<div class="viewcode-block" id="Baryon.cs2">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.Baryon.cs2">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">cs2</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute sound speed squared.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            Sound speed squared (units: dimensionless)</span>
+
+<span class="sd">        Notes:</span>
+<span class="sd">        ------</span>
+<span class="sd">        Adiabatic sound speed squared, taken from M&amp;B Eq. (68).</span>
+<span class="sd">        Although we can neglect the pressure, this term is important for perturbation growth</span>
+<span class="sd">        during recombination. During reionization this cs2 is negative. This is not physical</span>
+<span class="sd">        but it should not matter for cosmology.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">Tm</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">Tm</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span> <span class="c1"># Baryon temp</span>
+        <span class="n">Tg</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">TCMB</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span> <span class="c1"># Photon temp</span>
+        <span class="n">mu</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">mean_mass</span><span class="p">(</span><span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">)</span>
+        <span class="n">R</span> <span class="o">=</span> <span class="mf">4.</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">photon</span><span class="o">.</span><span class="n">rho</span><span class="p">(</span><span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">)</span><span class="o">/</span><span class="mf">3.</span><span class="o">/</span><span class="bp">self</span><span class="o">.</span><span class="n">rho</span><span class="p">(</span><span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">Tm</span><span class="o">/</span><span class="n">mu</span> <span class="o">*</span> <span class="p">(</span><span class="mf">5.</span><span class="o">/</span><span class="mf">3.</span> <span class="o">-</span> <span class="mf">2.</span><span class="o">/</span><span class="mf">3.</span><span class="o">*</span><span class="n">mu</span><span class="o">*</span><span class="n">R</span><span class="o">/</span><span class="n">cnst</span><span class="o">.</span><span class="n">me</span><span class="o">/</span><span class="n">BG</span><span class="o">.</span><span class="n">aH</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span><span class="o">/</span><span class="n">BG</span><span class="o">.</span><span class="n">tau_c</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">Tg</span><span class="o">/</span><span class="n">Tm</span> <span class="o">-</span> <span class="mf">1.</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="Baryon.mean_mass">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.Baryon.mean_mass">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">mean_mass</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute mean baryon mass at given redshift.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            Mean baryon mass (units: eV)</span>
+
+<span class="sd">        Notes:</span>
+<span class="sd">        ------</span>
+<span class="sd">        Defined to be mu = rho_b / n_b = rho_b / (nH + nHe + ne)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">denom</span> <span class="o">=</span> <span class="p">(</span><span class="mf">1.</span><span class="o">+</span><span class="n">BG</span><span class="o">.</span><span class="n">xe</span><span class="p">(</span><span class="n">lna</span><span class="p">))</span><span class="o">*</span><span class="p">(</span><span class="mf">1.</span><span class="o">-</span><span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;YHe&#39;</span><span class="p">])</span> <span class="o">+</span> <span class="n">cnst</span><span class="o">.</span><span class="n">mH</span> <span class="o">/</span> <span class="n">cnst</span><span class="o">.</span><span class="n">mHe</span> <span class="o">*</span> <span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;YHe&#39;</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">cnst</span><span class="o">.</span><span class="n">mH</span> <span class="o">/</span> <span class="n">denom</span></div>
+
+
+<div class="viewcode-block" id="Baryon.y_ini">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.Baryon.y_ini">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">y_ini</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">tau_ini</span><span class="p">,</span> <span class="n">om</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute initial conditions for baryon perturbations.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        k : float</span>
+<span class="sd">            Wavenumber (units: Mpc^{-1})</span>
+<span class="sd">        tau_ini : float</span>
+<span class="sd">            Initial conformal time (units: Mpc)</span>
+<span class="sd">        om : float</span>
+<span class="sd">            Matter density parameter</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        array</span>
+<span class="sd">            Initial perturbation mode values (units: dimensionless)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">delta</span> <span class="o">=</span> <span class="o">-</span><span class="p">(</span><span class="n">k</span><span class="o">*</span><span class="n">tau_ini</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="mf">4.</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.</span><span class="o">-</span><span class="n">om</span><span class="o">*</span><span class="n">tau_ini</span><span class="o">/</span><span class="mf">5.</span><span class="p">)</span>
+        <span class="n">theta</span> <span class="o">=</span> <span class="o">-</span> <span class="n">k</span><span class="o">**</span><span class="mi">4</span> <span class="o">*</span> <span class="n">tau_ini</span><span class="o">**</span><span class="mi">3</span><span class="o">/</span><span class="mf">36.</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.</span><span class="o">-</span><span class="mf">3.</span><span class="o">*</span><span class="p">(</span><span class="mf">1.</span><span class="o">+</span><span class="mf">5.</span><span class="o">*</span><span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;R_b&#39;</span><span class="p">]</span><span class="o">-</span><span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;R_nu&#39;</span><span class="p">])</span><span class="o">/</span><span class="mf">20.</span><span class="o">/</span><span class="p">(</span><span class="mf">1.</span><span class="o">-</span><span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;R_nu&#39;</span><span class="p">])</span><span class="o">*</span><span class="n">om</span><span class="o">*</span><span class="n">tau_ini</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">delta</span><span class="p">,</span> <span class="n">theta</span><span class="p">])</span></div>
+
+
+<div class="viewcode-block" id="Baryon.y_prime">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.Baryon.y_prime">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">y_prime</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">metric_h_prime</span><span class="p">,</span> <span class="n">metric_eta_prime</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute time derivatives of baryon perturbations.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        k : float</span>
+<span class="sd">            Wavenumber (units: Mpc^{-1})</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        metric_h_prime : float</span>
+<span class="sd">            Derivative of metric h</span>
+<span class="sd">        metric_eta_prime : float</span>
+<span class="sd">            Derivative of metric eta</span>
+<span class="sd">        y : array</span>
+<span class="sd">            Current perturbation mode values</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        array</span>
+<span class="sd">            Time derivatives of perturbation modes (units: dimensionless)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">aH</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">aH</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span>
+        <span class="n">cs2</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cs2</span><span class="p">(</span><span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">)</span>
+        <span class="n">R</span> <span class="o">=</span> <span class="mf">4.</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">photon</span><span class="o">.</span><span class="n">rho</span><span class="p">(</span><span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">)</span><span class="o">/</span><span class="mf">3.</span><span class="o">/</span><span class="bp">self</span><span class="o">.</span><span class="n">rho</span><span class="p">(</span><span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">)</span>
+        <span class="n">tau_c</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">tau_c</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span>
+
+        <span class="n">delta</span> <span class="o">=</span> <span class="n">y</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">delta_idx</span><span class="p">]</span>
+        <span class="n">theta</span> <span class="o">=</span> <span class="n">y</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">delta_idx</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">theta_g</span> <span class="o">=</span> <span class="n">y</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">photon</span><span class="o">.</span><span class="n">delta_idx</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">delta_prime</span> <span class="o">=</span> <span class="o">-</span><span class="n">theta</span><span class="o">/</span><span class="n">aH</span><span class="o">-</span><span class="n">metric_h_prime</span><span class="o">/</span><span class="mf">2.</span>
+        <span class="n">theta_prime</span> <span class="o">=</span> <span class="o">-</span><span class="n">theta</span> <span class="o">+</span> <span class="n">cs2</span><span class="o">*</span><span class="n">k</span><span class="o">**</span><span class="mi">2</span><span class="o">*</span><span class="n">delta</span><span class="o">/</span><span class="n">aH</span> <span class="o">+</span> <span class="n">R</span><span class="o">/</span><span class="n">tau_c</span><span class="o">/</span><span class="n">aH</span><span class="o">*</span><span class="p">(</span><span class="n">theta_g</span><span class="o">-</span><span class="n">theta</span><span class="p">)</span>
+        
+        <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">delta_prime</span><span class="p">,</span> <span class="n">theta_prime</span><span class="p">])</span></div>
+</div>
+
+
+<div class="viewcode-block" id="Photon">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.Photon">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">Photon</span><span class="p">(</span><span class="n">AbstractStandardPerturbedFluid</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Photon fluid species implementation.</span>
+
+<span class="sd">    Relativistic photons with temperature and polarization Boltzmann hierarchies.</span>
+
+<span class="sd">    Methods:</span>
+<span class="sd">    --------</span>
+<span class="sd">    rho : Compute photon density (units: eV cm^{-3})</span>
+<span class="sd">    P : Compute photon pressure (units: eV cm^{-3})</span>
+<span class="sd">    cs2 : Compute sound speed squared (units: dimensionless)</span>
+<span class="sd">    y_ini : Compute initial perturbation conditions (units: dimensionless)</span>
+<span class="sd">    y_prime : Compute perturbation time derivatives (units: dimensionless)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">delta_idx</span> <span class="p">:</span> <span class="nb">int</span>
+    <span class="n">baryon</span> <span class="p">:</span> <span class="n">AbstractPerturbedFluid</span> 
+    <span class="n">num_F_ell_modes</span> <span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">eqx</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">static</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">num_G_ell_modes</span> <span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">eqx</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">static</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">num_ell_modes</span> <span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">eqx</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">static</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">delta_idx</span><span class="p">,</span> <span class="n">baryon</span><span class="p">,</span> <span class="n">num_F_ell_modes</span><span class="o">=</span><span class="mi">7</span><span class="p">,</span> <span class="n">num_G_ell_modes</span><span class="o">=</span><span class="mi">7</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">delta_idx</span> <span class="o">=</span> <span class="n">delta_idx</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">baryon</span> <span class="o">=</span> <span class="n">baryon</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_F_ell_modes</span> <span class="o">=</span> <span class="n">num_F_ell_modes</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_G_ell_modes</span> <span class="o">=</span> <span class="n">num_G_ell_modes</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_ell_modes</span> <span class="o">=</span> <span class="n">num_F_ell_modes</span> <span class="o">+</span> <span class="n">num_G_ell_modes</span>
+
+<div class="viewcode-block" id="Photon.rho">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.Photon.rho">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">rho</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute photon density.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            Photon density (units: eV cm^{-3})</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;omega_g&#39;</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="mf">3.</span><span class="o">*</span><span class="n">cnst</span><span class="o">.</span><span class="n">H0_over_h</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="mf">8.</span><span class="o">/</span><span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="n">cnst</span><span class="o">.</span><span class="n">G</span><span class="p">)</span> <span class="o">/</span> <span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span><span class="o">**</span><span class="mi">4</span></div>
+
+
+<div class="viewcode-block" id="Photon.P">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.Photon.P">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">P</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute photon pressure.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            Photon pressure (units: eV cm^{-3})</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">rho</span><span class="p">(</span><span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">)</span><span class="o">/</span><span class="mf">3.</span></div>
+
+
+<div class="viewcode-block" id="Photon.cs2">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.Photon.cs2">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">cs2</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute sound speed squared.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            Sound speed squared (units: dimensionless)</span>
+
+<span class="sd">        Notes:</span>
+<span class="sd">        ------</span>
+<span class="sd">        For photons, sound speed is always 1/3 due to their relativistic equation of state.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="mf">1.</span><span class="o">/</span><span class="mf">3.</span></div>
+
+
+<div class="viewcode-block" id="Photon.y_ini">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.Photon.y_ini">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">y_ini</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">tau_ini</span><span class="p">,</span> <span class="n">om</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute initial conditions for photon perturbations.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        k : float</span>
+<span class="sd">            Wavenumber (units: Mpc^{-1})</span>
+<span class="sd">        tau_ini : float</span>
+<span class="sd">            Initial conformal time (units: Mpc)</span>
+<span class="sd">        om : float</span>
+<span class="sd">            Matter density parameter</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        array</span>
+<span class="sd">            Initial perturbation mode values (units: dimensionless)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">delta</span> <span class="o">=</span> <span class="o">-</span> <span class="p">(</span><span class="n">k</span><span class="o">*</span><span class="n">tau_ini</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="mf">3.</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.</span><span class="o">-</span><span class="n">om</span><span class="o">*</span><span class="n">tau_ini</span><span class="o">/</span><span class="mf">5.</span><span class="p">)</span>
+        <span class="n">theta</span> <span class="o">=</span> <span class="o">-</span> <span class="n">k</span><span class="o">**</span><span class="mi">4</span> <span class="o">*</span> <span class="n">tau_ini</span><span class="o">**</span><span class="mi">3</span><span class="o">/</span><span class="mf">36.</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.</span><span class="o">-</span><span class="mf">3.</span><span class="o">*</span><span class="p">(</span><span class="mf">1.</span><span class="o">+</span><span class="mf">5.</span><span class="o">*</span><span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;R_b&#39;</span><span class="p">]</span><span class="o">-</span><span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;R_nu&#39;</span><span class="p">])</span><span class="o">/</span><span class="mf">20.</span><span class="o">/</span><span class="p">(</span><span class="mf">1.</span><span class="o">-</span><span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;R_nu&#39;</span><span class="p">])</span><span class="o">*</span><span class="n">om</span><span class="o">*</span><span class="n">tau_ini</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">concatenate</span><span class="p">((</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">delta</span><span class="p">,</span> <span class="n">theta</span><span class="p">]),</span> <span class="n">jnp</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_ell_modes</span> <span class="o">-</span> <span class="mi">2</span><span class="p">)))</span></div>
+
+
+<div class="viewcode-block" id="Photon.y_prime">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.AbstractSpecies.Photon.y_prime">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">y_prime</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">metric_h_prime</span><span class="p">,</span> <span class="n">metric_eta_prime</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute time derivatives of photon perturbations.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        ------------</span>
+<span class="sd">        k : float</span>
+<span class="sd">            Wavenumber (units: Mpc^{-1})</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        metric_h_prime : float</span>
+<span class="sd">            Derivative of metric h</span>
+<span class="sd">        metric_eta_prime : float</span>
+<span class="sd">            Derivative of metric eta</span>
+<span class="sd">        y : array</span>
+<span class="sd">            Current perturbation mode values</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        array</span>
+<span class="sd">            Time derivatives of perturbation modes (units: dimensionless)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">aH</span>    <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">aH</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span>
+        <span class="n">tau_c</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">tau_c</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span>
+        <span class="n">tau</span>   <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">tau</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span>
+
+        <span class="n">Flmax</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_F_ell_modes</span><span class="o">-</span><span class="mi">1</span>
+        <span class="n">Glmax</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_G_ell_modes</span><span class="o">-</span><span class="mi">1</span>
+        <span class="n">F</span> <span class="o">=</span> <span class="n">lax</span><span class="o">.</span><span class="n">dynamic_slice</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">delta_idx</span><span class="p">,),</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_F_ell_modes</span><span class="p">,))</span>
+        <span class="n">G</span> <span class="o">=</span> <span class="n">lax</span><span class="o">.</span><span class="n">dynamic_slice</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">delta_idx</span><span class="o">+</span><span class="bp">self</span><span class="o">.</span><span class="n">num_F_ell_modes</span><span class="p">,),</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_G_ell_modes</span><span class="p">,))</span>
+        <span class="n">delta</span> <span class="o">=</span> <span class="n">F</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">theta</span> <span class="o">=</span> <span class="n">F</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">sigma</span> <span class="o">=</span> <span class="n">F</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+        <span class="n">theta_b</span> <span class="o">=</span> <span class="n">y</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">baryon</span><span class="o">.</span><span class="n">delta_idx</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span>
+
+        <span class="n">delta_prime</span> <span class="o">=</span> <span class="o">-</span><span class="mf">4.</span><span class="o">/</span><span class="mf">3.</span><span class="o">/</span><span class="n">aH</span><span class="o">*</span><span class="n">theta</span> <span class="o">-</span> <span class="mf">2.</span><span class="o">/</span><span class="mf">3.</span><span class="o">*</span><span class="n">metric_h_prime</span>
+        <span class="n">theta_prime</span> <span class="o">=</span> <span class="n">k</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="n">aH</span><span class="o">*</span><span class="p">(</span><span class="n">delta</span><span class="o">/</span><span class="mf">4.</span><span class="o">-</span><span class="n">sigma</span><span class="p">)</span> <span class="o">+</span> <span class="p">(</span><span class="n">theta_b</span><span class="o">-</span><span class="n">theta</span><span class="p">)</span><span class="o">/</span><span class="n">aH</span><span class="o">/</span><span class="n">tau_c</span>
+        <span class="n">sigma_prime</span> <span class="o">=</span> <span class="mf">4.</span><span class="o">/</span><span class="mf">15.</span><span class="o">/</span><span class="n">aH</span><span class="o">*</span><span class="n">theta</span> <span class="o">-</span> <span class="mf">3.</span><span class="o">/</span><span class="mf">10.</span><span class="o">*</span><span class="n">k</span><span class="o">/</span><span class="n">aH</span><span class="o">*</span><span class="n">F</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span> <span class="o">+</span> <span class="mf">2.</span><span class="o">/</span><span class="mf">15.</span><span class="o">*</span><span class="n">metric_h_prime</span> <span class="o">+</span> <span class="mf">4.</span><span class="o">/</span><span class="mf">5.</span><span class="o">*</span><span class="n">metric_eta_prime</span> <span class="o">-</span> <span class="mf">9.</span><span class="o">/</span><span class="mf">10.</span><span class="o">/</span><span class="n">aH</span><span class="o">/</span><span class="n">tau_c</span><span class="o">*</span><span class="n">sigma</span> <span class="o">+</span> <span class="p">(</span><span class="n">G</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">+</span><span class="n">G</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span><span class="o">/</span><span class="mf">20.</span><span class="o">/</span><span class="n">aH</span><span class="o">/</span><span class="n">tau_c</span>
+        <span class="n">F3_prime</span>    <span class="o">=</span> <span class="n">k</span><span class="o">/</span><span class="mf">7.</span><span class="o">/</span><span class="n">aH</span> <span class="o">*</span> <span class="p">(</span><span class="mf">6.</span><span class="o">*</span><span class="n">sigma</span> <span class="o">-</span> <span class="mf">4.</span><span class="o">*</span><span class="n">F</span><span class="p">[</span><span class="mi">4</span><span class="p">])</span> <span class="o">-</span> <span class="n">F</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span><span class="o">/</span><span class="n">aH</span><span class="o">/</span><span class="n">tau_c</span>
+
+        <span class="c1"># Temperature Boltzmann Hierarchy</span>
+        <span class="n">L</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="n">Flmax</span><span class="p">)</span> <span class="c1"># Excludes the lmax mode</span>
+        <span class="n">Fl_prime</span>    <span class="o">=</span> <span class="mf">1.</span><span class="o">/</span><span class="p">(</span><span class="mf">2.</span><span class="o">*</span><span class="n">L</span><span class="o">+</span><span class="mf">1.</span><span class="p">)</span><span class="o">*</span><span class="n">k</span><span class="o">/</span><span class="n">aH</span> <span class="o">*</span> <span class="p">(</span><span class="n">L</span><span class="o">*</span><span class="n">F</span><span class="p">[</span><span class="n">L</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">-</span><span class="p">(</span><span class="n">L</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">*</span><span class="n">F</span><span class="p">[</span><span class="n">L</span><span class="o">+</span><span class="mi">1</span><span class="p">])</span> <span class="o">-</span> <span class="n">F</span><span class="p">[</span><span class="n">L</span><span class="p">]</span><span class="o">/</span><span class="n">aH</span><span class="o">/</span><span class="n">tau_c</span>
+        <span class="n">Flmax_prime</span> <span class="o">=</span> <span class="n">k</span><span class="o">/</span><span class="n">aH</span><span class="o">*</span><span class="n">F</span><span class="p">[</span><span class="n">Flmax</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="p">(</span><span class="n">Flmax</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">/</span><span class="n">aH</span><span class="o">/</span><span class="n">tau</span><span class="o">*</span><span class="n">F</span><span class="p">[</span><span class="n">Flmax</span><span class="p">]</span> <span class="o">-</span> <span class="n">F</span><span class="p">[</span><span class="n">Flmax</span><span class="p">]</span><span class="o">/</span><span class="n">aH</span><span class="o">/</span><span class="n">tau_c</span>
+
+        <span class="c1"># Polarization Boltzmann Hierarchy</span>
+        <span class="n">L</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">Glmax</span><span class="p">)</span> <span class="c1"># Excludes the lmax mode</span>
+        <span class="n">Gl_prime</span>    <span class="o">=</span> <span class="mf">1.</span><span class="o">/</span><span class="p">(</span><span class="mf">2.</span><span class="o">*</span><span class="n">L</span><span class="o">+</span><span class="mf">1.</span><span class="p">)</span><span class="o">*</span><span class="n">k</span><span class="o">/</span><span class="n">aH</span> <span class="o">*</span> <span class="p">(</span><span class="n">L</span><span class="o">*</span><span class="n">G</span><span class="p">[</span><span class="n">L</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">-</span><span class="p">(</span><span class="n">L</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">*</span><span class="n">G</span><span class="p">[</span><span class="n">L</span><span class="o">+</span><span class="mi">1</span><span class="p">])</span> <span class="o">-</span> <span class="n">G</span><span class="p">[</span><span class="n">L</span><span class="p">]</span><span class="o">/</span><span class="n">aH</span><span class="o">/</span><span class="n">tau_c</span> \
+                    <span class="o">+</span> <span class="p">(</span><span class="mf">2.</span><span class="o">*</span><span class="n">sigma</span><span class="o">+</span><span class="n">G</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">+</span><span class="n">G</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span><span class="o">/</span><span class="mf">2.</span><span class="o">/</span><span class="n">aH</span><span class="o">/</span><span class="n">tau_c</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">concatenate</span><span class="p">((</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">1.</span><span class="p">,</span> <span class="mf">0.</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">]),</span> <span class="n">jnp</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">Glmax</span><span class="o">-</span><span class="mi">3</span><span class="p">)))</span>
+
+        <span class="n">Glmax_prime</span> <span class="o">=</span> <span class="n">k</span><span class="o">/</span><span class="n">aH</span><span class="o">*</span><span class="n">G</span><span class="p">[</span><span class="n">Glmax</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="p">(</span><span class="n">Glmax</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">/</span><span class="n">aH</span><span class="o">/</span><span class="n">tau</span><span class="o">*</span><span class="n">G</span><span class="p">[</span><span class="n">Glmax</span><span class="p">]</span> <span class="o">-</span> <span class="n">G</span><span class="p">[</span><span class="n">Glmax</span><span class="p">]</span><span class="o">/</span><span class="n">aH</span><span class="o">/</span><span class="n">tau_c</span>
+        <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">concatenate</span><span class="p">((</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">delta_prime</span><span class="p">,</span> <span class="n">theta_prime</span><span class="p">,</span> <span class="n">sigma_prime</span><span class="p">,</span> <span class="n">F3_prime</span><span class="p">]),</span> <span class="n">Fl_prime</span><span class="p">,</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">Flmax_prime</span><span class="p">]),</span> <span class="n">Gl_prime</span><span class="p">,</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">Glmax_prime</span><span class="p">])))</span></div>
+</div>
+
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../index.html">ABCMB</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../getting-started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">ABCMB</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../index.html">Documentation overview</a><ul>
+  <li><a href="../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2025, Zilu Zhou, Cara Giovanetti, and Hongwan Liu.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.2.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>

@@ -37,26 +37,985 @@
 <section id="submodules">
 <h2>Submodules<a class="headerlink" href="#submodules" title="Link to this heading">¶</a></h2>
 </section>
-<section id="abcmb-hyrax-array-with-padding-module">
-<h2>ABCMB.hyrax.array_with_padding module<a class="headerlink" href="#abcmb-hyrax-array-with-padding-module" title="Link to this heading">¶</a></h2>
+<section id="module-ABCMB.hyrax.array_with_padding">
+<span id="abcmb-hyrax-array-with-padding-module"></span><h2>ABCMB.hyrax.array_with_padding module<a class="headerlink" href="#module-ABCMB.hyrax.array_with_padding" title="Link to this heading">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="ABCMB.hyrax.array_with_padding.array_with_padding">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">ABCMB.hyrax.array_with_padding.</span></span><span class="sig-name descname"><span class="pre">array_with_padding</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">arr</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/ABCMB/hyrax/array_with_padding.html#array_with_padding"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#ABCMB.hyrax.array_with_padding.array_with_padding" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code></p>
+<p>Array container with automatic padding management.</p>
+<p>Manages arrays with infinite padding, tracking valid data boundaries
+and providing concatenation operations for sequential data assembly.</p>
+<section id="methods">
+<h3>Methods:<a class="headerlink" href="#methods" title="Link to this heading">¶</a></h3>
+<p>concat : Concatenate with another array_with_padding instance (units: same as input)</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="ABCMB.hyrax.array_with_padding.array_with_padding.arr">
+<span class="sig-name descname"><span class="pre">arr</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">array</span></em><a class="headerlink" href="#ABCMB.hyrax.array_with_padding.array_with_padding.arr" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ABCMB.hyrax.array_with_padding.array_with_padding.concat">
+<span class="sig-name descname"><span class="pre">concat</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">other_arr</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/ABCMB/hyrax/array_with_padding.html#array_with_padding.concat"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#ABCMB.hyrax.array_with_padding.array_with_padding.concat" title="Link to this definition">¶</a></dt>
+<dd><p>Concatenate with another array_with_padding instance.</p>
+<p>Combines arrays while properly managing padding boundaries.
+The current array appears first in the concatenation.</p>
+<section id="parameters">
+<h4>Parameters:<a class="headerlink" href="#parameters" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>other_arr<span class="classifier">array_with_padding</span></dt><dd><p>Another array_with_padding instance to concatenate</p>
+</dd>
+</dl>
 </section>
-<section id="abcmb-hyrax-cosmology-module">
-<h2>ABCMB.hyrax.cosmology module<a class="headerlink" href="#abcmb-hyrax-cosmology-module" title="Link to this heading">¶</a></h2>
+<section id="returns">
+<h4>Returns:<a class="headerlink" href="#returns" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>array_with_padding</dt><dd><p>New instance containing concatenated arrays with updated padding</p>
+</dd>
+</dl>
 </section>
-<section id="abcmb-hyrax-helium-module">
-<h2>ABCMB.hyrax.helium module<a class="headerlink" href="#abcmb-hyrax-helium-module" title="Link to this heading">¶</a></h2>
+<section id="raises">
+<h4>Raises:<a class="headerlink" href="#raises" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>TypeError</dt><dd><p>If other_arr is not an array_with_padding instance</p>
+</dd>
+</dl>
 </section>
-<section id="abcmb-hyrax-hydrogen-module">
-<h2>ABCMB.hyrax.hydrogen module<a class="headerlink" href="#abcmb-hyrax-hydrogen-module" title="Link to this heading">¶</a></h2>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="ABCMB.hyrax.array_with_padding.array_with_padding.lastnum">
+<span class="sig-name descname"><span class="pre">lastnum</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><a class="headerlink" href="#ABCMB.hyrax.array_with_padding.array_with_padding.lastnum" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="ABCMB.hyrax.array_with_padding.array_with_padding.lastval">
+<span class="sig-name descname"><span class="pre">lastval</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float64</span></em><a class="headerlink" href="#ABCMB.hyrax.array_with_padding.array_with_padding.lastval" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="ABCMB.hyrax.array_with_padding.array_with_padding.padding_size">
+<span class="sig-name descname"><span class="pre">padding_size</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><a class="headerlink" href="#ABCMB.hyrax.array_with_padding.array_with_padding.padding_size" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
 </section>
-<section id="abcmb-hyrax-hyrax-module">
-<h2>ABCMB.hyrax.hyrax module<a class="headerlink" href="#abcmb-hyrax-hyrax-module" title="Link to this heading">¶</a></h2>
+</dd></dl>
+
 </section>
-<section id="abcmb-hyrax-recomb-functions-module">
-<h2>ABCMB.hyrax.recomb_functions module<a class="headerlink" href="#abcmb-hyrax-recomb-functions-module" title="Link to this heading">¶</a></h2>
+<section id="module-ABCMB.hyrax.cosmology">
+<span id="abcmb-hyrax-cosmology-module"></span><h2>ABCMB.hyrax.cosmology module<a class="headerlink" href="#module-ABCMB.hyrax.cosmology" title="Link to this heading">¶</a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="ABCMB.hyrax.cosmology.Hubble">
+<span class="sig-prename descclassname"><span class="pre">ABCMB.hyrax.cosmology.</span></span><span class="sig-name descname"><span class="pre">Hubble</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">z</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">h</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">omega_b</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">omega_cdm</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">omega_rad</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/ABCMB/hyrax/cosmology.html#Hubble"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#ABCMB.hyrax.cosmology.Hubble" title="Link to this definition">¶</a></dt>
+<dd><p>Computes the Hubble constant at given redshift and values of relevant cosmology parameters.</p>
+<p>Dimensions: s^{-1}</p>
+<p>WARNING: Assumes flatness (i.e. Om_m + Om_r + Om_Lambda = 1)</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>z</strong> (<em>float/jnp.array</em>) – Requested redshift(s)</p></li>
+<li><p><strong>h</strong> (<em>float</em>) – Cosmological parameter, reduced Hubble parameter today defined as H0 / (100 km/s/Mpc)</p></li>
+<li><p><strong>omega_b</strong> (<em>float</em>) – Cosmological parameter, baryon density fraction today.</p></li>
+<li><p><strong>omega_cdm</strong> (<em>float</em>) – Cosmological parameter, cold dark matter density fraction today.</p></li>
+<li><p><strong>omega_rad</strong> (<em>float</em>) – Cosmological parameter, radiation density fraction today.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>H</strong> – Hubble parameter at requested redshifts, in s^{-1}.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float/jnp.array</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ABCMB.hyrax.cosmology.TCMB">
+<span class="sig-prename descclassname"><span class="pre">ABCMB.hyrax.cosmology.</span></span><span class="sig-name descname"><span class="pre">TCMB</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">z</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/ABCMB/hyrax/cosmology.html#TCMB"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#ABCMB.hyrax.cosmology.TCMB" title="Link to this definition">¶</a></dt>
+<dd><p>Computes the CMB temperature at redshift z.</p>
+<p>Dimensions: eV</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>z</strong> (<em>float/jnp.array</em>) – Requested redshift(s).</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>TCMB</strong> – CMB temperature.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float/jnp.array</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ABCMB.hyrax.cosmology.a">
+<span class="sig-prename descclassname"><span class="pre">ABCMB.hyrax.cosmology.</span></span><span class="sig-name descname"><span class="pre">a</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">z</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/ABCMB/hyrax/cosmology.html#a"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#ABCMB.hyrax.cosmology.a" title="Link to this definition">¶</a></dt>
+<dd><p>Converts redshift to scale factor.</p>
+<p>Dimensions: None</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>z</strong> (<em>float/jnp.array</em>) – Requested redshift(s)</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>a</strong> – Scale factor</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float/jnp.array</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ABCMB.hyrax.cosmology.nH">
+<span class="sig-prename descclassname"><span class="pre">ABCMB.hyrax.cosmology.</span></span><span class="sig-name descname"><span class="pre">nH</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">z</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">omega_b</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">YHe</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/ABCMB/hyrax/cosmology.html#nH"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#ABCMB.hyrax.cosmology.nH" title="Link to this definition">¶</a></dt>
+<dd><p>Computes the total hydrogen number density at redshift z.</p>
+<p>Dimensions: cm^{-3}</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>z</strong> (<em>float/jnp.array</em>) – Requested redshift(s).</p></li>
+<li><p><strong>omega_b</strong> (<em>float</em>) – Cosmological parameter, baryon density fraction today.</p></li>
+<li><p><strong>YHe</strong> (<em>float</em>) – Helium mass fraction.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>nH</strong> – Hydrogen number density at redshift z.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ABCMB.hyrax.cosmology.omega_rad0">
+<span class="sig-prename descclassname"><span class="pre">ABCMB.hyrax.cosmology.</span></span><span class="sig-name descname"><span class="pre">omega_rad0</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">Neff</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3.044</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/ABCMB/hyrax/cosmology.html#omega_rad0"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#ABCMB.hyrax.cosmology.omega_rad0" title="Link to this definition">¶</a></dt>
+<dd><p>Calculates radiation density today.</p>
+<p>Dimensions: None</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>Neff</strong> (<em>float</em>) – Cosmological parameter, effective number of neutrino species</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>omega_rad0</strong> – The radiation density today.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
 </section>
-<section id="module-contents">
-<h2>Module contents<a class="headerlink" href="#module-contents" title="Link to this heading">¶</a></h2>
+<section id="module-ABCMB.hyrax.helium">
+<span id="abcmb-hyrax-helium-module"></span><h2>ABCMB.hyrax.helium module<a class="headerlink" href="#module-ABCMB.hyrax.helium" title="Link to this heading">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="ABCMB.hyrax.helium.helium_model">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">ABCMB.hyrax.helium.</span></span><span class="sig-name descname"><span class="pre">helium_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">lna_axis_4Heequil</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">integration_spacing</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0005</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">Nsteps</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">800</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">Nsteps_postSahaHe</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">4000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">z0</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">8000.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">z1</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">20.0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/ABCMB/hyrax/helium.html#helium_model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#ABCMB.hyrax.helium.helium_model" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code></p>
+<p>Helium recombination model implementation.</p>
+<p>Computes helium ionization fraction evolution through multiple phases:
+HeII+III equilibrium, post-Saha HeII expansion, and full HeII recombination.</p>
+<section id="id1">
+<h3>Methods:<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h3>
+<p>get_helium_history : Compute full helium recombination history (units: dimensionless)
+xesaha_HeII_III : Compute HeII+III equilibrium phase (units: dimensionless)
+post_saha_xHeII : Compute post-Saha HeII expansion (units: dimensionless)
+solve_HeII_full : Solve full HeII recombination (units: dimensionless)
+xHeII_post_Saha : Compute HeII fraction in post-Saha regime (units: dimensionless)
+xH1_Saha : Compute neutral hydrogen fraction in Saha equilibrium (units: dimensionless)
+helium_dxHeIIdlna : Compute HeII recombination rate (units: dimensionless)
+xe_derivative_HeII : Compute HeII derivative for ODE integration (units: dimensionless)</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="ABCMB.hyrax.helium.helium_model.concrete_axis_size">
+<span class="sig-name descname"><span class="pre">concrete_axis_size</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">array</span></em><a class="headerlink" href="#ABCMB.hyrax.helium.helium_model.concrete_axis_size" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="ABCMB.hyrax.helium.helium_model.concrete_axis_size_postSahaHe">
+<span class="sig-name descname"><span class="pre">concrete_axis_size_postSahaHe</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">array</span></em><a class="headerlink" href="#ABCMB.hyrax.helium.helium_model.concrete_axis_size_postSahaHe" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ABCMB.hyrax.helium.helium_model.get_helium_history">
+<span class="sig-name descname"><span class="pre">get_helium_history</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">BG</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rtol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-06</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-09</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">solver</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">Kvaerno3()</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_steps</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1024</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/ABCMB/hyrax/helium.html#helium_model.get_helium_history"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#ABCMB.hyrax.helium.helium_model.get_helium_history" title="Link to this definition">¶</a></dt>
+<dd><p>Compute complete helium recombination history through all phases.</p>
+<p>Sequentially computes helium ionization fraction through HeII+III equilibrium,
+post-Saha HeII expansion, and full HeII recombination phases.</p>
+<section id="id2">
+<h4>Parameters:<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>BG<span class="classifier">cosmology.Background</span></dt><dd><p>Background cosmology module</p>
+</dd>
+<dt>rtol<span class="classifier">float, optional</span></dt><dd><p>Relative tolerance for ODE solver (default: 1e-6)</p>
+</dd>
+<dt>atol<span class="classifier">float, optional</span></dt><dd><p>Absolute tolerance for ODE solver (default: 1e-9)</p>
+</dd>
+<dt>solver<span class="classifier">diffrax.Solver, optional</span></dt><dd><p>ODE solver instance (default: Kvaerno3())</p>
+</dd>
+<dt>max_steps<span class="classifier">int, optional</span></dt><dd><p>Maximum solver steps (default: 1024)</p>
+</dd>
+</dl>
+</section>
+<section id="id3">
+<h4>Returns:<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>tuple</dt><dd><p>(xe_4He, lna_4He) containing helium ionization fraction evolution
+and log scale factor grid</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ABCMB.hyrax.helium.helium_model.helium_dxHeIIdlna">
+<span class="sig-name descname"><span class="pre">helium_dxHeIIdlna</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">xe</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lna</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">BG</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/ABCMB/hyrax/helium.html#helium_model.helium_dxHeIIdlna"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#ABCMB.hyrax.helium.helium_model.helium_dxHeIIdlna" title="Link to this definition">¶</a></dt>
+<dd><p>Compute HeII recombination rate.</p>
+<p>Calculates rate of change of HeII ionization fraction including
+detailed atomic physics and escape probabilities.</p>
+<section id="id4">
+<h4>Parameters:<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>xe<span class="classifier">float</span></dt><dd><p>Current total ionization fraction</p>
+</dd>
+<dt>lna<span class="classifier">float</span></dt><dd><p>Log scale factor</p>
+</dd>
+<dt>BG<span class="classifier">cosmology.Background</span></dt><dd><p>Background cosmology module</p>
+</dd>
+</dl>
+</section>
+<section id="id5">
+<h4>Returns:<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>float</dt><dd><p>HeII recombination rate dxHeII/dlna (units: dimensionless)</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="ABCMB.hyrax.helium.helium_model.integration_spacing">
+<span class="sig-name descname"><span class="pre">integration_spacing</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float64</span></em><a class="headerlink" href="#ABCMB.hyrax.helium.helium_model.integration_spacing" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="ABCMB.hyrax.helium.helium_model.lna_axis_4Heequil">
+<span class="sig-name descname"><span class="pre">lna_axis_4Heequil</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">array</span></em><a class="headerlink" href="#ABCMB.hyrax.helium.helium_model.lna_axis_4Heequil" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ABCMB.hyrax.helium.helium_model.post_saha_xHeII">
+<span class="sig-name descname"><span class="pre">post_saha_xHeII</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">starting_lna</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">BG</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">threshold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-05</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/ABCMB/hyrax/helium.html#helium_model.post_saha_xHeII"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#ABCMB.hyrax.helium.helium_model.post_saha_xHeII" title="Link to this definition">¶</a></dt>
+<dd><p>Compute post-Saha HeII expansion phase.</p>
+<p>Calculates ionization fraction including corrections to Saha equilibrium
+until deviations exceed threshold.</p>
+<section id="id6">
+<h4>Parameters:<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>starting_lna<span class="classifier">float</span></dt><dd><p>Initial log scale factor</p>
+</dd>
+<dt>BG<span class="classifier">cosmology.Background</span></dt><dd><p>Background cosmology module</p>
+</dd>
+<dt>threshold<span class="classifier">float, optional</span></dt><dd><p>Threshold for deviation from Saha (default: 1e-5)</p>
+</dd>
+</dl>
+</section>
+<section id="id7">
+<h4>Returns:<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>tuple</dt><dd><p>(xe_output, lna_output) - ionization fraction and log scale factor arrays</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ABCMB.hyrax.helium.helium_model.solve_HeII_full">
+<span class="sig-name descname"><span class="pre">solve_HeII_full</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">starting_lna</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">xe0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">BG</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rtol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-06</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-09</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">solver</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">Kvaerno3()</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_steps</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1024</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/ABCMB/hyrax/helium.html#helium_model.solve_HeII_full"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#ABCMB.hyrax.helium.helium_model.solve_HeII_full" title="Link to this definition">¶</a></dt>
+<dd><p>Solve full HeII recombination evolution.</p>
+<p>Integrates HeII recombination including detailed atomic physics
+until HeII fraction becomes negligible.</p>
+<section id="id8">
+<h4>Parameters:<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>starting_lna<span class="classifier">float</span></dt><dd><p>Initial log scale factor</p>
+</dd>
+<dt>xe0<span class="classifier">float</span></dt><dd><p>Initial ionization fraction</p>
+</dd>
+<dt>BG<span class="classifier">cosmology.Background</span></dt><dd><p>Background cosmology module</p>
+</dd>
+<dt>rtol<span class="classifier">float, optional</span></dt><dd><p>Relative tolerance (default: 1e-6)</p>
+</dd>
+<dt>atol<span class="classifier">float, optional</span></dt><dd><p>Absolute tolerance (default: 1e-9)</p>
+</dd>
+<dt>solver<span class="classifier">diffrax.Solver, optional</span></dt><dd><p>ODE solver (default: Kvaerno3())</p>
+</dd>
+<dt>max_steps<span class="classifier">int, optional</span></dt><dd><p>Maximum steps (default: 1024)</p>
+</dd>
+</dl>
+</section>
+<section id="id9">
+<h4>Returns:<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>tuple</dt><dd><p>(xe_output, lna_output) - ionization fraction and log scale factor arrays</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ABCMB.hyrax.helium.helium_model.xH1_Saha">
+<span class="sig-name descname"><span class="pre">xH1_Saha</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">lna</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">BG</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/ABCMB/hyrax/helium.html#helium_model.xH1_Saha"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#ABCMB.hyrax.helium.helium_model.xH1_Saha" title="Link to this definition">¶</a></dt>
+<dd><p>Compute neutral hydrogen fraction in Saha equilibrium.</p>
+<p>Calculates neutral hydrogen fraction assuming Saha equilibrium
+between hydrogen ionization and recombination.</p>
+<section id="id10">
+<h4>Parameters:<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>lna<span class="classifier">float</span></dt><dd><p>Log scale factor</p>
+</dd>
+<dt>BG<span class="classifier">cosmology.Background</span></dt><dd><p>Background cosmology module</p>
+</dd>
+</dl>
+</section>
+<section id="id11">
+<h4>Returns:<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>float</dt><dd><p>Neutral hydrogen fraction (units: dimensionless)</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ABCMB.hyrax.helium.helium_model.xHeII_post_Saha">
+<span class="sig-name descname"><span class="pre">xHeII_post_Saha</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">lna</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">BG</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/ABCMB/hyrax/helium.html#helium_model.xHeII_post_Saha"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#ABCMB.hyrax.helium.helium_model.xHeII_post_Saha" title="Link to this definition">¶</a></dt>
+<dd><p>Compute HeII fraction in post-Saha regime.</p>
+<p>Calculates HeII fraction using Saha equilibrium between HeI and HeII.</p>
+<section id="id12">
+<h4>Parameters:<a class="headerlink" href="#id12" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>lna<span class="classifier">float</span></dt><dd><p>Log scale factor</p>
+</dd>
+<dt>BG<span class="classifier">cosmology.Background</span></dt><dd><p>Background cosmology module</p>
+</dd>
+</dl>
+</section>
+<section id="id13">
+<h4>Returns:<a class="headerlink" href="#id13" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>float</dt><dd><p>HeII fraction (units: dimensionless)</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ABCMB.hyrax.helium.helium_model.xe_derivative_HeII">
+<span class="sig-name descname"><span class="pre">xe_derivative_HeII</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">lna</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">state</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">args</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/ABCMB/hyrax/helium.html#helium_model.xe_derivative_HeII"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#ABCMB.hyrax.helium.helium_model.xe_derivative_HeII" title="Link to this definition">¶</a></dt>
+<dd><p>Compute HeII derivative for ODE integration.</p>
+<p>Derivative function for HeII ionization fraction evolution
+used in ODE integration with diffrax.</p>
+<section id="id14">
+<h4>Parameters:<a class="headerlink" href="#id14" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>lna<span class="classifier">float</span></dt><dd><p>Log scale factor</p>
+</dd>
+<dt>state<span class="classifier">float</span></dt><dd><p>Current HeII ionization state</p>
+</dd>
+<dt>args<span class="classifier">cosmology.Background</span></dt><dd><p>Background cosmology module</p>
+</dd>
+</dl>
+</section>
+<section id="id15">
+<h4>Returns:<a class="headerlink" href="#id15" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>float</dt><dd><p>Time derivative of HeII fraction (units: dimensionless)</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ABCMB.hyrax.helium.helium_model.xesaha_HeII_III">
+<span class="sig-name descname"><span class="pre">xesaha_HeII_III</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">lna_axis</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">BG</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">threshold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-09</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/ABCMB/hyrax/helium.html#helium_model.xesaha_HeII_III"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#ABCMB.hyrax.helium.helium_model.xesaha_HeII_III" title="Link to this definition">¶</a></dt>
+<dd><p>Compute xe in HeII+III equilibrium phase.</p>
+<p>Calculates ionization fraction assuming equilibrium between HeII and HeIII
+until HeIII fraction drops below threshold.</p>
+<section id="id16">
+<h4>Parameters:<a class="headerlink" href="#id16" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>lna_axis<span class="classifier">array</span></dt><dd><p>Log scale factor grid</p>
+</dd>
+<dt>BG<span class="classifier">cosmology.Background</span></dt><dd><p>Background cosmology module</p>
+</dd>
+<dt>threshold<span class="classifier">float, optional</span></dt><dd><p>Threshold for HeIII fraction to stop calculation (default: 1e-9)</p>
+</dd>
+</dl>
+</section>
+<section id="id17">
+<h4>Returns:<a class="headerlink" href="#id17" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>tuple</dt><dd><p>(xe_output, lna_output) - ionization fraction and log scale factor arrays</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+</section>
+</dd></dl>
+
+</section>
+<section id="module-ABCMB.hyrax.hydrogen">
+<span id="abcmb-hyrax-hydrogen-module"></span><h2>ABCMB.hyrax.hydrogen module<a class="headerlink" href="#module-ABCMB.hyrax.hydrogen" title="Link to this heading">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="ABCMB.hyrax.hydrogen.hydrogen_model">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">ABCMB.hyrax.hydrogen.</span></span><span class="sig-name descname"><span class="pre">hydrogen_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">xe_4He</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lna_4He</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lna_axis_late</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">last_4He_lna</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">integration_spacing</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0005</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">Nsteps</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">800</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">swift</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">Array([[1.775000e+03,</span> <span class="pre">-3.631352e-02,</span> <span class="pre">3.584254e-02,</span> <span class="pre">-7.258989e-01,</span> <span class="pre">1.320773e-04],</span> <span class="pre">[1.785000e+03,</span> <span class="pre">-3.572244e-02,</span> <span class="pre">3.458601e-02,</span> <span class="pre">-7.010202e-01,</span> <span class="pre">1.288863e-04],</span> <span class="pre">[1.795000e+03,</span> <span class="pre">-3.509898e-02,</span> <span class="pre">3.318837e-02,</span> <span class="pre">-6.744851e-01,</span> <span class="pre">1.235682e-04],</span> <span class="pre">...,</span> <span class="pre">[4.395000e+03,</span> <span class="pre">-5.758125e-02,</span> <span class="pre">5.940689e-02,</span> <span class="pre">-2.958227e+00,</span> <span class="pre">5.307294e-04],</span> <span class="pre">[4.405000e+03,</span> <span class="pre">-5.645325e-02,</span> <span class="pre">6.128863e-02,</span> <span class="pre">-3.255930e+00,</span> <span class="pre">5.447182e-04],</span> <span class="pre">[4.415000e+03,</span> <span class="pre">-5.489227e-02,</span> <span class="pre">6.942021e-02,</span> <span class="pre">-4.241939e+00,</span> <span class="pre">6.363997e-04]],</span> <span class="pre">dtype=float64)</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/ABCMB/hyrax/hydrogen.html#hydrogen_model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#ABCMB.hyrax.hydrogen.hydrogen_model" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code></p>
+<p>Hydrogen recombination model implementation.</p>
+<p>Computes hydrogen ionization fraction evolution through multiple phases:
+Saha equilibrium, post-Saha expansion, HYREC-2 EMLA with two-photon processes,
+and late-time EMLA-only evolution.</p>
+<section id="id18">
+<h3>Methods:<a class="headerlink" href="#id18" title="Link to this heading">¶</a></h3>
+<p>get_hydrogen_history : Compute full hydrogen recombination history (units: dimensionless)
+Saha_equilibrium : Compute Saha equilibrium phase (units: dimensionless)
+post_Saha_expansion : Compute post-Saha expansion phase (units: dimensionless)
+solve_emla_twophoton : Solve EMLA with two-photon processes (units: dimensionless)
+solve_emla : Solve EMLA-only evolution (units: dimensionless)
+xe_derivative_twophoton : Compute ionization fraction derivative with two-photon (units: dimensionless)
+xe_tm_derivative : Compute coupled xe and Tm derivatives (units: dimensionless, eV)
+dxe_dlna_twophoton : Compute two-photon recombination rate (units: dimensionless)
+get_current_correction_func : Interpolate SWIFT correction function (units: dimensionless)
+steady_state_equations : Set up steady-state level population equations (units: dimensionless)
+Lyn_esc_rate : Compute Lyman escape rate (units: s^{-1})</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="ABCMB.hyrax.hydrogen.hydrogen_model.Lyn_esc_rate">
+<span class="sig-name descname"><span class="pre">Lyn_esc_rate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">H</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nH</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">x1s</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/ABCMB/hyrax/hydrogen.html#hydrogen_model.Lyn_esc_rate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#ABCMB.hyrax.hydrogen.hydrogen_model.Lyn_esc_rate" title="Link to this definition">¶</a></dt>
+<dd><p>Computes the Lyman-n escape rate, rate at which photons redshift past the Lyman-n line
+without being absorbed. We use the convention that n=2 is Ly-alpha, n=3 is Ly-beta…</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>n</strong> (<em>float</em>) – Requested Lyman transition level, should be greater than 2.</p></li>
+<li><p><strong>H</strong> (<em>float</em>) – Hubble parameter in s^-1.</p></li>
+<li><p><strong>nH</strong> (<em>float</em>) – Hydrogen number density in cm^-3.</p></li>
+<li><p><strong>x1s</strong> (<em>float</em>) – Fraction of 1s bound hydrogen.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>RLyn</strong> – Rate of escape of Lyman-n level.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="ABCMB.hyrax.hydrogen.hydrogen_model.concrete_axis_size">
+<span class="sig-name descname"><span class="pre">concrete_axis_size</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">array</span></em><a class="headerlink" href="#ABCMB.hyrax.hydrogen.hydrogen_model.concrete_axis_size" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ABCMB.hyrax.hydrogen.hydrogen_model.dxe_dlna_twophoton">
+<span class="sig-name descname"><span class="pre">dxe_dlna_twophoton</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">xe</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">TCMB</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">Tm</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">H</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nH</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">Delta</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/ABCMB/hyrax/hydrogen.html#hydrogen_model.dxe_dlna_twophoton"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#ABCMB.hyrax.hydrogen.hydrogen_model.dxe_dlna_twophoton" title="Link to this definition">¶</a></dt>
+<dd><p>Compute two-photon recombination rate.</p>
+<p>Calculates ionization fraction evolution rate including two-photon
+transitions using effective multilevel atom approximation.</p>
+<section id="id19">
+<h4>Parameters:<a class="headerlink" href="#id19" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>xe<span class="classifier">float</span></dt><dd><p>Current ionization fraction</p>
+</dd>
+<dt>TCMB<span class="classifier">float</span></dt><dd><p>CMB temperature (units: eV)</p>
+</dd>
+<dt>Tm<span class="classifier">float</span></dt><dd><p>Matter temperature (units: eV)</p>
+</dd>
+<dt>H<span class="classifier">float</span></dt><dd><p>Hubble parameter (units: s^{-1})</p>
+</dd>
+<dt>nH<span class="classifier">float</span></dt><dd><p>Hydrogen number density (units: cm^{-3})</p>
+</dd>
+<dt>Delta<span class="classifier">float</span></dt><dd><p>Correction function value</p>
+</dd>
+</dl>
+</section>
+<section id="id20">
+<h4>Returns:<a class="headerlink" href="#id20" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>float</dt><dd><p>Recombination rate dxe/dlna (units: dimensionless)</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ABCMB.hyrax.hydrogen.hydrogen_model.get_current_correction_func">
+<span class="sig-name descname"><span class="pre">get_current_correction_func</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">TCMB</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">BG</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/ABCMB/hyrax/hydrogen.html#hydrogen_model.get_current_correction_func"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#ABCMB.hyrax.hydrogen.hydrogen_model.get_current_correction_func" title="Link to this definition">¶</a></dt>
+<dd><p>Interpolate correction function for current cosmology.</p>
+<p>Interpolates correction function and applies cosmological parameter
+derivatives at current CMB temperature for accurate recombination rates.</p>
+<section id="id21">
+<h4>Parameters:<a class="headerlink" href="#id21" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>TCMB<span class="classifier">float</span></dt><dd><p>CMB temperature (units: eV)</p>
+</dd>
+<dt>BG<span class="classifier">cosmology.Background</span></dt><dd><p>Background cosmology module</p>
+</dd>
+</dl>
+</section>
+<section id="id22">
+<h4>Returns:<a class="headerlink" href="#id22" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>float</dt><dd><p>Correction function value (units: dimensionless)</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ABCMB.hyrax.hydrogen.hydrogen_model.get_hydrogen_history">
+<span class="sig-name descname"><span class="pre">get_hydrogen_history</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">BG</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rtol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-06</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-09</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">solver</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">Kvaerno3()</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_steps</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1024</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/ABCMB/hyrax/hydrogen.html#hydrogen_model.get_hydrogen_history"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#ABCMB.hyrax.hydrogen.hydrogen_model.get_hydrogen_history" title="Link to this definition">¶</a></dt>
+<dd><p>Compute complete hydrogen recombination history through all phases.</p>
+<p>Sequentially computes hydrogen ionization fraction through Saha equilibrium,
+post-Saha expansion, HYREC-2 EMLA with two-photon processes, and late-time
+EMLA-only evolution phases.</p>
+<section id="id23">
+<h4>Parameters:<a class="headerlink" href="#id23" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>BG<span class="classifier">cosmology.Background</span></dt><dd><p>Background cosmology module</p>
+</dd>
+<dt>rtol<span class="classifier">float, optional</span></dt><dd><p>Relative tolerance for ODE solver (default: 1e-6)</p>
+</dd>
+<dt>atol<span class="classifier">float, optional</span></dt><dd><p>Absolute tolerance for ODE solver (default: 1e-9)</p>
+</dd>
+<dt>solver<span class="classifier">diffrax.Solver, optional</span></dt><dd><p>ODE solver instance (default: Kvaerno3())</p>
+</dd>
+<dt>max_steps<span class="classifier">int, optional</span></dt><dd><p>Maximum solver steps (default: 1024)</p>
+</dd>
+</dl>
+</section>
+<section id="id24">
+<h4>Returns:<a class="headerlink" href="#id24" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>tuple</dt><dd><p>(xe_full, lna_full, Tm, lna_Tm) containing ionization fraction evolution,
+log scale factor grid, matter temperature, and temperature grid</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="ABCMB.hyrax.hydrogen.hydrogen_model.integration_spacing">
+<span class="sig-name descname"><span class="pre">integration_spacing</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float64</span></em><a class="headerlink" href="#ABCMB.hyrax.hydrogen.hydrogen_model.integration_spacing" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="ABCMB.hyrax.hydrogen.hydrogen_model.last_4He_lna">
+<span class="sig-name descname"><span class="pre">last_4He_lna</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float64</span></em><a class="headerlink" href="#ABCMB.hyrax.hydrogen.hydrogen_model.last_4He_lna" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="ABCMB.hyrax.hydrogen.hydrogen_model.lna_4He">
+<span class="sig-name descname"><span class="pre">lna_4He</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">array</span></em><a class="headerlink" href="#ABCMB.hyrax.hydrogen.hydrogen_model.lna_4He" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="ABCMB.hyrax.hydrogen.hydrogen_model.lna_axis_late">
+<span class="sig-name descname"><span class="pre">lna_axis_late</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">array</span></em><a class="headerlink" href="#ABCMB.hyrax.hydrogen.hydrogen_model.lna_axis_late" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ABCMB.hyrax.hydrogen.hydrogen_model.post_Saha_expansion">
+<span class="sig-name descname"><span class="pre">post_Saha_expansion</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">starting_lna</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">BG</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">threshold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-05</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/ABCMB/hyrax/hydrogen.html#hydrogen_model.post_Saha_expansion"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#ABCMB.hyrax.hydrogen.hydrogen_model.post_Saha_expansion" title="Link to this definition">¶</a></dt>
+<dd><p>Compute post-Saha expansion phase with two-photon corrections.</p>
+<p>Calculates ionization fraction including two-photon processes as
+perturbative corrections to Saha equilibrium until deviations
+exceed threshold.</p>
+<section id="id25">
+<h4>Parameters:<a class="headerlink" href="#id25" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>starting_lna<span class="classifier">float</span></dt><dd><p>Initial log scale factor</p>
+</dd>
+<dt>BG<span class="classifier">cosmology.Background</span></dt><dd><p>Background cosmology module</p>
+</dd>
+<dt>threshold<span class="classifier">float, optional</span></dt><dd><p>Threshold for deviation from Saha (default: 1e-5)</p>
+</dd>
+</dl>
+</section>
+<section id="id26">
+<h4>Returns:<a class="headerlink" href="#id26" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>tuple</dt><dd><p>(xe_output, lna_output) - ionization fraction and log scale factor arrays</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ABCMB.hyrax.hydrogen.hydrogen_model.solve_emla">
+<span class="sig-name descname"><span class="pre">solve_emla</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">lna_axis</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">xe0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">BG</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rtol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-07</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-09</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">solver</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">Tsit5()</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_steps</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">4096</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/ABCMB/hyrax/hydrogen.html#hydrogen_model.solve_emla"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#ABCMB.hyrax.hydrogen.hydrogen_model.solve_emla" title="Link to this definition">¶</a></dt>
+<dd><p>Solve late-time EMLA evolution without two-photon processes.</p>
+<p>Integrates hydrogen recombination using effective multilevel atom
+approximation for late times when two-photon processes are negligible.</p>
+<section id="id27">
+<h4>Parameters:<a class="headerlink" href="#id27" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>lna_axis<span class="classifier">array</span></dt><dd><p>Log scale factor grid</p>
+</dd>
+<dt>xe0<span class="classifier">float</span></dt><dd><p>Initial ionization fraction</p>
+</dd>
+<dt>BG<span class="classifier">cosmology.Background</span></dt><dd><p>Background cosmology module</p>
+</dd>
+<dt>rtol<span class="classifier">float, optional</span></dt><dd><p>Relative tolerance (default: 1e-7)</p>
+</dd>
+<dt>atol<span class="classifier">float, optional</span></dt><dd><p>Absolute tolerance (default: 1e-9)</p>
+</dd>
+<dt>solver<span class="classifier">diffrax.Solver, optional</span></dt><dd><p>ODE solver (default: Tsit5())</p>
+</dd>
+<dt>max_steps<span class="classifier">int, optional</span></dt><dd><p>Maximum steps (default: 4096)</p>
+</dd>
+</dl>
+</section>
+<section id="id28">
+<h4>Returns:<a class="headerlink" href="#id28" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>tuple</dt><dd><p>(xe_output, Tm_output) - ionization fraction and matter temperature arrays</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ABCMB.hyrax.hydrogen.hydrogen_model.solve_emla_twophoton">
+<span class="sig-name descname"><span class="pre">solve_emla_twophoton</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">lna_axis_init</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lna_axis_final</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">xe0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">BG</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rtol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-06</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-09</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">solver</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">Kvaerno3()</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_steps</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1024</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/ABCMB/hyrax/hydrogen.html#hydrogen_model.solve_emla_twophoton"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#ABCMB.hyrax.hydrogen.hydrogen_model.solve_emla_twophoton" title="Link to this definition">¶</a></dt>
+<dd><p>Solve HYREC-2 EMLA evolution with two-photon processes.</p>
+<p>Integrates hydrogen recombination including effective multilevel atom
+approximation with two-photon transitions and correction functions.</p>
+<section id="id29">
+<h4>Parameters:<a class="headerlink" href="#id29" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>lna_axis_init<span class="classifier">float</span></dt><dd><p>Initial log scale factor</p>
+</dd>
+<dt>lna_axis_final<span class="classifier">float</span></dt><dd><p>Final log scale factor</p>
+</dd>
+<dt>xe0<span class="classifier">float</span></dt><dd><p>Initial ionization fraction</p>
+</dd>
+<dt>BG<span class="classifier">cosmology.Background</span></dt><dd><p>Background cosmology module</p>
+</dd>
+<dt>rtol<span class="classifier">float, optional</span></dt><dd><p>Relative tolerance (default: 1e-6)</p>
+</dd>
+<dt>atol<span class="classifier">float, optional</span></dt><dd><p>Absolute tolerance (default: 1e-9)</p>
+</dd>
+<dt>solver<span class="classifier">diffrax.Solver, optional</span></dt><dd><p>ODE solver (default: Kvaerno3())</p>
+</dd>
+<dt>max_steps<span class="classifier">int, optional</span></dt><dd><p>Maximum steps (default: 1024)</p>
+</dd>
+</dl>
+</section>
+<section id="id30">
+<h4>Returns:<a class="headerlink" href="#id30" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>tuple</dt><dd><p>(xe_output, lna_output) - ionization fraction and log scale factor arrays</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ABCMB.hyrax.hydrogen.hydrogen_model.steady_state_equations">
+<span class="sig-name descname"><span class="pre">steady_state_equations</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">xe</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">H</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nH</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">TCMB</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">A2s</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">A2p</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">B2s</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">B2p</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">R2p2s</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">R2s2p</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">Delta</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/ABCMB/hyrax/hydrogen.html#hydrogen_model.steady_state_equations"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#ABCMB.hyrax.hydrogen.hydrogen_model.steady_state_equations" title="Link to this definition">¶</a></dt>
+<dd><p>Set up steady-state level population equations.</p>
+<p>Constructs matrix equation for hydrogen level populations in
+steady-state approximation for 2s and 2p levels.</p>
+<section id="id31">
+<h4>Parameters:<a class="headerlink" href="#id31" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>xe<span class="classifier">float</span></dt><dd><p>Current ionization fraction</p>
+</dd>
+<dt>H<span class="classifier">float</span></dt><dd><p>Hubble parameter (units: s^{-1})</p>
+</dd>
+<dt>nH<span class="classifier">float</span></dt><dd><p>Hydrogen number density (units: cm^{-3})</p>
+</dd>
+<dt>TCMB<span class="classifier">float</span></dt><dd><p>CMB temperature (units: eV)</p>
+</dd>
+<dt>A2s<span class="classifier">float</span></dt><dd><p>2s recombination coefficient (units: cm^3 s^{-1})</p>
+</dd>
+<dt>A2p<span class="classifier">float</span></dt><dd><p>2p recombination coefficient (units: cm^3 s^{-1})</p>
+</dd>
+<dt>B2s<span class="classifier">float</span></dt><dd><p>2s photoionization coefficient (units: s^{-1})</p>
+</dd>
+<dt>B2p<span class="classifier">float</span></dt><dd><p>2p photoionization coefficient (units: s^{-1})</p>
+</dd>
+<dt>R2p2s<span class="classifier">float</span></dt><dd><p>2p→2s transition rate (units: s^{-1})</p>
+</dd>
+<dt>R2s2p<span class="classifier">float</span></dt><dd><p>2s→2p transition rate (units: s^{-1})</p>
+</dd>
+<dt>Delta<span class="classifier">float</span></dt><dd><p>Correction function value</p>
+</dd>
+</dl>
+</section>
+<section id="id32">
+<h4>Returns:<a class="headerlink" href="#id32" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>tuple</dt><dd><p>(T, S) - transition matrix and source vector for level populations</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="ABCMB.hyrax.hydrogen.hydrogen_model.swift">
+<span class="sig-name descname"><span class="pre">swift</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">array</span></em><a class="headerlink" href="#ABCMB.hyrax.hydrogen.hydrogen_model.swift" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="ABCMB.hyrax.hydrogen.hydrogen_model.twog_redshift">
+<span class="sig-name descname"><span class="pre">twog_redshift</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float64</span></em><a class="headerlink" href="#ABCMB.hyrax.hydrogen.hydrogen_model.twog_redshift" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="ABCMB.hyrax.hydrogen.hydrogen_model.xe_4He">
+<span class="sig-name descname"><span class="pre">xe_4He</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">array</span></em><a class="headerlink" href="#ABCMB.hyrax.hydrogen.hydrogen_model.xe_4He" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ABCMB.hyrax.hydrogen.hydrogen_model.xe_derivative_twophoton">
+<span class="sig-name descname"><span class="pre">xe_derivative_twophoton</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">lna</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">xe</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">args</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/ABCMB/hyrax/hydrogen.html#hydrogen_model.xe_derivative_twophoton"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#ABCMB.hyrax.hydrogen.hydrogen_model.xe_derivative_twophoton" title="Link to this definition">¶</a></dt>
+<dd><p>Compute ionization fraction derivative including two-photon processes.</p>
+<p>Derivative function for hydrogen ionization fraction evolution
+including two-photon transitions and correction functions.</p>
+<section id="id33">
+<h4>Parameters:<a class="headerlink" href="#id33" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>lna<span class="classifier">float</span></dt><dd><p>Log scale factor</p>
+</dd>
+<dt>xe<span class="classifier">float</span></dt><dd><p>Current ionization fraction</p>
+</dd>
+<dt>args<span class="classifier">cosmology.Background</span></dt><dd><p>Background cosmology module</p>
+</dd>
+</dl>
+</section>
+<section id="id34">
+<h4>Returns:<a class="headerlink" href="#id34" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>float</dt><dd><p>Time derivative dxe/dlna (units: dimensionless)</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ABCMB.hyrax.hydrogen.hydrogen_model.xe_tm_derivative">
+<span class="sig-name descname"><span class="pre">xe_tm_derivative</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">lna</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">state</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">args</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/ABCMB/hyrax/hydrogen.html#hydrogen_model.xe_tm_derivative"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#ABCMB.hyrax.hydrogen.hydrogen_model.xe_tm_derivative" title="Link to this definition">¶</a></dt>
+<dd><p>Compute coupled derivatives for ionization fraction and matter temperature.</p>
+<p>Derivative function for simultaneous evolution of hydrogen ionization
+fraction and matter temperature including Compton heating/cooling.</p>
+<section id="id35">
+<h4>Parameters:<a class="headerlink" href="#id35" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>lna<span class="classifier">float</span></dt><dd><p>Log scale factor</p>
+</dd>
+<dt>state<span class="classifier">array</span></dt><dd><p>Current state [xe, Tm]</p>
+</dd>
+<dt>args<span class="classifier">cosmology.Background</span></dt><dd><p>Background cosmology module</p>
+</dd>
+</dl>
+</section>
+<section id="id36">
+<h4>Returns:<a class="headerlink" href="#id36" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>array</dt><dd><p>Time derivatives [dxe/dlna, dTm/dlna] (units: dimensionless, eV)</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+</section>
+</dd></dl>
+
+</section>
+<section id="module-ABCMB.hyrax.hyrax">
+<span id="abcmb-hyrax-hyrax-module"></span><h2>ABCMB.hyrax.hyrax module<a class="headerlink" href="#module-ABCMB.hyrax.hyrax" title="Link to this heading">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="ABCMB.hyrax.hyrax.recomb_model">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">ABCMB.hyrax.hyrax.</span></span><span class="sig-name descname"><span class="pre">recomb_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">integration_spacing</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0005</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">z_reion</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">11</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">Delta_z_reion</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">Nsteps</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">800</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">Nsteps_postSahaHe</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">4000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">z0</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">8000.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">z1</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/ABCMB/hyrax/hyrax.html#recomb_model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#ABCMB.hyrax.hyrax.recomb_model" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code></p>
+<p>Complete recombination model implementation.</p>
+<p>Combines helium and hydrogen recombination calculations with
+reionization modeling to compute full ionization history.</p>
+<section id="id37">
+<h3>Methods:<a class="headerlink" href="#id37" title="Link to this heading">¶</a></h3>
+<p>get_history : Compute complete recombination and reionization history (units: dimensionless)</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="ABCMB.hyrax.hyrax.recomb_model.Delta_z_reion">
+<span class="sig-name descname"><span class="pre">Delta_z_reion</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float64</span></em><a class="headerlink" href="#ABCMB.hyrax.hyrax.recomb_model.Delta_z_reion" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="ABCMB.hyrax.hyrax.recomb_model.He4equil_redshift">
+<span class="sig-name descname"><span class="pre">He4equil_redshift</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float64</span></em><a class="headerlink" href="#ABCMB.hyrax.hyrax.recomb_model.He4equil_redshift" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="ABCMB.hyrax.hyrax.recomb_model.concrete_axis_size">
+<span class="sig-name descname"><span class="pre">concrete_axis_size</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">array</span></em><a class="headerlink" href="#ABCMB.hyrax.hyrax.recomb_model.concrete_axis_size" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="ABCMB.hyrax.hyrax.recomb_model.concrete_axis_size_postSahaHe">
+<span class="sig-name descname"><span class="pre">concrete_axis_size_postSahaHe</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">array</span></em><a class="headerlink" href="#ABCMB.hyrax.hyrax.recomb_model.concrete_axis_size_postSahaHe" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ABCMB.hyrax.hyrax.recomb_model.get_history">
+<span class="sig-name descname"><span class="pre">get_history</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">BG</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rtol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-06</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-09</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">solver</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">Kvaerno3()</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_steps</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1024</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/ABCMB/hyrax/hyrax.html#recomb_model.get_history"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#ABCMB.hyrax.hyrax.recomb_model.get_history" title="Link to this definition">¶</a></dt>
+<dd><p>Compute complete recombination and reionization history.</p>
+<p>Combines helium recombination, hydrogen recombination, and
+reionization to produce complete ionization fraction evolution.</p>
+<section id="id38">
+<h4>Parameters:<a class="headerlink" href="#id38" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>BG<span class="classifier">cosmology.Background</span></dt><dd><p>Background cosmology module</p>
+</dd>
+<dt>rtol<span class="classifier">float, optional</span></dt><dd><p>Relative tolerance for ODE solver (default: 1e-6)</p>
+</dd>
+<dt>atol<span class="classifier">float, optional</span></dt><dd><p>Absolute tolerance for ODE solver (default: 1e-9)</p>
+</dd>
+<dt>solver<span class="classifier">diffrax.Solver, optional</span></dt><dd><p>ODE solver instance (default: Kvaerno3())</p>
+</dd>
+<dt>max_steps<span class="classifier">int, optional</span></dt><dd><p>Maximum solver steps (default: 1024)</p>
+</dd>
+</dl>
+</section>
+<section id="id39">
+<h4>Returns:<a class="headerlink" href="#id39" title="Link to this heading">¶</a></h4>
+<dl class="simple">
+<dt>tuple</dt><dd><p>(xe_full_reion, lna_full, Tm, lna_Tm) containing complete ionization
+fraction evolution with reionization, log scale factor grid,
+matter temperature, and temperature grid</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="ABCMB.hyrax.hyrax.recomb_model.idx_4He_equil">
+<span class="sig-name descname"><span class="pre">idx_4He_equil</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">array</span></em><a class="headerlink" href="#ABCMB.hyrax.hyrax.recomb_model.idx_4He_equil" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="ABCMB.hyrax.hyrax.recomb_model.idx_late">
+<span class="sig-name descname"><span class="pre">idx_late</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">array</span></em><a class="headerlink" href="#ABCMB.hyrax.hyrax.recomb_model.idx_late" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="ABCMB.hyrax.hyrax.recomb_model.integration_spacing">
+<span class="sig-name descname"><span class="pre">integration_spacing</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float64</span></em><a class="headerlink" href="#ABCMB.hyrax.hyrax.recomb_model.integration_spacing" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="ABCMB.hyrax.hyrax.recomb_model.lna_axis_full">
+<span class="sig-name descname"><span class="pre">lna_axis_full</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">array</span></em><a class="headerlink" href="#ABCMB.hyrax.hyrax.recomb_model.lna_axis_full" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="ABCMB.hyrax.hyrax.recomb_model.twog_redshift">
+<span class="sig-name descname"><span class="pre">twog_redshift</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float64</span></em><a class="headerlink" href="#ABCMB.hyrax.hyrax.recomb_model.twog_redshift" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="ABCMB.hyrax.hyrax.recomb_model.z_reion">
+<span class="sig-name descname"><span class="pre">z_reion</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float64</span></em><a class="headerlink" href="#ABCMB.hyrax.hyrax.recomb_model.z_reion" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</section>
+</dd></dl>
+
+</section>
+<section id="module-ABCMB.hyrax.recomb_functions">
+<span id="abcmb-hyrax-recomb-functions-module"></span><h2>ABCMB.hyrax.recomb_functions module<a class="headerlink" href="#module-ABCMB.hyrax.recomb_functions" title="Link to this heading">¶</a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="ABCMB.hyrax.recomb_functions.Gamma_compton">
+<span class="sig-prename descclassname"><span class="pre">ABCMB.hyrax.recomb_functions.</span></span><span class="sig-name descname"><span class="pre">Gamma_compton</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">xe</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">TCMB</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">YHe</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/ABCMB/hyrax/recomb_functions.html#Gamma_compton"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#ABCMB.hyrax.recomb_functions.Gamma_compton" title="Link to this definition">¶</a></dt>
+<dd><p>Computes the Compton scattering rate. See Eq.(2) of 1904.09296</p>
+<p>Dimensions: s^{-1}</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>xe</strong> (<em>float</em>) – Electron fraction.</p></li>
+<li><p><strong>TCMB</strong> (<em>float</em>) – CMB temperature, in eV.</p></li>
+<li><p><strong>YHe</strong> (<em>float</em>) – Helium mass fraction.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>GammaC</strong> – The Compton scattering rate</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ABCMB.hyrax.recomb_functions.effective_coefficients">
+<span class="sig-prename descclassname"><span class="pre">ABCMB.hyrax.recomb_functions.</span></span><span class="sig-name descname"><span class="pre">effective_coefficients</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">TCMB</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">Tm</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">H</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nH</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">x1s</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/ABCMB/hyrax/recomb_functions.html#effective_coefficients"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#ABCMB.hyrax.recomb_functions.effective_coefficients" title="Link to this definition">¶</a></dt>
+<dd><dl class="simple">
+<dt>Computes the effective coefficients for</dt><dd><p>Case-B recombination (A2s, A2p)
+Case-B photoionization (B2s, B2p)
+Generalized Peebles factors (C2s, C2p)</p>
+</dd>
+</dl>
+<p>in the effetive four-level-atom strategy outlined by arXiv:1011.3758.</p>
+<dl class="simple">
+<dt>Dimensions:</dt><dd><p>A2s, A2p : cm^3 s^{-1}
+B2s, B2p : s^{-1}
+C2s, C2p : None</p>
+</dd>
+</dl>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>TCMB</strong> (<em>float</em>) – Current CMB temperature, in eV.</p></li>
+<li><p><strong>Tm</strong> (<em>float</em>) – Current matter temperature, in eV.</p></li>
+<li><p><strong>H</strong> (<em>float</em>) – Current Hubble parameter, in s^{-1}.</p></li>
+<li><p><strong>nH</strong> (<em>float</em>) – Current proton (free+bound) number density, in cm^{-3}.</p></li>
+<li><p><strong>x1s</strong> (<em>float</em>) – Fraction of proton in the 1s bound state.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>coefficients</strong> – A tuple of the six relevant effective coefficients for the four-level-atom.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>tuple (float, float, float, float, float, float, float, float)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ABCMB.hyrax.recomb_functions.xe_Saha">
+<span class="sig-prename descclassname"><span class="pre">ABCMB.hyrax.recomb_functions.</span></span><span class="sig-name descname"><span class="pre">xe_Saha</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">TCMB</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nH</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/ABCMB/hyrax/recomb_functions.html#xe_Saha"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#ABCMB.hyrax.recomb_functions.xe_Saha" title="Link to this definition">¶</a></dt>
+<dd><p>Computes the free electron fraction in the Saha equilibrium approximation, valid
+at early times when matter and photons are in Chemical Equilibrium.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>TCMB</strong> (<em>float</em>) – CMB temperature, in eV</p></li>
+<li><p><strong>nH</strong> (<em>float</em>) – Current Hydrogen number density, in cm^{-3}</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>xe_saha</strong> (<em>float</em>) – Saha equilibrium prediction of free electron fraction.</p></li>
+<li><p><strong>s</strong> (<em>float</em>) – xe_saha^2/(1-xe_saha)</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="module-ABCMB.hyrax">
+<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-ABCMB.hyrax" title="Link to this heading">¶</a></h2>
 </section>
 </section>
 

@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ABCMB.hyrax.helium &#8212; ABCMB 0.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/alabaster.css?v=27fed22d" />
+    <script src="../../../_static/documentation_options.js?v=837179f8"></script>
+    <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+   
+  <link rel="stylesheet" href="../../../_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for ABCMB.hyrax.helium</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">jax.numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">jnp</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">jax</span><span class="w"> </span><span class="kn">import</span> <span class="n">jit</span><span class="p">,</span> <span class="n">config</span><span class="p">,</span> <span class="n">lax</span><span class="p">,</span> <span class="n">grad</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">equinox</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">eqx</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">diffrax</span><span class="w"> </span><span class="kn">import</span> <span class="n">diffeqsolve</span><span class="p">,</span> <span class="n">SaveAt</span><span class="p">,</span> <span class="n">ODETerm</span><span class="p">,</span> <span class="n">Kvaerno3</span><span class="p">,</span> <span class="n">PIDController</span><span class="p">,</span> <span class="n">DiscreteTerminatingEvent</span><span class="p">,</span> <span class="n">ForwardMode</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">ABCMB</span><span class="w"> </span><span class="kn">import</span> <span class="n">constants</span> <span class="k">as</span> <span class="n">cnst</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">recomb_functions</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.array_with_padding</span><span class="w"> </span><span class="kn">import</span> <span class="n">array_with_padding</span>
+<span class="n">config</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="s2">&quot;jax_enable_x64&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="helium_model">
+<a class="viewcode-back" href="../../../ABCMB.hyrax.html#ABCMB.hyrax.helium.helium_model">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">helium_model</span><span class="p">(</span><span class="n">eqx</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Helium recombination model implementation.</span>
+
+<span class="sd">    Computes helium ionization fraction evolution through multiple phases:</span>
+<span class="sd">    HeII+III equilibrium, post-Saha HeII expansion, and full HeII recombination.</span>
+
+<span class="sd">    Methods:</span>
+<span class="sd">    --------</span>
+<span class="sd">    get_helium_history : Compute full helium recombination history (units: dimensionless)</span>
+<span class="sd">    xesaha_HeII_III : Compute HeII+III equilibrium phase (units: dimensionless)</span>
+<span class="sd">    post_saha_xHeII : Compute post-Saha HeII expansion (units: dimensionless)</span>
+<span class="sd">    solve_HeII_full : Solve full HeII recombination (units: dimensionless)</span>
+<span class="sd">    xHeII_post_Saha : Compute HeII fraction in post-Saha regime (units: dimensionless)</span>
+<span class="sd">    xH1_Saha : Compute neutral hydrogen fraction in Saha equilibrium (units: dimensionless)</span>
+<span class="sd">    helium_dxHeIIdlna : Compute HeII recombination rate (units: dimensionless)</span>
+<span class="sd">    xe_derivative_HeII : Compute HeII derivative for ODE integration (units: dimensionless)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">integration_spacing</span> <span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">float64</span>
+    <span class="n">lna_axis_4Heequil</span> <span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span>
+
+    <span class="n">concrete_axis_size</span> <span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span>
+    <span class="n">concrete_axis_size_postSahaHe</span> <span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">lna_axis_4Heequil</span><span class="p">,</span><span class="n">integration_spacing</span> <span class="o">=</span> <span class="mf">5.0e-4</span><span class="p">,</span> <span class="n">Nsteps</span><span class="o">=</span><span class="mi">800</span><span class="p">,</span> <span class="n">Nsteps_postSahaHe</span><span class="o">=</span><span class="mi">4000</span><span class="p">,</span><span class="n">z0</span><span class="o">=</span><span class="mf">8000.</span><span class="p">,</span> <span class="n">z1</span><span class="o">=</span><span class="mf">20.</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Initialize helium recombination model.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        -----------</span>
+<span class="sd">        lna_axis_4Heequil : array</span>
+<span class="sd">            Log scale factor grid for HeII+III equilibrium phase</span>
+<span class="sd">        integration_spacing : float, optional</span>
+<span class="sd">            Step size for integration (default: 5.0e-4)</span>
+<span class="sd">        Nsteps : int, optional</span>
+<span class="sd">            Maximum number of integration steps (default: 800)</span>
+<span class="sd">        Nsteps_postSahaHe : int, optional</span>
+<span class="sd">            Maximum steps for post-Saha HeII phase (default: 4000)</span>
+<span class="sd">        z0 : float, optional</span>
+<span class="sd">            Initial redshift (default: 8000.)</span>
+<span class="sd">        z1 : float, optional</span>
+<span class="sd">            Final redshift (default: 20.)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">integration_spacing</span> <span class="o">=</span> <span class="n">integration_spacing</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">concrete_axis_size_postSahaHe</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">Nsteps_postSahaHe</span><span class="p">)</span>
+
+        <span class="c1"># Define time axes</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lna_axis_4Heequil</span> <span class="o">=</span> <span class="n">lna_axis_4Heequil</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">concrete_axis_size</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">Nsteps</span><span class="p">)</span>
+
+    <span class="c1"># ZZ: Modified on March 12th to replace all input cosmological parameters with the BG module. </span>
+    <span class="c1"># TODO: Finish converting all cosmology functions and parameters into the BG package.</span>
+
+    <span class="c1"># @jit # filter_jit is slower...  I&#39;d guess cache misses</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">BG</span><span class="p">,</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-9</span><span class="p">,</span><span class="n">solver</span><span class="o">=</span><span class="n">Kvaerno3</span><span class="p">(),</span><span class="n">max_steps</span><span class="o">=</span><span class="mi">1024</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute helium recombination history.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        -----------</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+<span class="sd">        rtol : float, optional</span>
+<span class="sd">            Relative tolerance for ODE solver (default: 1e-6)</span>
+<span class="sd">        atol : float, optional</span>
+<span class="sd">            Absolute tolerance for ODE solver (default: 1e-9)</span>
+<span class="sd">        solver : diffrax.Solver, optional</span>
+<span class="sd">            ODE solver instance (default: Kvaerno3())</span>
+<span class="sd">        max_steps : int, optional</span>
+<span class="sd">            Maximum solver steps (default: 1024)</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        tuple</span>
+<span class="sd">            (xe_4He, lna_4He) - helium ionization fraction and log scale factor</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_helium_history</span><span class="p">(</span><span class="n">BG</span><span class="p">,</span> <span class="n">rtol</span><span class="p">,</span> <span class="n">atol</span><span class="p">,</span> <span class="n">solver</span><span class="p">,</span> <span class="n">max_steps</span><span class="p">)</span>
+    
+<div class="viewcode-block" id="helium_model.get_helium_history">
+<a class="viewcode-back" href="../../../ABCMB.hyrax.html#ABCMB.hyrax.helium.helium_model.get_helium_history">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_helium_history</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">BG</span><span class="p">,</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-9</span><span class="p">,</span><span class="n">solver</span><span class="o">=</span><span class="n">Kvaerno3</span><span class="p">(),</span><span class="n">max_steps</span><span class="o">=</span><span class="mi">1024</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute complete helium recombination history through all phases.</span>
+
+<span class="sd">        Sequentially computes helium ionization fraction through HeII+III equilibrium,</span>
+<span class="sd">        post-Saha HeII expansion, and full HeII recombination phases.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        -----------</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+<span class="sd">        rtol : float, optional</span>
+<span class="sd">            Relative tolerance for ODE solver (default: 1e-6)</span>
+<span class="sd">        atol : float, optional</span>
+<span class="sd">            Absolute tolerance for ODE solver (default: 1e-9)</span>
+<span class="sd">        solver : diffrax.Solver, optional</span>
+<span class="sd">            ODE solver instance (default: Kvaerno3())</span>
+<span class="sd">        max_steps : int, optional</span>
+<span class="sd">            Maximum solver steps (default: 1024)</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        tuple</span>
+<span class="sd">            (xe_4He, lna_4He) containing helium ionization fraction evolution</span>
+<span class="sd">            and log scale factor grid</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Calculate omega_rad today using input Neff.</span>
+        <span class="c1"># omega_rad = cosmology.omega_rad0(Neff)</span>
+
+        <span class="c1"># Compute xe at different phases</span>
+
+        <span class="c1"># Give it a large enough array of lna to work with</span>
+        <span class="n">xe_output_4He_equil</span><span class="p">,</span> <span class="n">lna_output_4He_equil</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">xesaha_HeII_III</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lna_axis_4Heequil</span><span class="p">,</span> <span class="n">BG</span><span class="p">)</span>
+        
+        <span class="n">xe_output_4He_equil_obj</span> <span class="o">=</span> <span class="n">array_with_padding</span><span class="p">(</span><span class="n">xe_output_4He_equil</span><span class="p">)</span>
+        <span class="n">lna_output_4He_equil_obj</span> <span class="o">=</span> <span class="n">array_with_padding</span><span class="p">(</span><span class="n">lna_output_4He_equil</span><span class="p">)</span>
+
+        <span class="c1"># this one MUST start shifted by one redshift bin to avoid overlapping redshifts</span>
+        <span class="n">xe_output_4He_postSaha</span><span class="p">,</span> <span class="n">lna_output_4He_postSaha</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">post_saha_xHeII</span><span class="p">(</span><span class="n">lna_output_4He_equil_obj</span><span class="o">.</span><span class="n">lastval</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">integration_spacing</span><span class="p">,</span> <span class="n">BG</span><span class="p">)</span>
+
+        <span class="n">xe_4He_equil_post</span> <span class="o">=</span> <span class="n">xe_output_4He_equil_obj</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span><span class="n">array_with_padding</span><span class="p">(</span><span class="n">xe_output_4He_postSaha</span><span class="p">))</span>
+        <span class="n">lna_4He_equil_post</span> <span class="o">=</span> <span class="n">lna_output_4He_equil_obj</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span><span class="n">array_with_padding</span><span class="p">(</span><span class="n">lna_output_4He_postSaha</span><span class="p">))</span>
+
+        <span class="n">xe_output_4He_full</span><span class="p">,</span> <span class="n">lna_output_4He_full</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">solve_HeII_full</span><span class="p">(</span>
+            <span class="n">lna_4He_equil_post</span><span class="o">.</span><span class="n">lastval</span><span class="p">,</span> <span class="n">xe_4He_equil_post</span><span class="o">.</span><span class="n">lastval</span><span class="p">,</span> <span class="n">BG</span><span class="p">,</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-9</span><span class="p">,</span><span class="n">solver</span><span class="o">=</span><span class="n">Kvaerno3</span><span class="p">(),</span><span class="n">max_steps</span><span class="o">=</span><span class="mi">4096</span><span class="p">)</span>
+
+        <span class="n">xe_4He</span> <span class="o">=</span> <span class="n">xe_4He_equil_post</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span><span class="n">array_with_padding</span><span class="p">(</span><span class="n">xe_output_4He_full</span><span class="p">))</span>
+        <span class="n">lna_4He</span> <span class="o">=</span> <span class="n">lna_4He_equil_post</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span><span class="n">array_with_padding</span><span class="p">(</span><span class="n">lna_output_4He_full</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="p">(</span><span class="n">xe_4He</span><span class="p">,</span> <span class="n">lna_4He</span><span class="p">)</span></div>
+
+
+
+
+    <span class="c1">######################  HELIUM RECOMBINATION  ######################</span>
+
+    <span class="c1"># HYREC-2&#39;s helium.c expects T in K, but we use eV instead, hence proliferation of</span>
+    <span class="c1"># kB&#39;s.</span>
+
+    <span class="c1"># High tempateratures (z &gt;~ 4000).  Function to calculate xe in He II + III equilibrium</span>
+    <span class="c1"># We use this form until xHeIII is 1e-9</span>
+<div class="viewcode-block" id="helium_model.xesaha_HeII_III">
+<a class="viewcode-back" href="../../../ABCMB.hyrax.html#ABCMB.hyrax.helium.helium_model.xesaha_HeII_III">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">xesaha_HeII_III</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna_axis</span><span class="p">,</span> <span class="n">BG</span><span class="p">,</span> <span class="n">threshold</span><span class="o">=</span><span class="mf">1e-9</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute xe in HeII+III equilibrium phase.</span>
+
+<span class="sd">        Calculates ionization fraction assuming equilibrium between HeII and HeIII</span>
+<span class="sd">        until HeIII fraction drops below threshold.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        -----------</span>
+<span class="sd">        lna_axis : array</span>
+<span class="sd">            Log scale factor grid</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+<span class="sd">        threshold : float, optional</span>
+<span class="sd">            Threshold for HeIII fraction to stop calculation (default: 1e-9)</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        tuple</span>
+<span class="sd">            (xe_output, lna_output) - ionization fraction and log scale factor arrays</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Pre-allocate xe_output</span>
+        <span class="n">xe_output</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">lna_axis</span><span class="p">)</span><span class="o">*</span><span class="n">jnp</span><span class="o">.</span><span class="n">inf</span>
+        <span class="n">lna_output</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">lna_axis</span><span class="p">)</span><span class="o">*</span><span class="n">jnp</span><span class="o">.</span><span class="n">inf</span>
+        <span class="n">iz</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">xe</span> <span class="o">=</span> <span class="mf">1.</span> <span class="c1"># arbitrary IC</span>
+        <span class="n">stop</span> <span class="o">=</span> <span class="kc">False</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">compute_xe</span><span class="p">(</span><span class="n">carry</span><span class="p">):</span>
+            <span class="n">xe_output</span><span class="p">,</span> <span class="n">lna_output</span><span class="p">,</span> <span class="n">xe</span><span class="p">,</span> <span class="n">iz</span><span class="p">,</span> <span class="n">stop</span> <span class="o">=</span> <span class="n">carry</span>
+
+            <span class="n">lna</span> <span class="o">=</span> <span class="n">lna_axis</span><span class="p">[</span><span class="n">iz</span><span class="p">]</span>
+
+            <span class="c1"># Cosmological parameters</span>
+            <span class="n">TCMB</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">TCMB</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span>
+            <span class="n">nH</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">nH</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span>
+ 
+            <span class="c1"># compute xHeIII</span>
+            <span class="n">fHe</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;YHe&#39;</span><span class="p">]</span><span class="o">/</span><span class="p">(</span><span class="mf">1.</span><span class="o">-</span><span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;YHe&#39;</span><span class="p">])</span><span class="o">/</span><span class="mf">3.97153</span> <span class="c1"># abundance of helium by number</span>
+            <span class="c1"># Saha ratio xe * xHeIII / xHeII</span>
+            <span class="n">s</span> <span class="o">=</span> <span class="mf">2.414194e15</span> <span class="o">*</span> <span class="n">TCMB</span><span class="o">/</span><span class="n">cnst</span><span class="o">.</span><span class="n">kB</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">TCMB</span><span class="o">/</span><span class="n">cnst</span><span class="o">.</span><span class="n">kB</span><span class="p">)</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="mf">631462.7</span> <span class="o">/</span> <span class="p">(</span><span class="n">TCMB</span><span class="o">/</span><span class="n">cnst</span><span class="o">.</span><span class="n">kB</span><span class="p">))</span> <span class="o">/</span> <span class="n">nH</span>
+            <span class="n">xHeIII</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">s</span> <span class="o">*</span> <span class="n">fHe</span> <span class="o">/</span> <span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="n">s</span> <span class="o">+</span> <span class="n">fHe</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="mi">4</span> <span class="o">*</span> <span class="n">s</span> <span class="o">*</span> <span class="n">fHe</span> <span class="o">/</span> <span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="n">s</span> <span class="o">+</span> <span class="n">fHe</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span><span class="p">))</span>
+            <span class="n">xe</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">+</span> <span class="n">fHe</span> <span class="o">+</span> <span class="n">xHeIII</span>
+
+            <span class="c1"># Store current xe value in the output array</span>
+            <span class="n">xe_output</span> <span class="o">=</span> <span class="n">xe_output</span><span class="o">.</span><span class="n">at</span><span class="p">[</span><span class="n">iz</span><span class="p">]</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">xe</span><span class="p">)</span>
+            <span class="n">lna_output</span> <span class="o">=</span> <span class="n">lna_output</span><span class="o">.</span><span class="n">at</span><span class="p">[</span><span class="n">iz</span><span class="p">]</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span>
+
+            <span class="c1"># Check difference</span>
+            <span class="n">stop</span> <span class="o">=</span> <span class="n">xHeIII</span> <span class="o">&lt;</span> <span class="n">threshold</span>  <span class="c1"># Stop when xHeIII &gt; threshold</span>
+
+            <span class="c1"># Increment index</span>
+            <span class="n">iz</span> <span class="o">=</span> <span class="n">iz</span> <span class="o">+</span> <span class="mi">1</span>
+
+            <span class="k">return</span> <span class="p">(</span><span class="n">xe_output</span><span class="p">,</span> <span class="n">lna_output</span><span class="p">,</span> <span class="n">xe</span><span class="p">,</span> <span class="n">iz</span><span class="p">,</span> <span class="n">stop</span><span class="p">)</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">stop_condition</span><span class="p">(</span><span class="n">state</span><span class="p">):</span>
+            <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">iz</span><span class="p">,</span> <span class="n">stop</span> <span class="o">=</span> <span class="n">state</span>
+            <span class="k">return</span> <span class="p">(</span><span class="n">iz</span> <span class="o">&lt;</span> <span class="n">lna_axis</span><span class="o">.</span><span class="n">size</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="o">~</span><span class="n">stop</span><span class="p">)</span>  <span class="c1"># Continue until stop condition is met or we run out of space</span>
+
+        <span class="c1"># Initial state: (xe_output, xe, iz, stop flag)</span>
+        <span class="n">initial_state</span> <span class="o">=</span> <span class="p">(</span><span class="n">xe_output</span><span class="p">,</span> <span class="n">lna_output</span><span class="p">,</span> <span class="n">xe</span><span class="p">,</span> <span class="n">iz</span><span class="p">,</span> <span class="n">stop</span><span class="p">)</span>
+
+        <span class="c1"># Run the while loop until the stop condition is met</span>
+        <span class="n">final_state</span> <span class="o">=</span> <span class="n">lax</span><span class="o">.</span><span class="n">while_loop</span><span class="p">(</span><span class="n">stop_condition</span><span class="p">,</span> <span class="n">compute_xe</span><span class="p">,</span> <span class="n">initial_state</span><span class="p">)</span>
+
+        <span class="c1"># Unpack the final state</span>
+        <span class="n">xe_output_final</span><span class="p">,</span> <span class="n">lna_output_final</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">final_state</span>
+
+        <span class="c1"># Return the electron fraction array and lna</span>
+        <span class="k">return</span> <span class="n">xe_output_final</span><span class="p">,</span> <span class="n">lna_output_final</span></div>
+
+
+
+<div class="viewcode-block" id="helium_model.xHeII_post_Saha">
+<a class="viewcode-back" href="../../../ABCMB.hyrax.html#ABCMB.hyrax.helium.helium_model.xHeII_post_Saha">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">xHeII_post_Saha</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute HeII fraction in post-Saha regime.</span>
+
+<span class="sd">        Calculates HeII fraction using Saha equilibrium between HeI and HeII.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        -----------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Log scale factor</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            HeII fraction (units: dimensionless)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">fHe</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;YHe&#39;</span><span class="p">]</span><span class="o">/</span><span class="p">(</span><span class="mf">1.</span><span class="o">-</span><span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;YHe&#39;</span><span class="p">])</span><span class="o">/</span><span class="mf">3.97153</span>
+
+        <span class="n">TCMB</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">TCMB</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span>
+        <span class="n">nH</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">nH</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span>
+
+        <span class="c1"># Saha ratio xe * xHeII / xHeI</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="mi">4</span> <span class="o">*</span> <span class="mf">2.414194e15</span> <span class="o">*</span> <span class="n">TCMB</span><span class="o">/</span><span class="n">cnst</span><span class="o">.</span><span class="n">kB</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">TCMB</span><span class="o">/</span><span class="n">cnst</span><span class="o">.</span><span class="n">kB</span><span class="p">)</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="mf">285325.</span> <span class="o">/</span> <span class="p">(</span><span class="n">TCMB</span><span class="o">/</span><span class="n">cnst</span><span class="o">.</span><span class="n">kB</span><span class="p">))</span> <span class="o">/</span> <span class="n">nH</span>
+        <span class="n">xHeII</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">s</span> <span class="o">*</span> <span class="n">fHe</span> <span class="o">/</span> <span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="n">s</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="mi">4</span> <span class="o">*</span> <span class="n">s</span> <span class="o">*</span> <span class="n">fHe</span> <span class="o">/</span> <span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="n">s</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="n">xHeII</span></div>
+
+
+<div class="viewcode-block" id="helium_model.xH1_Saha">
+<a class="viewcode-back" href="../../../ABCMB.hyrax.html#ABCMB.hyrax.helium.helium_model.xH1_Saha">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">xH1_Saha</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute neutral hydrogen fraction in Saha equilibrium.</span>
+
+<span class="sd">        Calculates neutral hydrogen fraction assuming Saha equilibrium</span>
+<span class="sd">        between hydrogen ionization and recombination.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        -----------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Log scale factor</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            Neutral hydrogen fraction (units: dimensionless)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">TCMB</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">TCMB</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span>
+        <span class="n">nH</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">nH</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span>    
+        <span class="n">xHeII</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">xHeII_post_Saha</span><span class="p">(</span><span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">)</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="mf">2.4127161187130e15</span><span class="o">*</span> <span class="n">TCMB</span><span class="o">/</span><span class="n">cnst</span><span class="o">.</span><span class="n">kB</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">TCMB</span><span class="o">/</span><span class="n">cnst</span><span class="o">.</span><span class="n">kB</span><span class="p">)</span><span class="o">*</span><span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="mf">157801.37882</span><span class="o">/</span><span class="p">(</span><span class="n">TCMB</span><span class="o">/</span><span class="n">cnst</span><span class="o">.</span><span class="n">kB</span><span class="p">))</span><span class="o">/</span><span class="n">nH</span>
+        <span class="n">xH1</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">s</span><span class="o">&gt;</span><span class="mf">1e5</span><span class="p">,(</span><span class="mf">1.</span><span class="o">+</span><span class="n">xHeII</span><span class="p">)</span><span class="o">/</span><span class="n">s</span> <span class="o">-</span> <span class="p">(</span><span class="n">xHeII</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="mf">3.</span><span class="o">*</span><span class="n">xHeII</span> <span class="o">+</span> <span class="mf">2.</span><span class="p">)</span><span class="o">/</span><span class="n">s</span><span class="o">**</span><span class="mi">2</span><span class="p">,</span>\
+            <span class="n">jnp</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">s</span><span class="o">==</span><span class="mi">0</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mf">1.</span><span class="o">-</span><span class="mf">2.</span><span class="o">/</span><span class="p">(</span><span class="mf">1.</span><span class="o">+</span> <span class="n">xHeII</span><span class="o">/</span><span class="n">s</span> <span class="o">+</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sqrt</span><span class="p">((</span><span class="mf">1.</span><span class="o">+</span> <span class="n">xHeII</span><span class="o">/</span><span class="n">s</span><span class="p">)</span><span class="o">*</span><span class="p">(</span><span class="mf">1.</span><span class="o">+</span> <span class="n">xHeII</span><span class="o">/</span><span class="n">s</span><span class="p">)</span> <span class="o">+</span><span class="mf">4.</span><span class="o">/</span><span class="n">s</span><span class="p">))))</span>
+        <span class="k">return</span> <span class="n">xH1</span></div>
+
+
+    <span class="c1"># xHeII near equilibrium</span>
+    <span class="c1"># Returns xHeII--&gt;xe (98 of 1011.3758).  Integrate until delta x_e ~ 1e-5</span>
+<div class="viewcode-block" id="helium_model.post_saha_xHeII">
+<a class="viewcode-back" href="../../../ABCMB.hyrax.html#ABCMB.hyrax.helium.helium_model.post_saha_xHeII">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">post_saha_xHeII</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">starting_lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">,</span> <span class="n">threshold</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute post-Saha HeII expansion phase.</span>
+
+<span class="sd">        Calculates ionization fraction including corrections to Saha equilibrium</span>
+<span class="sd">        until deviations exceed threshold.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        -----------</span>
+<span class="sd">        starting_lna : float</span>
+<span class="sd">            Initial log scale factor</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+<span class="sd">        threshold : float, optional</span>
+<span class="sd">            Threshold for deviation from Saha (default: 1e-5)</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        tuple</span>
+<span class="sd">            (xe_output, lna_output) - ionization fraction and log scale factor arrays</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Pre-allocate xe_output</span>
+        <span class="n">xe_output</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">concrete_axis_size_postSahaHe</span><span class="p">)</span><span class="o">*</span><span class="n">jnp</span><span class="o">.</span><span class="n">inf</span>
+        <span class="n">lna_output</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">concrete_axis_size_postSahaHe</span><span class="p">)</span><span class="o">*</span><span class="n">jnp</span><span class="o">.</span><span class="n">inf</span>
+        <span class="n">iz</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">xe</span> <span class="o">=</span> <span class="mf">1.</span> <span class="c1"># arbitrary</span>
+        <span class="n">stop</span> <span class="o">=</span> <span class="kc">False</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">compute_xe</span><span class="p">(</span><span class="n">carry</span><span class="p">):</span>
+            <span class="n">xe_output</span><span class="p">,</span> <span class="n">lna_output</span><span class="p">,</span> <span class="n">xe</span><span class="p">,</span> <span class="n">iz</span><span class="p">,</span> <span class="n">stop</span> <span class="o">=</span> <span class="n">carry</span>
+
+            <span class="n">lna</span> <span class="o">=</span> <span class="n">starting_lna</span> <span class="o">+</span> <span class="n">iz</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">integration_spacing</span>
+            
+            <span class="n">xHeII</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">xHeII_post_Saha</span><span class="p">(</span><span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">)</span>
+            <span class="n">xH1</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">xH1_Saha</span><span class="p">(</span><span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">)</span>
+            <span class="n">xe_saha</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">-</span> <span class="n">xH1</span> <span class="o">+</span> <span class="n">xHeII</span>
+            
+            <span class="c1"># Do post saha expansion.  Assume all hydrogen is ionized.</span>
+            <span class="n">grad_dxedlna_func</span> <span class="o">=</span> <span class="n">grad</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">helium_dxHeIIdlna</span><span class="p">,</span> <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span> 
+            <span class="n">grad_dxedlna</span> <span class="o">=</span> <span class="n">grad_dxedlna_func</span><span class="p">(</span><span class="n">xe_saha</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">)</span>
+            <span class="n">dxe_Saha_dlna</span> <span class="o">=</span> <span class="n">grad</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">xHeII_post_Saha</span><span class="p">,</span><span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">)(</span><span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">)</span>
+            <span class="n">xe</span> <span class="o">=</span> <span class="n">xe_saha</span> <span class="o">+</span> <span class="n">dxe_Saha_dlna</span> <span class="o">/</span> <span class="n">grad_dxedlna</span>
+
+            <span class="c1"># Store current xe value in the output array</span>
+            <span class="n">xe_output</span> <span class="o">=</span> <span class="n">xe_output</span><span class="o">.</span><span class="n">at</span><span class="p">[</span><span class="n">iz</span><span class="p">]</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">xe</span><span class="p">)</span>
+            <span class="n">lna_output</span> <span class="o">=</span> <span class="n">lna_output</span><span class="o">.</span><span class="n">at</span><span class="p">[</span><span class="n">iz</span><span class="p">]</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span>
+
+            <span class="c1"># Check difference</span>
+            <span class="n">diff</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">xe_saha</span> <span class="o">-</span> <span class="n">xe</span><span class="p">)</span>
+            <span class="n">stop</span> <span class="o">=</span> <span class="n">diff</span> <span class="o">&gt;</span> <span class="n">threshold</span>  <span class="c1"># Stop when diff &lt; threshold</span>
+
+            <span class="c1"># Increment index</span>
+            <span class="n">iz</span> <span class="o">=</span> <span class="n">iz</span> <span class="o">+</span> <span class="mi">1</span>
+
+            <span class="k">return</span> <span class="p">(</span><span class="n">xe_output</span><span class="p">,</span> <span class="n">lna_output</span><span class="p">,</span> <span class="n">xe</span><span class="p">,</span> <span class="n">iz</span><span class="p">,</span> <span class="n">stop</span><span class="p">)</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">stop_condition</span><span class="p">(</span><span class="n">state</span><span class="p">):</span>
+            <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">iz</span><span class="p">,</span> <span class="n">stop</span> <span class="o">=</span> <span class="n">state</span>
+            <span class="k">return</span> <span class="p">(</span><span class="n">iz</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">concrete_axis_size_postSahaHe</span><span class="o">.</span><span class="n">size</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="o">~</span><span class="n">stop</span><span class="p">)</span>  <span class="c1"># Continue until stop condition is met or we run out of space</span>
+
+        <span class="c1"># Initial state: (xe_output, xe, iz, stop flag)</span>
+        <span class="n">initial_state</span> <span class="o">=</span> <span class="p">(</span><span class="n">xe_output</span><span class="p">,</span> <span class="n">lna_output</span><span class="p">,</span> <span class="n">xe</span><span class="p">,</span> <span class="n">iz</span><span class="p">,</span> <span class="n">stop</span><span class="p">)</span>
+
+        <span class="c1"># Run the while loop until the stop condition is met</span>
+        <span class="n">final_state</span> <span class="o">=</span> <span class="n">lax</span><span class="o">.</span><span class="n">while_loop</span><span class="p">(</span><span class="n">stop_condition</span><span class="p">,</span> <span class="n">compute_xe</span><span class="p">,</span> <span class="n">initial_state</span><span class="p">)</span>
+
+        <span class="c1"># Unpack the final state</span>
+        <span class="n">xe_output_final</span><span class="p">,</span> <span class="n">lna_output_final</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">final_state</span>
+
+        <span class="c1"># Return the electron fraction array and the stopping `lna` value</span>
+        <span class="k">return</span> <span class="n">xe_output_final</span><span class="p">,</span> <span class="n">lna_output_final</span></div>
+
+
+<div class="viewcode-block" id="helium_model.helium_dxHeIIdlna">
+<a class="viewcode-back" href="../../../ABCMB.hyrax.html#ABCMB.hyrax.helium.helium_model.helium_dxHeIIdlna">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">helium_dxHeIIdlna</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">xe</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute HeII recombination rate.</span>
+
+<span class="sd">        Calculates rate of change of HeII ionization fraction including</span>
+<span class="sd">        detailed atomic physics and escape probabilities.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        -----------</span>
+<span class="sd">        xe : float</span>
+<span class="sd">            Current total ionization fraction</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Log scale factor</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            HeII recombination rate dxHeII/dlna (units: dimensionless)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">fHe</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;YHe&#39;</span><span class="p">]</span><span class="o">/</span><span class="p">(</span><span class="mf">1.</span><span class="o">-</span><span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;YHe&#39;</span><span class="p">])</span><span class="o">/</span><span class="mf">3.97153</span> <span class="c1"># abundance of helium by number</span>
+
+        <span class="c1"># cosmology</span>
+        <span class="c1">#lna = -jnp.log(1+z)</span>
+        <span class="n">TCMB</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">TCMB</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span>      <span class="c1"># eV</span>
+        <span class="n">nH</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">nH</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span>  <span class="c1"># hydrogen number density, 1/cm^3</span>
+        <span class="n">H</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">H</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span>  <span class="c1"># Hubble parameter, 1/s</span>
+        <span class="n">GammaC</span> <span class="o">=</span> <span class="n">recomb_functions</span><span class="o">.</span><span class="n">Gamma_compton</span><span class="p">(</span><span class="n">xe</span><span class="p">,</span> <span class="n">TCMB</span><span class="p">,</span> <span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;YHe&#39;</span><span class="p">])</span>  <span class="c1"># Compton scattering rate, 1/s</span>
+
+        <span class="c1"># compute xH1 in Saha equilibrium, xHeII in post-saha</span>
+        <span class="n">xH1</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">xH1_Saha</span><span class="p">(</span><span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">)</span>
+        <span class="c1"># use xe  = xHeII + (1.-xH1)</span>
+        <span class="n">xHeII</span> <span class="o">=</span> <span class="n">xe</span> <span class="o">-</span> <span class="p">(</span><span class="mf">1.</span><span class="o">-</span><span class="n">xH1</span><span class="p">)</span>
+
+        <span class="c1"># Saha ratio and abundances</span>
+        <span class="n">s0</span> <span class="o">=</span> <span class="mf">2.414194e15</span> <span class="o">*</span> <span class="n">TCMB</span><span class="o">/</span><span class="n">cnst</span><span class="o">.</span><span class="n">kB</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">TCMB</span><span class="o">/</span><span class="n">cnst</span><span class="o">.</span><span class="n">kB</span><span class="p">)</span> <span class="o">/</span> <span class="n">nH</span> <span class="o">*</span> <span class="mi">4</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="n">s0</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="mf">285325.</span> <span class="o">/</span> <span class="p">(</span><span class="n">TCMB</span><span class="o">/</span><span class="n">cnst</span><span class="o">.</span><span class="n">kB</span><span class="p">))</span>
+        <span class="n">y2s</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="mf">46090.</span> <span class="o">/</span> <span class="p">(</span><span class="n">TCMB</span><span class="o">/</span><span class="n">cnst</span><span class="o">.</span><span class="n">kB</span><span class="p">))</span> <span class="o">/</span> <span class="n">s0</span>
+        <span class="n">y2p</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="mf">39101.</span> <span class="o">/</span> <span class="p">(</span><span class="n">TCMB</span><span class="o">/</span><span class="n">cnst</span><span class="o">.</span><span class="n">kB</span><span class="p">))</span> <span class="o">/</span> <span class="n">s0</span> <span class="o">*</span> <span class="mi">3</span>
+        
+        <span class="c1"># Continuum opacity and optical depth</span>
+        <span class="n">etacinv</span> <span class="o">=</span>  <span class="mf">9.15776e22</span> <span class="o">*</span> <span class="n">H</span> <span class="o">/</span> <span class="p">(</span><span class="n">nH</span><span class="o">*</span> <span class="n">xH1</span><span class="p">)</span>
+        <span class="n">g2pinc</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="mf">1.976e6</span> <span class="o">/</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="mf">6989.</span> <span class="o">/</span> <span class="p">(</span><span class="n">TCMB</span><span class="o">/</span><span class="n">cnst</span><span class="o">.</span><span class="n">kB</span><span class="p">)))</span> <span class="o">+</span>
+            <span class="mf">6.03e6</span> <span class="o">/</span> <span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="mf">19754.</span> <span class="o">/</span> <span class="p">(</span><span class="n">TCMB</span><span class="o">/</span><span class="n">cnst</span><span class="o">.</span><span class="n">kB</span><span class="p">))</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">+</span>
+            <span class="mf">1.06e8</span> <span class="o">/</span> <span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="mf">21539.</span> <span class="o">/</span> <span class="p">(</span><span class="n">TCMB</span><span class="o">/</span><span class="n">cnst</span><span class="o">.</span><span class="n">kB</span><span class="p">))</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">+</span>
+            <span class="mf">2.18e6</span> <span class="o">/</span> <span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="mf">28496.</span> <span class="o">/</span> <span class="p">(</span><span class="n">TCMB</span><span class="o">/</span><span class="n">cnst</span><span class="o">.</span><span class="n">kB</span><span class="p">))</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">+</span>
+            <span class="mf">3.37e7</span> <span class="o">/</span> <span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="mf">29224.</span> <span class="o">/</span> <span class="p">(</span><span class="n">TCMB</span><span class="o">/</span><span class="n">cnst</span><span class="o">.</span><span class="n">kB</span><span class="p">))</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">+</span>
+            <span class="mf">1.04e6</span> <span class="o">/</span> <span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="mf">32414.</span> <span class="o">/</span> <span class="p">(</span><span class="n">TCMB</span><span class="o">/</span><span class="n">cnst</span><span class="o">.</span><span class="n">kB</span><span class="p">))</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">+</span>
+            <span class="mf">1.51e7</span> <span class="o">/</span> <span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="mf">32781.</span> <span class="o">/</span> <span class="p">(</span><span class="n">TCMB</span><span class="o">/</span><span class="n">cnst</span><span class="o">.</span><span class="n">kB</span><span class="p">))</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="p">)</span>
+        
+        <span class="c1"># Optical depth and escape probability</span>
+        <span class="n">tau2p</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">(</span><span class="mf">4.277e-8</span> <span class="o">*</span> <span class="n">nH</span> <span class="o">/</span> <span class="n">H</span> <span class="o">*</span> <span class="p">(</span><span class="n">fHe</span> <span class="o">-</span> <span class="n">xHeII</span><span class="p">))</span>
+        <span class="n">dnuline</span> <span class="o">=</span> <span class="n">g2pinc</span> <span class="o">*</span> <span class="n">tau2p</span> <span class="o">/</span> <span class="p">(</span><span class="mi">4</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+        <span class="n">tauc</span> <span class="o">=</span> <span class="n">dnuline</span> <span class="o">/</span> <span class="n">etacinv</span>
+        <span class="n">enh</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="o">**</span><span class="mi">2</span> <span class="o">*</span> <span class="n">tauc</span><span class="p">)</span> <span class="o">+</span> <span class="mf">7.74</span> <span class="o">*</span> <span class="n">tauc</span> <span class="o">/</span> <span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="mi">70</span> <span class="o">*</span> <span class="n">tauc</span><span class="p">)</span>
+        <span class="n">pesc</span> <span class="o">=</span> <span class="n">enh</span> <span class="o">/</span> <span class="n">tau2p</span>
+        
+        <span class="c1"># Total decay rate</span>
+        <span class="n">ydown</span> <span class="o">=</span> <span class="p">(</span><span class="mf">50.94</span> <span class="o">*</span> <span class="n">y2s</span><span class="p">)</span> <span class="o">+</span> <span class="p">(</span><span class="mf">1.7989e9</span> <span class="o">*</span> <span class="n">y2p</span> <span class="o">*</span> <span class="n">pesc</span><span class="p">)</span>
+        
+        <span class="c1"># Recombination rate</span>
+        <span class="k">return</span> <span class="n">ydown</span> <span class="o">*</span> <span class="p">((</span><span class="n">fHe</span> <span class="o">-</span> <span class="n">xHeII</span><span class="p">)</span> <span class="o">*</span> <span class="n">s</span> <span class="o">-</span> <span class="n">xHeII</span> <span class="o">*</span> <span class="p">(</span><span class="n">xHeII</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">-</span> <span class="n">xH1</span><span class="p">))</span> <span class="o">/</span> <span class="n">H</span></div>
+
+    
+
+<div class="viewcode-block" id="helium_model.xe_derivative_HeII">
+<a class="viewcode-back" href="../../../ABCMB.hyrax.html#ABCMB.hyrax.helium.helium_model.xe_derivative_HeII">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">xe_derivative_HeII</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">state</span><span class="p">,</span> <span class="n">args</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute HeII derivative for ODE integration.</span>
+
+<span class="sd">        Derivative function for HeII ionization fraction evolution</span>
+<span class="sd">        used in ODE integration with diffrax.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        -----------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Log scale factor</span>
+<span class="sd">        state : float</span>
+<span class="sd">            Current HeII ionization state</span>
+<span class="sd">        args : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        float</span>
+<span class="sd">            Time derivative of HeII fraction (units: dimensionless)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        
+        <span class="n">BG</span> <span class="o">=</span> <span class="n">args</span>
+        <span class="c1">#z = 1. / jnp.exp(lna) - 1.</span>
+        <span class="c1"># use xe  = xHeII + (1.-xH1)</span>
+        <span class="n">xe</span> <span class="o">=</span> <span class="n">state</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">xH1_Saha</span><span class="p">(</span><span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">helium_dxHeIIdlna</span><span class="p">(</span><span class="n">xe</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="helium_model.solve_HeII_full">
+<a class="viewcode-back" href="../../../ABCMB.hyrax.html#ABCMB.hyrax.helium.helium_model.solve_HeII_full">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">solve_HeII_full</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">starting_lna</span><span class="p">,</span> <span class="n">xe0</span><span class="p">,</span> <span class="n">BG</span><span class="p">,</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-9</span><span class="p">,</span><span class="n">solver</span><span class="o">=</span><span class="n">Kvaerno3</span><span class="p">(),</span><span class="n">max_steps</span><span class="o">=</span><span class="mi">1024</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Solve full HeII recombination evolution.</span>
+
+<span class="sd">        Integrates HeII recombination including detailed atomic physics</span>
+<span class="sd">        until HeII fraction becomes negligible.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        -----------</span>
+<span class="sd">        starting_lna : float</span>
+<span class="sd">            Initial log scale factor</span>
+<span class="sd">        xe0 : float</span>
+<span class="sd">            Initial ionization fraction</span>
+<span class="sd">        BG : cosmology.Background</span>
+<span class="sd">            Background cosmology module</span>
+<span class="sd">        rtol : float, optional</span>
+<span class="sd">            Relative tolerance (default: 1e-6)</span>
+<span class="sd">        atol : float, optional</span>
+<span class="sd">            Absolute tolerance (default: 1e-9)</span>
+<span class="sd">        solver : diffrax.Solver, optional</span>
+<span class="sd">            ODE solver (default: Kvaerno3())</span>
+<span class="sd">        max_steps : int, optional</span>
+<span class="sd">            Maximum steps (default: 1024)</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        tuple</span>
+<span class="sd">            (xe_output, lna_output) - ionization fraction and log scale factor arrays</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="c1"># Initial conditions</span>
+        <span class="n">TCMB_init</span> <span class="o">=</span> <span class="n">BG</span><span class="o">.</span><span class="n">TCMB</span><span class="p">(</span><span class="n">starting_lna</span><span class="p">)</span>  <span class="c1"># Initial matter temperature</span>
+        <span class="n">initial_state</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">xe0</span><span class="p">])</span>
+        <span class="n">term</span> <span class="o">=</span> <span class="n">ODETerm</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">xe_derivative_HeII</span><span class="p">)</span>
+
+        <span class="n">t0</span> <span class="o">=</span> <span class="n">starting_lna</span>
+        <span class="n">t1</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">inf</span>
+
+        <span class="c1"># don&#39;t want to double count the boundary lna, so start saving after one step</span>
+        <span class="n">t_arr</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="n">t0</span><span class="o">+</span><span class="bp">self</span><span class="o">.</span><span class="n">integration_spacing</span><span class="p">,</span> <span class="n">t0</span><span class="o">+</span><span class="n">max_steps</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">integration_spacing</span><span class="p">,</span> <span class="n">max_steps</span><span class="p">)</span>
+
+        <span class="n">save_at</span> <span class="o">=</span> <span class="n">SaveAt</span><span class="p">(</span><span class="n">ts</span><span class="o">=</span><span class="n">t_arr</span><span class="p">)</span>
+        <span class="n">adjoint</span><span class="o">=</span><span class="n">ForwardMode</span><span class="p">()</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">He_check</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+            <span class="n">lna</span> <span class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">tprev</span>
+            <span class="n">xH1</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">xH1_Saha</span><span class="p">(</span><span class="n">lna</span><span class="p">,</span> <span class="n">BG</span><span class="p">)</span>
+
+            <span class="c1"># use xe  = xHeII + (1.-xH1)</span>
+            <span class="n">xHeII</span> <span class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">y</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="p">(</span><span class="mf">1.</span><span class="o">-</span><span class="n">xH1</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">xHeII</span> <span class="o">&lt;</span> <span class="mf">1e-4</span>
+
+        <span class="n">sol</span> <span class="o">=</span> <span class="n">diffeqsolve</span><span class="p">(</span>
+            <span class="n">term</span><span class="p">,</span> <span class="n">solver</span><span class="p">,</span> <span class="n">t0</span><span class="o">=</span><span class="n">t0</span><span class="p">,</span> <span class="n">t1</span><span class="o">=</span><span class="n">t1</span><span class="p">,</span> <span class="n">dt0</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> 
+            <span class="n">y0</span><span class="o">=</span><span class="n">initial_state</span><span class="p">,</span> 
+            <span class="n">args</span><span class="o">=</span><span class="n">BG</span><span class="p">,</span>
+            <span class="n">stepsize_controller</span><span class="o">=</span><span class="n">PIDController</span><span class="p">(</span><span class="n">rtol</span><span class="p">,</span> <span class="n">atol</span><span class="p">),</span><span class="n">saveat</span><span class="o">=</span><span class="n">save_at</span><span class="p">,</span>
+            <span class="n">discrete_terminating_event</span> <span class="o">=</span> <span class="n">DiscreteTerminatingEvent</span><span class="p">(</span><span class="n">He_check</span><span class="p">),</span>
+            <span class="n">adjoint</span><span class="o">=</span><span class="n">adjoint</span>
+        <span class="p">)</span>
+        
+        <span class="n">xe_output</span> <span class="o">=</span> <span class="n">sol</span><span class="o">.</span><span class="n">ys</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span>  
+        <span class="n">lna_output</span> <span class="o">=</span> <span class="n">sol</span><span class="o">.</span><span class="n">ts</span>
+
+        <span class="k">return</span> <span class="n">xe_output</span><span class="p">,</span> <span class="n">lna_output</span></div>
+</div>
+
+
+
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../../index.html">ABCMB</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../getting-started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules.html">ABCMB</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../index.html">Documentation overview</a><ul>
+  <li><a href="../../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2025, Zilu Zhou, Cara Giovanetti, and Hongwan Liu.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.2.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>

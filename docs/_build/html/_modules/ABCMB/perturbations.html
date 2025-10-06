@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ABCMB.perturbations &#8212; ABCMB 0.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="../../_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="../../_static/alabaster.css?v=27fed22d" />
+    <script src="../../_static/documentation_options.js?v=837179f8"></script>
+    <script src="../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+   
+  <link rel="stylesheet" href="../../_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for ABCMB.perturbations</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">jax</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">jax.numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">jnp</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">jax</span><span class="w"> </span><span class="kn">import</span> <span class="n">vmap</span><span class="p">,</span> <span class="n">lax</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">diffrax</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">equinox</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">eqx</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">constants</span> <span class="k">as</span> <span class="n">cnst</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">ABCMBTools</span> <span class="k">as</span> <span class="n">tools</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="n">file_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span>
+<span class="n">jax</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="s2">&quot;jax_enable_x64&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Cosmological perturbation evolution module.</span>
+
+<span class="sd">Integrates linear perturbation equations for scalar modes across</span>
+<span class="sd">cosmic time using background cosmology and species interactions.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+
+<div class="viewcode-block" id="PerturbationEvolver">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.perturbations.PerturbationEvolver">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">PerturbationEvolver</span><span class="p">(</span><span class="n">eqx</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Linear scalar perturbation evolution solver.</span>
+
+<span class="sd">    Evolves perturbations for all fluid species using Einstein-Boltzmann</span>
+<span class="sd">    equations in synchronous gauge.</span>
+
+<span class="sd">    Methods:</span>
+<span class="sd">    --------</span>
+<span class="sd">    full_evolution : Evolve perturbations for multiple k modes</span>
+<span class="sd">    evolution_one_k : Evolve perturbations for single k mode</span>
+<span class="sd">    get_tca_on_off : Determine tight coupling approximation times</span>
+<span class="sd">    initial_conditions_one_k : Compute initial perturbation conditions</span>
+<span class="sd">    get_derivatives : Compute perturbation time derivatives</span>
+<span class="sd">    make_output_table : Create interpolatable perturbation table</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">perturbations_list</span> <span class="p">:</span> <span class="nb">tuple</span>  <span class="c1">#= eqx.static_field()</span>
+    <span class="n">BG</span> <span class="p">:</span> <span class="s2">&quot;cosmology.Background&quot;</span> <span class="c1">#= eqx.static_field()</span>
+
+<div class="viewcode-block" id="PerturbationEvolver.full_evolution">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.perturbations.PerturbationEvolver.full_evolution">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">full_evolution</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Evolve perturbations for multiple wavenumber modes.</span>
+
+<span class="sd">        Integrates perturbation equations for a range of k modes,</span>
+<span class="sd">        then interpolates results onto common time grid.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        PerturbationTable</span>
+<span class="sd">            Interpolatable table of perturbation evolution</span>
+
+<span class="sd">        Notes:</span>
+<span class="sd">        ------</span>
+<span class="sd">        Uses logarithmic k spacing from 10^-4 to ~0.5 Mpc^-1 with 100 points.</span>
+<span class="sd">        Time integration runs from early times to z=1 (lna=-ln(2)).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1">#k = jnp.logspace(-4., -0.3, 100, base=10)</span>
+        <span class="n">k</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">geomspace</span><span class="p">(</span><span class="mf">1.e-4</span><span class="p">,</span> <span class="mf">0.4</span><span class="p">,</span> <span class="mi">300</span><span class="p">)</span>
+        <span class="c1">#k = jnp.array([1.e-3, 1.e-2, 1.e-1])</span>
+        <span class="c1">#k = jnp.array([1.e-3, 1.e-2])</span>
+        <span class="c1">#k = jnp.array([1.e-1])</span>
+        <span class="n">sols</span> <span class="o">=</span> <span class="n">vmap</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">evolution_one_k</span><span class="p">)(</span><span class="n">k</span><span class="p">)</span>
+
+        <span class="n">lna</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">BG</span><span class="o">.</span><span class="n">lna_transfer_start</span><span class="p">,</span>  <span class="mf">0.</span><span class="p">,</span> <span class="mi">500</span><span class="p">)</span> <span class="c1"># lna_end hardcoded</span>
+        <span class="c1"># lna = jnp.linspace(-15., 0., 1000)</span>
+        <span class="c1">#lna = jnp.linspace(-15., -7.0, 500)</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="n">vmap</span><span class="p">(</span><span class="k">lambda</span> <span class="n">arr</span><span class="p">:</span> <span class="n">vmap</span><span class="p">(</span><span class="n">arr</span><span class="o">.</span><span class="n">evaluate</span><span class="p">)(</span><span class="n">lna</span><span class="p">))(</span><span class="n">sols</span><span class="p">)</span> <span class="c1"># Right now the shape is (Nk, Nlna, Ny)</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="n">res</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="c1"># Transpose so the shape is (Ny, Nlna, Nk), easier for vmapping over in PT</span>
+        <span class="c1">#return lna, k, res</span>
+
+        <span class="n">PT</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">make_output_table</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">res</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">PT</span></div>
+
+
+<div class="viewcode-block" id="PerturbationEvolver.full_evolution_scan">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.perturbations.PerturbationEvolver.full_evolution_scan">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">full_evolution_scan</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Evolve perturbations for multiple wavenumber modes.</span>
+
+<span class="sd">        Integrates perturbation equations for a range of k modes,</span>
+<span class="sd">        then interpolates results onto common time grid.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        PerturbationTable</span>
+<span class="sd">            Interpolatable table of perturbation evolution</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1">#lna = jnp.linspace(self.BG.lna_transfer_start, 0., 500)  # lna_end hardcoded</span>
+        <span class="n">lna</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mf">14.</span><span class="p">,</span> <span class="mf">0.</span><span class="p">,</span> <span class="mi">1000</span><span class="p">)</span>
+        <span class="c1">#k = jnp.geomspace(1.e-4, 0.4, 300)</span>
+        <span class="n">k</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">1.e-3</span><span class="p">,</span> <span class="mf">1.e-2</span><span class="p">,</span> <span class="mf">1.e-1</span><span class="p">])</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">body_fun</span><span class="p">(</span><span class="n">_</span><span class="p">,</span> <span class="n">ki</span><span class="p">):</span>
+            <span class="c1"># evolution_one_k returns shape (Nlna, Ny)</span>
+            <span class="n">y</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">evolution_one_k_scan</span><span class="p">(</span><span class="n">ki</span><span class="p">,</span> <span class="n">lna</span><span class="p">)</span>    <span class="c1"># (Nlna, Ny)</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="n">y</span>
+
+        <span class="n">_</span><span class="p">,</span> <span class="n">res</span> <span class="o">=</span> <span class="n">lax</span><span class="o">.</span><span class="n">scan</span><span class="p">(</span><span class="n">body_fun</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="n">k</span><span class="p">)</span>      <span class="c1"># res has shape (Nk, Nlna, Ny)</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="n">res</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>              <span class="c1"># -&gt; (Ny, Nlna, Nk)</span>
+
+        <span class="n">PT</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">make_output_table</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">res</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">PT</span></div>
+
+
+<div class="viewcode-block" id="PerturbationEvolver.get_tca_on_off">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.perturbations.PerturbationEvolver.get_tca_on_off">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_tca_on_off</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">k</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Determine tight coupling approximation time range.</span>
+
+<span class="sd">        Finds start and end times for tight coupling between photons and baryons</span>
+<span class="sd">        by computing when Thomson scattering becomes ineffective relative to</span>
+<span class="sd">        Hubble and horizon crossing time scales.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        -----------</span>
+<span class="sd">        k : float</span>
+<span class="sd">            Wavenumber (units: Mpc^{-1})</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        tuple</span>
+<span class="sd">            (lna_start, lna_end) for tight coupling period</span>
+
+<span class="sd">        Notes:</span>
+<span class="sd">        ------</span>
+<span class="sd">        Uses thresholds: τc/τh &lt; 0.0015 (start), τh/τk &lt; 0.07 (start),</span>
+<span class="sd">        τc/τh &gt; 0.015 (end), τc/τk &gt; 0.01 (end).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># thresholds</span>
+        <span class="n">thr1</span> <span class="o">=</span> <span class="mf">0.0015</span>   <span class="c1"># start_small_k_at_tau_c_over_tau_h</span>
+        <span class="n">thr2</span> <span class="o">=</span> <span class="mf">0.07</span>     <span class="c1"># start_large_k_at_tau_h_over_tau_k</span>
+        <span class="n">thr3</span> <span class="o">=</span> <span class="mf">0.015</span>    <span class="c1"># tight_coupling_trigger_tau_c_over_tau_h</span>
+        <span class="n">thr4</span> <span class="o">=</span> <span class="mf">0.01</span>     <span class="c1"># tight_coupling_trigger_tau_c_over_tau_k</span>
+
+        <span class="c1"># 1) Starting lna</span>
+        <span class="n">lna_start_range</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mf">20.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">10.0</span><span class="p">,</span> <span class="mi">10000</span><span class="p">)</span>
+
+        <span class="c1"># a) τc/τh  →  f1(lna) = BG.tau_c * BG.aH</span>
+        <span class="n">f1</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">BG</span><span class="o">.</span><span class="n">tau_c</span><span class="p">(</span><span class="n">lna_start_range</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">BG</span><span class="o">.</span><span class="n">aH</span><span class="p">(</span><span class="n">lna_start_range</span><span class="p">)</span>
+        <span class="c1"># invert f1(lna) = thr1  →  lna = interp(thr1, f1, lna_range)</span>
+        <span class="n">lna1</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">interp</span><span class="p">(</span><span class="n">thr1</span><span class="p">,</span> <span class="n">f1</span><span class="p">,</span> <span class="n">lna_start_range</span><span class="p">)</span>    <span class="c1"># jnp.interp ends up being </span>
+                                                        <span class="c1"># faster than fast_interp through here</span>
+
+        <span class="c1"># b) τh/τk  →  f2(lna) = k / BG.aH</span>
+        <span class="n">f2</span> <span class="o">=</span> <span class="n">k</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">BG</span><span class="o">.</span><span class="n">aH</span><span class="p">(</span><span class="n">lna_start_range</span><span class="p">)</span>
+        <span class="c1"># invert f2(lna) = thr2</span>
+        <span class="n">lna2</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">interp</span><span class="p">(</span><span class="n">thr2</span><span class="p">,</span> <span class="n">f2</span><span class="p">,</span> <span class="n">lna_start_range</span><span class="p">)</span>
+
+        <span class="n">lna_ini</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">minimum</span><span class="p">(</span><span class="n">lna1</span><span class="p">,</span> <span class="n">lna2</span><span class="p">)</span>
+
+        <span class="c1"># 2) Ending lna</span>
+        <span class="n">lna_end_range</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mf">15.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">6.0</span><span class="p">,</span> <span class="mi">10000</span><span class="p">)</span>
+
+        <span class="c1"># a) τc/τh  →  f3(lna) = BG.tau_c * BG.aH</span>
+        <span class="n">f3</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">BG</span><span class="o">.</span><span class="n">tau_c</span><span class="p">(</span><span class="n">lna_end_range</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">BG</span><span class="o">.</span><span class="n">aH</span><span class="p">(</span><span class="n">lna_end_range</span><span class="p">)</span>
+        <span class="n">lna3</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">interp</span><span class="p">(</span><span class="n">thr3</span><span class="p">,</span> <span class="n">f3</span><span class="p">,</span> <span class="n">lna_end_range</span><span class="p">)</span> 
+
+        <span class="c1"># b) τc/τk  →  f4(lna) = k * BG.tau_c</span>
+        <span class="n">f4</span> <span class="o">=</span> <span class="n">k</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">BG</span><span class="o">.</span><span class="n">tau_c</span><span class="p">(</span><span class="n">lna_end_range</span><span class="p">)</span>
+        <span class="n">lna4</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">interp</span><span class="p">(</span><span class="n">thr4</span><span class="p">,</span> <span class="n">f4</span><span class="p">,</span> <span class="n">lna_end_range</span><span class="p">)</span>
+
+        <span class="n">lna_end</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">minimum</span><span class="p">(</span><span class="n">lna3</span><span class="p">,</span> <span class="n">lna4</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">lna_ini</span><span class="p">,</span> <span class="n">lna_end</span></div>
+
+
+<div class="viewcode-block" id="PerturbationEvolver.initial_conditions_one_k">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.perturbations.PerturbationEvolver.initial_conditions_one_k">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">initial_conditions_one_k</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">lna_ini</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute initial conditions for perturbation evolution.</span>
+
+<span class="sd">        Sets up initial values for metric and fluid perturbations at early times</span>
+<span class="sd">        using adiabatic initial conditions.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        -----------</span>
+<span class="sd">        k : float</span>
+<span class="sd">            Wavenumber (units: Mpc^{-1})</span>
+<span class="sd">        lna_ini : float</span>
+<span class="sd">            Initial logarithm of scale factor</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        array</span>
+<span class="sd">            Initial perturbation state vector</span>
+
+<span class="sd">        Notes:</span>
+<span class="sd">        ------</span>
+<span class="sd">        Uses CLASS-style initial conditions with metric perturbations h and η.</span>
+<span class="sd">        Assumes adiabatic initial conditions with vanishing isocurvature modes.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1">### CLASS Initial Conditions ###</span>
+        <span class="n">a</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">lna_ini</span><span class="p">)</span>
+        <span class="n">tau_ini</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">BG</span><span class="o">.</span><span class="n">tau</span><span class="p">(</span><span class="n">lna_ini</span><span class="p">)</span>
+ 
+        <span class="n">rho_crit</span> <span class="o">=</span> <span class="mi">3</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s2">&quot;H0&quot;</span><span class="p">]</span><span class="o">**</span><span class="mi">2</span> <span class="o">/</span> <span class="mf">8.</span> <span class="o">/</span> <span class="n">jnp</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="n">cnst</span><span class="o">.</span><span class="n">G</span> <span class="c1"># Crit density today, eV/cm^3</span>
+        <span class="n">rho_m</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s2">&quot;omega_m&quot;</span><span class="p">]</span><span class="o">/</span><span class="bp">self</span><span class="o">.</span><span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s2">&quot;h&quot;</span><span class="p">]</span><span class="o">**</span><span class="mi">2</span> <span class="o">*</span> <span class="n">rho_crit</span> <span class="o">/</span> <span class="n">a</span><span class="o">**</span><span class="mi">3</span>
+        <span class="n">rho_r</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s2">&quot;omega_r&quot;</span><span class="p">]</span><span class="o">/</span><span class="bp">self</span><span class="o">.</span><span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s2">&quot;h&quot;</span><span class="p">]</span><span class="o">**</span><span class="mi">2</span> <span class="o">*</span> <span class="n">rho_crit</span> <span class="o">/</span> <span class="n">a</span><span class="o">**</span><span class="mi">4</span>
+
+        <span class="n">om</span> <span class="o">=</span> <span class="n">a</span><span class="o">*</span><span class="n">rho_m</span><span class="o">/</span><span class="n">jnp</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">rho_r</span><span class="p">)</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mf">8.</span><span class="o">*</span><span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="o">*</span><span class="n">cnst</span><span class="o">.</span><span class="n">G</span><span class="o">/</span><span class="mf">3.</span><span class="p">)</span> <span class="o">/</span> <span class="n">cnst</span><span class="o">.</span><span class="n">c_Mpc_over_s</span> <span class="c1"># In units of 1/Mpc</span>
+
+        <span class="n">metric_eta_ini</span> <span class="o">=</span> <span class="p">(</span><span class="mf">1.</span><span class="o">-</span><span class="n">k</span><span class="o">**</span><span class="mi">2</span><span class="o">*</span><span class="n">tau_ini</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="mf">12.</span><span class="o">/</span><span class="p">(</span><span class="mf">15.</span><span class="o">+</span><span class="mf">4.</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;R_nu&#39;</span><span class="p">])</span><span class="o">*</span><span class="p">(</span><span class="mf">5.</span><span class="o">+</span><span class="mf">4.</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;R_nu&#39;</span><span class="p">]</span> <span class="o">-</span> <span class="p">(</span><span class="mf">16.</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;R_nu&#39;</span><span class="p">]</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;R_nu&#39;</span><span class="p">]</span><span class="o">+</span><span class="mf">280.</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;R_nu&#39;</span><span class="p">]</span><span class="o">+</span><span class="mi">325</span><span class="p">)</span><span class="o">/</span><span class="mf">10.</span><span class="o">/</span><span class="p">(</span><span class="mf">2.</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">BG</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;R_nu&#39;</span><span class="p">]</span><span class="o">+</span><span class="mf">15.</span><span class="p">)</span><span class="o">*</span><span class="n">tau_ini</span><span class="o">*</span><span class="n">om</span><span class="p">))</span>
+        <span class="n">metric_h_ini</span>   <span class="o">=</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">k</span> <span class="o">*</span> <span class="n">tau_ini</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.</span><span class="o">-</span><span class="n">om</span><span class="o">*</span><span class="n">tau_ini</span><span class="o">/</span><span class="mf">5.</span><span class="p">)</span>
+
+        <span class="n">all_fluid_ini</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">concatenate</span><span class="p">([</span><span class="n">p</span><span class="o">.</span><span class="n">y_ini</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">tau_ini</span><span class="p">,</span> <span class="n">om</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">BG</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">perturbations_list</span><span class="p">])</span>
+        <span class="n">y_ini</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">concatenate</span><span class="p">((</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">metric_h_ini</span><span class="p">,</span> <span class="n">metric_eta_ini</span><span class="p">]),</span> <span class="n">all_fluid_ini</span><span class="p">))</span>
+        
+        <span class="k">return</span> <span class="n">y_ini</span></div>
+
+
+<div class="viewcode-block" id="PerturbationEvolver.get_derivatives">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.perturbations.PerturbationEvolver.get_derivatives">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_derivatives</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">args</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute time derivatives for perturbation evolution.</span>
+
+<span class="sd">        Assembles the full system of Einstein-Boltzmann equations for</span>
+<span class="sd">        metric and fluid perturbations in synchronous gauge.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        -----------</span>
+<span class="sd">        lna : float</span>
+<span class="sd">            Logarithm of scale factor</span>
+<span class="sd">        y : array</span>
+<span class="sd">            Current perturbation state vector</span>
+<span class="sd">        args : float</span>
+<span class="sd">            Wavenumber k (units: Mpc^{-1})</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        array</span>
+<span class="sd">            Time derivatives of perturbation state</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">k</span> <span class="o">=</span> <span class="n">args</span>
+        <span class="n">a</span>  <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span>
+        <span class="n">aH</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">BG</span><span class="o">.</span><span class="n">aH</span><span class="p">(</span><span class="n">lna</span><span class="p">)</span>
+        <span class="n">metric_h</span>   <span class="o">=</span> <span class="n">y</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">metric_eta</span> <span class="o">=</span> <span class="n">y</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+
+        <span class="c1"># Metric perturbation derivatives</span>
+        <span class="n">sum_rho_delta</span> <span class="o">=</span> <span class="mf">0.</span>
+        <span class="n">sum_rho_plus_P_theta</span> <span class="o">=</span> <span class="mf">0.</span>
+        
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">perturbations_list</span><span class="p">)):</span>
+            <span class="n">species</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">perturbations_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+            <span class="c1"># If species has density perturbation, add to total.</span>
+            <span class="n">sum_rho_delta</span> <span class="o">+=</span> <span class="n">species</span><span class="o">.</span><span class="n">rho_delta</span><span class="p">(</span><span class="n">lna</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">BG</span><span class="p">)</span>
+            <span class="c1"># If species has velocity perturbation, add to total.</span>
+            <span class="n">sum_rho_plus_P_theta</span> <span class="o">+=</span> <span class="n">species</span><span class="o">.</span><span class="n">rho_plus_P_theta</span><span class="p">(</span><span class="n">lna</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">BG</span><span class="p">)</span>
+
+        <span class="n">metric_h_prime</span>   <span class="o">=</span> <span class="mf">2.</span><span class="o">/</span><span class="n">aH</span><span class="o">**</span><span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="n">k</span><span class="o">**</span><span class="mi">2</span><span class="o">*</span><span class="n">metric_eta</span> <span class="o">+</span> <span class="mf">4.</span><span class="o">*</span><span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="o">*</span><span class="n">cnst</span><span class="o">.</span><span class="n">G</span><span class="o">*</span><span class="n">a</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="n">cnst</span><span class="o">.</span><span class="n">c_Mpc_over_s</span><span class="o">**</span><span class="mi">2</span> <span class="o">*</span> <span class="n">sum_rho_delta</span><span class="p">)</span>
+        <span class="n">metric_eta_prime</span> <span class="o">=</span> <span class="mf">4.</span><span class="o">*</span><span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="o">*</span><span class="n">cnst</span><span class="o">.</span><span class="n">G</span><span class="o">*</span><span class="n">a</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="n">aH</span><span class="o">/</span><span class="n">k</span><span class="o">**</span><span class="mi">2</span> <span class="o">*</span> <span class="n">sum_rho_plus_P_theta</span> <span class="o">/</span> <span class="n">cnst</span><span class="o">.</span><span class="n">c_Mpc_over_s</span><span class="o">**</span><span class="mi">2</span>
+
+        <span class="c1"># Now loop over all species and assemble their respective y_primes</span>
+        <span class="n">y_prime</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">metric_h_prime</span><span class="p">,</span> <span class="n">metric_eta_prime</span><span class="p">])</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">perturbations_list</span><span class="p">)):</span>
+            <span class="n">species</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">perturbations_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+            <span class="n">y_prime</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">concatenate</span><span class="p">((</span><span class="n">y_prime</span><span class="p">,</span> <span class="n">species</span><span class="o">.</span><span class="n">y_prime</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">metric_h_prime</span><span class="p">,</span> <span class="n">metric_eta_prime</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">BG</span><span class="p">)))</span>
+
+        <span class="k">return</span> <span class="n">y_prime</span></div>
+
+
+<div class="viewcode-block" id="PerturbationEvolver.evolution_one_k">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.perturbations.PerturbationEvolver.evolution_one_k">[docs]</a>
+    <span class="nd">@jax</span><span class="o">.</span><span class="n">named_scope</span><span class="p">(</span><span class="s2">&quot;evolution_one_k_no_tca&quot;</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">evolution_one_k</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">k</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Evolve perturbations for single wavenumber mode.</span>
+
+<span class="sd">        Integrates Einstein-Boltzmann equations from early times through</span>
+<span class="sd">        recombination to late times using adaptive time stepping.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        -----------</span>
+<span class="sd">        k : float</span>
+<span class="sd">            Wavenumber (units: Mpc^{-1})</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        diffrax.Solution</span>
+<span class="sd">            Dense solution object for interpolation</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1">### DIFFRAX INTEGRATION ###</span>
+
+        <span class="n">lna_start</span><span class="p">,</span> <span class="n">lna_tca_off</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_tca_on_off</span><span class="p">(</span><span class="n">k</span><span class="p">)</span> <span class="c1"># Start and end times from tight coupling settings</span>
+        <span class="n">lna_end</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+        <span class="c1"># For small k&#39;s the superhorizon time can be set relatively late, but I impose a cutoff of z~20000 for all modes</span>
+        <span class="c1"># at the very least.</span>
+        <span class="n">lna_start</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">minimum</span><span class="p">(</span><span class="n">lna_start</span><span class="p">,</span><span class="o">-</span><span class="mf">10.0</span><span class="p">)</span>
+    
+        <span class="c1"># Initial conditions for tight coupling</span>
+        <span class="n">y_ini</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">initial_conditions_one_k</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">lna_start</span><span class="p">)</span>
+
+        <span class="c1"># Settings for post-tight coupling</span>
+        <span class="n">term</span> <span class="o">=</span> <span class="n">diffrax</span><span class="o">.</span><span class="n">ODETerm</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">get_derivatives</span><span class="p">)</span>
+        <span class="n">solver</span> <span class="o">=</span> <span class="n">diffrax</span><span class="o">.</span><span class="n">Kvaerno5</span><span class="p">()</span>
+        <span class="n">stepsize_controller</span> <span class="o">=</span> <span class="n">diffrax</span><span class="o">.</span><span class="n">PIDController</span><span class="p">(</span><span class="n">pcoeff</span><span class="o">=</span><span class="mf">0.25</span><span class="p">,</span> <span class="n">icoeff</span><span class="o">=</span><span class="mf">0.80</span><span class="p">,</span> <span class="n">dcoeff</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1.e-3</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1.e-6</span><span class="p">)</span> <span class="c1"># DISCO-EB settings</span>
+        <span class="c1">#stepsize_controller = diffrax.PIDController(rtol=1.e-5, atol=1.e-10)</span>
+        <span class="n">saveat</span> <span class="o">=</span> <span class="n">diffrax</span><span class="o">.</span><span class="n">SaveAt</span><span class="p">(</span><span class="n">dense</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">adjoint</span><span class="o">=</span><span class="n">diffrax</span><span class="o">.</span><span class="n">ForwardMode</span><span class="p">()</span>
+
+        <span class="n">sol</span> <span class="o">=</span> <span class="n">diffrax</span><span class="o">.</span><span class="n">diffeqsolve</span><span class="p">(</span>
+            <span class="n">term</span><span class="p">,</span> <span class="n">solver</span><span class="p">,</span>
+            <span class="n">t0</span><span class="o">=</span><span class="n">lna_start</span><span class="p">,</span> <span class="n">t1</span><span class="o">=</span><span class="n">lna_end</span><span class="p">,</span> <span class="n">dt0</span><span class="o">=</span><span class="mf">1.e-2</span><span class="p">,</span> <span class="n">y0</span><span class="o">=</span><span class="n">y_ini</span><span class="p">,</span>
+            <span class="n">stepsize_controller</span><span class="o">=</span><span class="n">stepsize_controller</span><span class="p">,</span>
+            <span class="n">max_steps</span><span class="o">=</span><span class="mi">2048</span><span class="p">,</span>
+            <span class="n">saveat</span><span class="o">=</span><span class="n">saveat</span><span class="p">,</span>
+            <span class="n">args</span><span class="o">=</span><span class="n">k</span><span class="p">,</span>
+            <span class="n">adjoint</span><span class="o">=</span><span class="n">adjoint</span>
+        <span class="p">)</span>
+
+        <span class="c1">### END OF DIFFRAX INTEGRATION ###</span>
+
+        <span class="k">return</span> <span class="n">sol</span></div>
+
+        <span class="c1">#return vmap(sol.evaluate)(lna)</span>
+
+<div class="viewcode-block" id="PerturbationEvolver.evolution_one_k_scan">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.perturbations.PerturbationEvolver.evolution_one_k_scan">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">evolution_one_k_scan</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">lna</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Evolve perturbations for single wavenumber mode.</span>
+
+<span class="sd">        Integrates Einstein-Boltzmann equations from early times through</span>
+<span class="sd">        recombination to late times using adaptive time stepping.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        -----------</span>
+<span class="sd">        k : float</span>
+<span class="sd">            Wavenumber (units: Mpc^{-1})</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        diffrax.Solution</span>
+<span class="sd">            Dense solution object for interpolation</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1">### DIFFRAX INTEGRATION ###</span>
+
+        <span class="n">lna_start</span><span class="p">,</span> <span class="n">lna_tca_off</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_tca_on_off</span><span class="p">(</span><span class="n">k</span><span class="p">)</span> <span class="c1"># Start and end times from tight coupling settings</span>
+        <span class="n">lna_end</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+        <span class="c1"># For small k&#39;s the superhorizon time can be set relatively late, but I impose a cutoff of z~20000 for all modes</span>
+        <span class="c1"># at the very least.</span>
+        <span class="n">lna_start</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">minimum</span><span class="p">(</span><span class="n">lna_start</span><span class="p">,</span> <span class="n">lna</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="c1">#lna_start = jnp.minimum(lna_start, -10)</span>
+    
+        <span class="c1"># Initial conditions for tight coupling</span>
+        <span class="n">y_ini</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">initial_conditions_one_k</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">lna_start</span><span class="p">)</span>
+
+        <span class="c1"># Settings for post-tight coupling</span>
+        <span class="n">term</span> <span class="o">=</span> <span class="n">diffrax</span><span class="o">.</span><span class="n">ODETerm</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">get_derivatives</span><span class="p">)</span>
+        <span class="n">solver</span> <span class="o">=</span> <span class="n">diffrax</span><span class="o">.</span><span class="n">Kvaerno5</span><span class="p">()</span>
+        <span class="n">stepsize_controller</span> <span class="o">=</span> <span class="n">diffrax</span><span class="o">.</span><span class="n">PIDController</span><span class="p">(</span><span class="n">pcoeff</span><span class="o">=</span><span class="mf">0.25</span><span class="p">,</span> <span class="n">icoeff</span><span class="o">=</span><span class="mf">0.80</span><span class="p">,</span> <span class="n">dcoeff</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1.e-3</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1.e-6</span><span class="p">)</span> <span class="c1"># DISCO-EB settings</span>
+        <span class="c1">#stepsize_controller = diffrax.PIDController(rtol=1.e-3, atol=1.e-6)</span>
+        <span class="n">saveat</span> <span class="o">=</span> <span class="n">diffrax</span><span class="o">.</span><span class="n">SaveAt</span><span class="p">(</span><span class="n">dense</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">adjoint</span><span class="o">=</span><span class="n">diffrax</span><span class="o">.</span><span class="n">ForwardMode</span><span class="p">()</span>
+
+        <span class="n">sol</span> <span class="o">=</span> <span class="n">diffrax</span><span class="o">.</span><span class="n">diffeqsolve</span><span class="p">(</span>
+            <span class="n">term</span><span class="p">,</span> <span class="n">solver</span><span class="p">,</span>
+            <span class="n">t0</span><span class="o">=</span><span class="n">lna_start</span><span class="p">,</span> <span class="n">t1</span><span class="o">=</span><span class="n">lna_end</span><span class="p">,</span> <span class="n">dt0</span><span class="o">=</span><span class="mf">1.e-2</span><span class="p">,</span> <span class="n">y0</span><span class="o">=</span><span class="n">y_ini</span><span class="p">,</span>
+            <span class="n">stepsize_controller</span><span class="o">=</span><span class="n">stepsize_controller</span><span class="p">,</span>
+            <span class="n">max_steps</span><span class="o">=</span><span class="mi">2048</span><span class="p">,</span>
+            <span class="n">saveat</span><span class="o">=</span><span class="n">saveat</span><span class="p">,</span>
+            <span class="n">args</span><span class="o">=</span><span class="n">k</span><span class="p">,</span>
+            <span class="n">adjoint</span><span class="o">=</span><span class="n">adjoint</span>
+        <span class="p">)</span>
+
+        <span class="c1">### END OF DIFFRAX INTEGRATION ###</span>
+
+        <span class="k">return</span> <span class="n">vmap</span><span class="p">(</span><span class="n">sol</span><span class="o">.</span><span class="n">evaluate</span><span class="p">)(</span><span class="n">lna</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="PerturbationEvolver.make_output_table">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.perturbations.PerturbationEvolver.make_output_table">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">make_output_table</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">lna</span><span class="p">,</span> <span class="n">modes</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Create interpolatable perturbation table from evolution results.</span>
+
+<span class="sd">        Extracts key perturbation modes and computes derived quantities.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        -----------</span>
+<span class="sd">        k : array</span>
+<span class="sd">            Wavenumber grid (units: Mpc^{-1})</span>
+<span class="sd">        lna : array</span>
+<span class="sd">            Logarithm of scale factor grid</span>
+<span class="sd">        modes : array</span>
+<span class="sd">            Perturbation evolution results</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">        --------</span>
+<span class="sd">        PerturbationTable</span>
+<span class="sd">            Organized perturbation data for interpolation</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">CDM</span>    <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">perturbations_list</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">Baryon</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">perturbations_list</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">Photon</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">perturbations_list</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+
+        <span class="c1"># Shapes are (Nlna, Nk)</span>
+        <span class="n">metric_h</span>   <span class="o">=</span> <span class="n">modes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">metric_eta</span> <span class="o">=</span> <span class="n">modes</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">delta_cdm</span>  <span class="o">=</span> <span class="n">modes</span><span class="p">[</span><span class="n">CDM</span><span class="o">.</span><span class="n">delta_idx</span><span class="p">]</span>
+        <span class="n">delta_b</span>    <span class="o">=</span> <span class="n">modes</span><span class="p">[</span><span class="n">Baryon</span><span class="o">.</span><span class="n">delta_idx</span><span class="p">]</span>
+        <span class="n">theta_b</span>    <span class="o">=</span> <span class="n">modes</span><span class="p">[</span><span class="n">Baryon</span><span class="o">.</span><span class="n">delta_idx</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">delta_g</span>    <span class="o">=</span> <span class="n">modes</span><span class="p">[</span><span class="n">Photon</span><span class="o">.</span><span class="n">delta_idx</span><span class="p">]</span>
+        <span class="n">theta_g</span>    <span class="o">=</span> <span class="n">modes</span><span class="p">[</span><span class="n">Photon</span><span class="o">.</span><span class="n">delta_idx</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">sigma_g</span>    <span class="o">=</span> <span class="n">modes</span><span class="p">[</span><span class="n">Photon</span><span class="o">.</span><span class="n">delta_idx</span><span class="o">+</span><span class="mi">2</span><span class="p">]</span>
+        <span class="n">Gg0</span>        <span class="o">=</span> <span class="n">modes</span><span class="p">[</span><span class="n">Photon</span><span class="o">.</span><span class="n">delta_idx</span><span class="o">+</span><span class="n">Photon</span><span class="o">.</span><span class="n">num_F_ell_modes</span><span class="p">]</span>
+        <span class="n">Gg2</span>        <span class="o">=</span> <span class="n">modes</span><span class="p">[</span><span class="n">Photon</span><span class="o">.</span><span class="n">delta_idx</span><span class="o">+</span><span class="n">Photon</span><span class="o">.</span><span class="n">num_F_ell_modes</span><span class="o">+</span><span class="mi">2</span><span class="p">]</span>
+
+        <span class="c1"># Now the stuff that needs to be backwards calculated.</span>
+        <span class="n">karr</span> <span class="o">=</span> <span class="n">k</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:]</span>
+        <span class="n">a</span>  <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">lna</span><span class="p">)[:,</span> <span class="kc">None</span><span class="p">]</span>
+        <span class="n">aH</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">BG</span><span class="o">.</span><span class="n">aH</span><span class="p">(</span><span class="n">lna</span><span class="p">)[:,</span> <span class="kc">None</span><span class="p">]</span>
+        <span class="n">cs2</span> <span class="o">=</span> <span class="n">Baryon</span><span class="o">.</span><span class="n">cs2</span><span class="p">(</span><span class="n">lna</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">BG</span><span class="p">)[:,</span> <span class="kc">None</span><span class="p">]</span>
+        <span class="n">R</span> <span class="o">=</span> <span class="mf">4.</span><span class="o">*</span><span class="n">Photon</span><span class="o">.</span><span class="n">rho</span><span class="p">(</span><span class="n">lna</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">BG</span><span class="p">)[:,</span> <span class="kc">None</span><span class="p">]</span><span class="o">/</span><span class="mf">3.</span><span class="o">/</span><span class="n">Baryon</span><span class="o">.</span><span class="n">rho</span><span class="p">(</span><span class="n">lna</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">BG</span><span class="p">)[:,</span> <span class="kc">None</span><span class="p">]</span>
+        <span class="n">tau_c</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">BG</span><span class="o">.</span><span class="n">tau_c</span><span class="p">(</span><span class="n">lna</span><span class="p">)[:,</span> <span class="kc">None</span><span class="p">]</span>
+
+        <span class="c1"># Baryon velocity derivative is needed for CMB</span>
+        <span class="n">theta_b_prime</span> <span class="o">=</span> <span class="o">-</span><span class="n">theta_b</span> <span class="o">+</span> <span class="n">cs2</span><span class="o">/</span><span class="n">aH</span><span class="o">*</span><span class="p">(</span><span class="n">karr</span><span class="o">**</span><span class="mi">2</span><span class="o">*</span><span class="n">delta_b</span><span class="p">)</span> <span class="o">+</span> <span class="n">R</span><span class="o">/</span><span class="n">aH</span><span class="o">/</span><span class="n">tau_c</span><span class="o">*</span><span class="p">(</span><span class="n">theta_g</span><span class="o">-</span><span class="n">theta_b</span><span class="p">)</span>
+
+        <span class="c1"># Sum of density and velocity perturbations over all species.</span>
+        <span class="c1"># These are required again for the metric perturbation derivatives.</span>
+        <span class="n">sum_rho_delta</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">modes</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="n">sum_rho_plus_P_theta</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">modes</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="n">sum_rho_plus_P_sigma</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">modes</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+
+        <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">perturbations_list</span><span class="p">:</span>
+            <span class="n">sum_rho_delta</span> <span class="o">+=</span> <span class="n">vmap</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">rho_delta</span><span class="p">,</span> <span class="n">in_axes</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="kc">None</span><span class="p">))(</span><span class="n">lna</span><span class="p">,</span> <span class="n">modes</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">BG</span><span class="p">)</span>
+            <span class="n">sum_rho_plus_P_theta</span> <span class="o">+=</span> <span class="n">vmap</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">rho_plus_P_theta</span><span class="p">,</span> <span class="n">in_axes</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="kc">None</span><span class="p">))(</span><span class="n">lna</span><span class="p">,</span> <span class="n">modes</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">BG</span><span class="p">)</span>
+            <span class="n">sum_rho_plus_P_sigma</span> <span class="o">+=</span> <span class="n">vmap</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">rho_plus_P_sigma</span><span class="p">,</span> <span class="n">in_axes</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="kc">None</span><span class="p">))(</span><span class="n">lna</span><span class="p">,</span> <span class="n">modes</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">BG</span><span class="p">)</span>
+
+        <span class="c1"># Metric perturbation derivatives</span>
+        <span class="n">metric_h_prime</span> <span class="o">=</span> <span class="mf">2.</span><span class="o">/</span><span class="n">aH</span><span class="o">**</span><span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="n">karr</span><span class="o">**</span><span class="mi">2</span><span class="o">*</span><span class="n">metric_eta</span> <span class="o">+</span> <span class="mf">4.</span><span class="o">*</span><span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="o">*</span><span class="n">cnst</span><span class="o">.</span><span class="n">G</span><span class="o">*</span><span class="n">a</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="n">cnst</span><span class="o">.</span><span class="n">c_Mpc_over_s</span><span class="o">**</span><span class="mi">2</span> <span class="o">*</span> <span class="n">sum_rho_delta</span><span class="p">)</span>
+        <span class="n">metric_eta_prime</span> <span class="o">=</span> <span class="mf">4.</span><span class="o">*</span><span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="o">*</span><span class="n">cnst</span><span class="o">.</span><span class="n">G</span><span class="o">*</span><span class="n">a</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="n">aH</span> <span class="o">*</span> <span class="n">sum_rho_plus_P_theta</span> <span class="o">/</span> <span class="n">cnst</span><span class="o">.</span><span class="n">c_Mpc_over_s</span><span class="o">**</span><span class="mi">2</span> <span class="o">/</span> <span class="n">karr</span><span class="o">**</span><span class="mi">2</span>
+        <span class="n">metric_alpha</span> <span class="o">=</span> <span class="n">aH</span><span class="o">*</span><span class="p">(</span><span class="n">metric_h_prime</span> <span class="o">+</span> <span class="mf">6.</span><span class="o">*</span><span class="n">metric_eta_prime</span><span class="p">)</span><span class="o">/</span><span class="mf">2.</span><span class="o">/</span> <span class="n">karr</span><span class="o">**</span><span class="mi">2</span>
+        <span class="n">metric_alpha_prime</span> <span class="o">=</span> <span class="n">metric_eta</span><span class="o">/</span><span class="n">aH</span> <span class="o">-</span> <span class="mf">2.</span><span class="o">*</span><span class="n">metric_alpha</span> \
+                           <span class="o">-</span> <span class="mf">12.</span><span class="o">*</span><span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="o">*</span><span class="n">cnst</span><span class="o">.</span><span class="n">G</span><span class="o">*</span><span class="n">a</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="n">aH</span> <span class="o">*</span> <span class="n">sum_rho_plus_P_sigma</span> <span class="o">/</span> <span class="n">cnst</span><span class="o">.</span><span class="n">c_Mpc_over_s</span><span class="o">**</span><span class="mi">2</span> <span class="o">/</span> <span class="n">karr</span><span class="o">**</span><span class="mi">2</span>
+
+
+        <span class="k">return</span> <span class="n">PerturbationTable</span><span class="p">(</span>
+            <span class="n">k</span><span class="p">,</span>
+            <span class="n">lna</span><span class="p">,</span>
+            <span class="n">delta_cdm</span><span class="p">,</span>
+            <span class="n">delta_b</span><span class="p">,</span>
+            <span class="n">theta_b</span><span class="p">,</span>
+            <span class="n">theta_b_prime</span><span class="p">,</span>
+            <span class="n">delta_g</span><span class="p">,</span>
+            <span class="n">theta_g</span><span class="p">,</span>
+            <span class="n">sigma_g</span><span class="p">,</span>
+            <span class="n">Gg0</span><span class="p">,</span>
+            <span class="n">Gg2</span><span class="p">,</span>
+            <span class="n">metric_h</span><span class="p">,</span>
+            <span class="n">metric_eta</span><span class="p">,</span>
+            <span class="n">metric_h_prime</span><span class="p">,</span>
+            <span class="n">metric_eta_prime</span><span class="p">,</span>
+            <span class="n">metric_alpha</span><span class="p">,</span>
+            <span class="n">metric_alpha_prime</span><span class="p">,</span>
+        <span class="p">)</span></div>
+</div>
+
+
+
+
+<div class="viewcode-block" id="PerturbationTable">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.perturbations.PerturbationTable">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">PerturbationTable</span><span class="p">(</span><span class="n">eqx</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Interpolatable table of perturbation evolution.</span>
+
+<span class="sd">    Stores perturbation modes as 2D arrays over wavenumber and time</span>
+<span class="sd">    for efficient interpolation.</span>
+
+<span class="sd">    Attributes:</span>
+<span class="sd">    -----------</span>
+<span class="sd">    k : array</span>
+<span class="sd">        Wavenumber grid (units: Mpc^{-1})</span>
+<span class="sd">    lna : array</span>
+<span class="sd">        Logarithm of scale factor grid</span>
+<span class="sd">    delta_cdm : array</span>
+<span class="sd">        Cold dark matter density perturbations</span>
+<span class="sd">    delta_b : array</span>
+<span class="sd">        Baryon density perturbations</span>
+<span class="sd">    theta_b : array</span>
+<span class="sd">        Baryon velocity perturbations</span>
+<span class="sd">    theta_b_prime : array</span>
+<span class="sd">        Baryon velocity derivatives</span>
+<span class="sd">    delta_g : array</span>
+<span class="sd">        Photon density perturbations</span>
+<span class="sd">    theta_g : array</span>
+<span class="sd">        Photon velocity perturbations  </span>
+<span class="sd">    sigma_g : array</span>
+<span class="sd">        Photon quadrupole temperature moments</span>
+<span class="sd">    Gg0 : array</span>
+<span class="sd">        Photon monopole polarization moments</span>
+<span class="sd">    Gg2 : array</span>
+<span class="sd">        Photon quadrupole polarization moments</span>
+<span class="sd">    metric_h : array</span>
+<span class="sd">        Metric perturbation h</span>
+<span class="sd">    metric_eta : array</span>
+<span class="sd">        Metric perturbation η</span>
+<span class="sd">    metric_h_prime : array</span>
+<span class="sd">        Time derivative of metric h</span>
+<span class="sd">    metric_eta_prime : array</span>
+<span class="sd">        Time derivative of metric η</span>
+<span class="sd">    metric_alpha : array</span>
+<span class="sd">        Derived metric perturbation α</span>
+<span class="sd">    metric_alpha_prime : array</span>
+<span class="sd">        Time derivative of metric α</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">k</span>         <span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span>
+    <span class="n">lna</span>       <span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span>
+    <span class="n">delta_cdm</span> <span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span>
+    <span class="n">delta_b</span>   <span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span>
+    <span class="n">theta_b</span>   <span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span>
+    <span class="n">theta_b_prime</span> <span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span>
+    <span class="n">delta_g</span>   <span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span>
+    <span class="n">theta_g</span>   <span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span>
+    <span class="n">sigma_g</span>   <span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span>
+    <span class="n">Gg0</span>       <span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span>
+    <span class="n">Gg2</span>       <span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span>
+
+    <span class="n">metric_h</span>       <span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span>
+    <span class="n">metric_eta</span>     <span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span>
+    <span class="n">metric_h_prime</span> <span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span>
+    <span class="n">metric_eta_prime</span> <span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span>
+    <span class="n">metric_alpha</span>   <span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span>
+    <span class="n">metric_alpha_prime</span> <span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span></div>
+
+
+<div class="viewcode-block" id="MockPerturbationTable">
+<a class="viewcode-back" href="../../ABCMB.html#ABCMB.perturbations.MockPerturbationTable">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">MockPerturbationTable</span><span class="p">(</span><span class="n">PerturbationTable</span><span class="p">):</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">file_dir</span><span class="o">+</span><span class="s2">&quot;/../Module_Tests/perturbations.npz&quot;</span><span class="p">)</span>
+
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
+            <span class="n">k</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;k&quot;</span><span class="p">]),</span>
+            <span class="n">lna</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;lna&quot;</span><span class="p">]),</span>
+            <span class="n">delta_cdm</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;delta_cdm&quot;</span><span class="p">]),</span>
+            <span class="n">delta_b</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;delta_b&quot;</span><span class="p">]),</span>
+            <span class="n">theta_b</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;theta_b&quot;</span><span class="p">]),</span>
+            <span class="n">theta_b_prime</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;theta_b_prime&quot;</span><span class="p">]),</span>
+            <span class="n">delta_g</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;delta_g&quot;</span><span class="p">]),</span>
+            <span class="n">theta_g</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;theta_g&quot;</span><span class="p">]),</span>
+            <span class="n">sigma_g</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;sigma_g&quot;</span><span class="p">]),</span>
+            <span class="n">Gg0</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;Gg0&quot;</span><span class="p">]),</span>
+            <span class="n">Gg2</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;Gg2&quot;</span><span class="p">]),</span>
+            <span class="n">metric_h</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;metric_h&quot;</span><span class="p">]),</span>
+            <span class="n">metric_eta</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;metric_eta&quot;</span><span class="p">]),</span>
+            <span class="n">metric_h_prime</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;metric_h_prime&quot;</span><span class="p">]),</span>
+            <span class="n">metric_eta_prime</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;metric_eta_prime&quot;</span><span class="p">]),</span>
+            <span class="n">metric_alpha</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;metric_alpha&quot;</span><span class="p">]),</span>
+            <span class="n">metric_alpha_prime</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;metric_alpha_prime&quot;</span><span class="p">]),</span>
+        <span class="p">)</span></div>
+
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../index.html">ABCMB</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../getting-started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">ABCMB</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../index.html">Documentation overview</a><ul>
+  <li><a href="../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2025, Zilu Zhou, Cara Giovanetti, and Hongwan Liu.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.2.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>
