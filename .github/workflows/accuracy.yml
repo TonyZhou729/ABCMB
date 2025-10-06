@@ -41,7 +41,7 @@ jobs:
 
       - name: Run tests
         env:
-          PYTHONPATH: ${{ github.workspace }}/diff_recomb
+          PYTHONPATH: ${{ github.workspace }}/ABCMB
         run: |
           cd pytests
           pytest -s -vv
