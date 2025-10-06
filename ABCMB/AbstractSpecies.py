@@ -1159,7 +1159,7 @@ class Photon(AbstractStandardPerturbedFluid, strict=True):
     num_G_ell_modes : int = eqx.field(static=True)
     num_ell_modes : int = eqx.field(static=True)
 
-    def __init__(self, delta_idx, baryon, num_F_ell_modes=50, num_G_ell_modes=25):
+    def __init__(self, delta_idx, baryon, num_F_ell_modes=7, num_G_ell_modes=7):
         self.delta_idx = delta_idx
         self.baryon = baryon
         self.num_F_ell_modes = num_F_ell_modes
