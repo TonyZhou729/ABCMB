@@ -2,7 +2,7 @@ import numpy as np
 import jax.numpy as jnp
 from jax import config, pure_callback, devices, device_put
 from jax.scipy.ndimage import map_coordinates
-from JaxCMB import constants as cnst
+from ABCMB import constants as cnst
 import jax.experimental.host_callback as hcb
 import os
 file_dir = os.path.dirname(__file__)
