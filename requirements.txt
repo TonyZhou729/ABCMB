@@ -1,9 +1,9 @@
-numpy
-scipy
+numpy==2.2.3
+scipy==1.15.1
 matplotlib
-jax
+jax==0.7.0
 pytest
-diffrax
-equinox
-classy
+diffrax==0.7.0
+equinox==0.13.0
+classy==v3.2.5
 interpax
