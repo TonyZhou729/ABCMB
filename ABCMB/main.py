@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import equinox as eqx
 import diffrax
 
-from .hyrax import hyrax
+from .hyrex import hyrex
 from . import cosmology, perturbations, spectrum
 from . import constants as cnst
 from . import AbstractSpecies as AS
@@ -64,7 +64,7 @@ class Model(eqx.Module):
     add_derived_parameters : Compute derived parameters
     """
 
-    RM : hyrax.recomb_model
+    RM : hyrex.recomb_model
     #PE : perturbations.PerturbationEvolver
     SS : spectrum.SpectrumSolver
 
@@ -116,7 +116,7 @@ class Model(eqx.Module):
             if isinstance(species, AS.AbstractPerturbedFluid):
                 self.perturbations_list = self.perturbations_list + (species, )
 
-        self.RM = hyrax.recomb_model()
+        self.RM = hyrex.recomb_model()
         #self.PE = perturbations.PerturbationEvolver(perturbations_list)
     
     @jit

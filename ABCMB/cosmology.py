@@ -6,8 +6,8 @@ import equinox as eqx
 from diffrax import diffeqsolve, ODETerm, Kvaerno5, Tsit5, SaveAt, PIDController, ForwardMode
 
 import ABCMB.AbstractSpecies as AS
-from .hyrax.array_with_padding import array_with_padding
-from .hyrax import recomb_functions
+from .hyrex.array_with_padding import array_with_padding
+from .hyrex import recomb_functions
 from . import ABCMBTools as tools
 from . import constants as cnst
 
@@ -94,7 +94,7 @@ class Background(eqx.Module):
         
         ### RECOMBINATION RELATED ###
 
-        # Run hyrax to tabulate recombination output
+        # Run hyrex to tabulate recombination output
         self.xe_tab, self.lna_xe_tab, self.Tm_tab, self.lna_Tm_tab = RM(self)
         self.kappa_tab = self._tabulate_optical_depth()
 
