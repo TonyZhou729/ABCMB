@@ -12,7 +12,7 @@ sphinx:
 python:
   install:
     - method: pip
-      path: .
+      path: ABCMB/
     - requirements: docs/requirements.txt
 
 formats:
