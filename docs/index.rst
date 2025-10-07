@@ -13,6 +13,5 @@ ABCMB is a fully differentiable Boltzmann solver for the CMB.
    :maxdepth: 2
    :caption: Contents:
 
-   getting-started
    modules
 
