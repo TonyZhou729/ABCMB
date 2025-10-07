@@ -1,3 +1,6 @@
+# Base project dependencies
+-r ../requirements.txt
+
 sphinx
 sphinx-rtd-theme
 myst-parser
