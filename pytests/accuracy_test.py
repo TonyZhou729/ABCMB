@@ -22,6 +22,8 @@ import numpy as np
 np.seterr(all='raise') 
 
 def test_accuracy_checker(h = 0.6762):
+    ellmin = 2
+    ellmax = 2500
     try:
         # ABCMB:
         params = {
@@ -38,21 +40,12 @@ def test_accuracy_checker(h = 0.6762):
             'T_ncdm': 0.71611 * 2.34865418e-4,
         }
 
-        model = Model(ellmin=2, ellmax=2000, lensing=False, has_MasslessNeutrinos=True) # ZZ: model now takes ellmin, ellmax for Cls, and want_lensing
-        k = jnp.logspace(-3., 0., 200, base=10)
-        k_np = np.logspace(-3., 0., 200, base=10)
-        #PT, BG = model.get_PTBG(params)
-        #SS = spectrum.SpectrumSolver(switch_sw=1., switch_isw=1., switch_dop=1., switch_pol=1.)
-        #SS = model.SS
-
-        #idxs = jnp.arange(18, 80) # Only compute at tabulated l positions. Future: Adjust l_max # CG: 80 for l = 2000
-        #ABC_Cl = SS.get_Cl(idxs, PT, BG)[0] # [0] is TT
-        #ABC_ell = spectrum.bessel_l_tab[idxs]
+        model = Model(ellmin=ellmin, ellmax=ellmax, lensing=False, has_MasslessNeutrinos=True) # ZZ: model now takes ellmin, ellmax for Cls, and want_lensing
         ABC_Cls = model.run_cosmology(params)
-        ABC_Cl = ABC_Cls[0] # [0] is TT
+        ABC_tt = ABC_Cls[0] 
+        ABC_te = ABC_Cls[1] 
+        ABC_ee = ABC_Cls[2] 
         ABC_ell = model.SS.ells # SpectrumSolver now automatically computes ells between specified ellmin and ellmax
-
-        print(ABC_Cl)
 
 
         # CLASS:
@@ -65,7 +58,7 @@ def test_accuracy_checker(h = 0.6762):
             'N_ur' : params['Neff'],
             'YHe': params['YHe'],
             'N_ncdm': 0,
-            'output':'mPk, tCl, pCl, lCl',
+            'output':'mPk, tCl, pCl',
             'lensing':'no',
             'P_k_max_h/Mpc':1.0
         }
@@ -74,20 +67,15 @@ def test_accuracy_checker(h = 0.6762):
         CLASS_Model.set(CLASS_params)
 
         CLASS_Model.compute()
-        cl = CLASS_Model.raw_cl(2000)
-        cltt=cl["tt"][2:]
-        ell = cl["ell"][2:]
-        print(cltt)
+        cl = CLASS_Model.raw_cl(ellmax)
+        cltt=cl["tt"][ellmin:]
+        ell = cl["ell"][ellmin:]
 
+        # Compare all ells
+        err_tt = abs(cltt-ABC_tt)/cltt
+        print(err_tt.max())
 
-        ABC_interp = interp1d(np.asarray(ABC_ell),np.asarray(ABC_ell * (ABC_ell + 1)/2* ABC_Cl),'cubic')
-        CLASS_interp = interp1d(ell,ell*(ell+1)/2 * cltt,'cubic')
-
-        diff = []
-        for ell in [100,300,1000]:
-            diff = np.append(diff,np.abs((ABC_interp(ell) - CLASS_interp(ell))/CLASS_interp(ell)))
-
-        assert max(diff) <= 0.21, f"Accuracy check failed: {diff}"
+        assert max(err_tt) <= 0.21, f"Accuracy check failed: {err_tt}"
     
     except Exception as e:
         pytest.fail(f"accuracy_checks raised an exception: {e}")
