@@ -86,10 +86,10 @@ class PerturbationEvolver(eqx.Module):
         PerturbationTable
             Interpolatable table of perturbation evolution
         """
-        #lna = jnp.linspace(self.BG.lna_transfer_start, 0., 500)  # lna_end hardcoded
-        lna = jnp.linspace(-14., 0., 1000)
-        #k = jnp.geomspace(1.e-4, 0.4, 300)
-        k = jnp.array([1.e-3, 1.e-2, 1.e-1])
+        lna = jnp.linspace(self.BG.lna_transfer_start, 0., 500)  # lna_end hardcoded
+        #lna = jnp.linspace(-14., 0., 1000)
+        k = jnp.geomspace(1.e-4, 0.4, 300)
+        #k = jnp.array([1.e-3, 1.e-2, 1.e-1])
 
         def body_fun(_, ki):
             # evolution_one_k returns shape (Nlna, Ny)
@@ -332,8 +332,8 @@ class PerturbationEvolver(eqx.Module):
 
         # For small k's the superhorizon time can be set relatively late, but I impose a cutoff of z~20000 for all modes
         # at the very least.
-        lna_start = jnp.minimum(lna_start, lna[0])
-        #lna_start = jnp.minimum(lna_start, -10)
+        #lna_start = jnp.minimum(lna_start, lna[0])
+        lna_start = jnp.minimum(lna_start, -10.)
     
         # Initial conditions for tight coupling
         y_ini = self.initial_conditions_one_k(k, lna_start)
