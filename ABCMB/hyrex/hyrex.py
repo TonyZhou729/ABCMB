@@ -35,10 +35,7 @@ class recomb_model(eqx.Module):
     idx_late : jnp.array
     idx_4He_equil : jnp.array
 
-    z_reion : jnp.float64
-    Delta_z_reion : jnp.float64
-
-    def __init__(self,integration_spacing = 5.0e-4, z_reion = 11, Delta_z_reion = 0.5, Nsteps=800, Nsteps_postSahaHe=4000, z0=8000., z1=0.):
+    def __init__(self,integration_spacing = 5.0e-4, Nsteps=800, Nsteps_postSahaHe=4000, z0=8000., z1=0.):
         """
         Initialize complete recombination model.
 
@@ -49,10 +46,6 @@ class recomb_model(eqx.Module):
         -----------
         integration_spacing : float, optional
             Step size for integration (default: 5.0e-4)
-        z_reion : float, optional
-            Reionization redshift (default: 11)
-        Delta_z_reion : float, optional
-            Reionization transition width (default: 0.5)
         Nsteps : int, optional
             Maximum integration steps (default: 800)
         Nsteps_postSahaHe : int, optional
@@ -75,10 +68,7 @@ class recomb_model(eqx.Module):
         self.idx_4He_equil = jnp.where(self.lna_axis_full <= -jnp.log(self.He4equil_redshift))[0]
         self.idx_late  = jnp.where(self.lna_axis_full >= -jnp.log(self.twog_redshift))[0]
 
-        self.z_reion = z_reion
-        self.Delta_z_reion = Delta_z_reion
-
-    def __call__(self, BG, rtol=1e-6, atol=1e-9,solver=Kvaerno3(),max_steps=1024):
+    def __call__(self, BG,  z_reion = 11, Delta_z_reion = 0.5, rtol=1e-6, atol=1e-9,solver=Kvaerno3(),max_steps=1024):
         """
         Compute complete recombination and reionization history.
 
@@ -86,6 +76,10 @@ class recomb_model(eqx.Module):
         -----------
         BG : cosmology.Background
             Background cosmology module
+        z_reion : float, optional
+            Reionization redshift (default: 11)
+        Delta_z_reion : float, optional
+            Reionization transition width (default: 0.5)
         rtol : float, optional
             Relative tolerance for ODE solver (default: 1e-6)
         atol : float, optional
@@ -101,10 +95,10 @@ class recomb_model(eqx.Module):
             (xe_full_reion, lna_full, Tm, lna_Tm) - complete ionization history
             with reionization, log scale factor, matter temperature, and temperature grid
         """
-        return self.get_history(BG, rtol, atol, solver, max_steps)
+        return self.get_history(BG, z_reion, Delta_z_reion, rtol, atol, solver, max_steps)
     
     # @partial(jit, static_argnames=['solver']) # uncomment for standalone use
-    def get_history(self, BG, rtol=1e-6, atol=1e-9,solver=Kvaerno3(),max_steps=1024):
+    def get_history(self, BG,  z_reion = 11, Delta_z_reion = 0.5,rtol=1e-6, atol=1e-9,solver=Kvaerno3(),max_steps=1024):
         """
         Compute complete recombination and reionization history.
 
@@ -115,6 +109,10 @@ class recomb_model(eqx.Module):
         -----------
         BG : cosmology.Background
             Background cosmology module
+        z_reion : float, optional
+            Reionization redshift (default: 11)
+        Delta_z_reion : float, optional
+            Reionization transition width (default: 0.5)
         rtol : float, optional
             Relative tolerance for ODE solver (default: 1e-6)
         atol : float, optional
@@ -144,8 +142,8 @@ class recomb_model(eqx.Module):
         z = 1/jnp.exp(lna_full.arr) - 1
         y = (1+z)**(3./2)
 
-        y_reion = (1+self.z_reion)**(3./2)
-        Delta_y_reion = 3./2 * jnp.sqrt(1+self.z_reion) * self.Delta_z_reion
+        y_reion = (1+z_reion)**(3./2)
+        Delta_y_reion = 3./2 * jnp.sqrt(1+z_reion) * Delta_z_reion
         tanh_arg = (y_reion - y) / Delta_y_reion
 
         xe_reion_correction = (1+fHe)/2 * (1 + jnp.tanh(tanh_arg))
