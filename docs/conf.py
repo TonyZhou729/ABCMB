@@ -24,7 +24,7 @@ extensions = [
 # # Make sure Sphinx can import your code
 import os
 import sys
-sys.path.insert(0, os.path.abspath('../ABCMB'))  # if your package is in repo root
+sys.path.insert(0, os.path.abspath('..'))  # if your package is in repo root
 
 
 templates_path = ['_templates']

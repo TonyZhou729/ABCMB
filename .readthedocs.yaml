@@ -11,8 +11,6 @@ sphinx:
 
 python:
   install:
-    - method: pip
-      path: ABCMB/
     - requirements: docs/requirements.txt
 
 formats:
