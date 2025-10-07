@@ -11,10 +11,16 @@ It computes the matter and CMB power spectra and includes effects
 like lensing, massive neutrinos, and a state-of-the-art treatment 
 of the physics of recombination through the companion code HyRex.
 
+`HyRex Documentation <https://hyrex.readthedocs.io/en/latest/>`_ is maintained separately. 
+
+
+
 
 .. toctree::
    :maxdepth: 2
    :caption: Contents:
 
    modules
+
+   
 
