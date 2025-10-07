@@ -97,7 +97,6 @@ class recomb_model(eqx.Module):
         """
         return self.get_history(BG, z_reion, Delta_z_reion, rtol, atol, solver, max_steps)
     
-    # @partial(jit, static_argnames=['solver']) # uncomment for standalone use
     def get_history(self, BG,  z_reion = 11, Delta_z_reion = 0.5,rtol=1e-6, atol=1e-9,solver=Kvaerno3(),max_steps=1024):
         """
         Compute complete recombination and reionization history.

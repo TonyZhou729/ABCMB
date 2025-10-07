@@ -15,13 +15,6 @@ release = '0.0'
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 
-# extensions = [
-#     "sphinx.ext.autodoc",   # Core extension for docstring extraction
-#     "sphinx.ext.napoleon",  # For Google/NumPy-style docstrings
-#     "sphinx.ext.viewcode",  # Adds links to highlighted source code
-#     "myst_parser",          # (optional) Markdown support
-# ]
-
 # # Make sure Sphinx can import your code
 import os
 import sys
