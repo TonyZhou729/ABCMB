@@ -14,10 +14,7 @@ release = '0.0'
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
-extensions = ['sphinx.ext.autodoc', 'sphinx.ext.napoleon', 'sphinx.ext.intersphinx']
-intersphinx_mapping = {
-    'hyrex': ('https://hyrex.readthedocs.io/en/latest/', None),
-}
+
 # extensions = [
 #     "sphinx.ext.autodoc",   # Core extension for docstring extraction
 #     "sphinx.ext.napoleon",  # For Google/NumPy-style docstrings
@@ -32,7 +29,19 @@ sys.path.insert(0, os.path.abspath('..'))  # if your package is in repo root
 
 
 templates_path = ['_templates']
-exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+extensions = ['sphinx.ext.autodoc', 'sphinx.ext.napoleon', 'sphinx.ext.intersphinx']
+intersphinx_mapping = {
+    'hyrex': ('https://hyrex.readthedocs.io/en/latest/', None),
+}
+exclude_patterns = [
+    'ABCMB/hyrex',      # exclude the subpackage
+    '../ABCMB/hyrex',   # relative path safety
+    'HyRex',            # in case of capitalization variants
+    '_build',
+    'Thumbs.db',
+    '.DS_Store',
+]
+
 
 
 
