@@ -14,12 +14,16 @@ release = '0.0'
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
-extensions = [
-    "sphinx.ext.autodoc",   # Core extension for docstring extraction
-    "sphinx.ext.napoleon",  # For Google/NumPy-style docstrings
-    "sphinx.ext.viewcode",  # Adds links to highlighted source code
-    "myst_parser",          # (optional) Markdown support
-]
+extensions = ['sphinx.ext.autodoc', 'sphinx.ext.napoleon', 'sphinx.ext.intersphinx']
+intersphinx_mapping = {
+    'hyrex': ('https://hyrex.readthedocs.io/en/latest/', None),
+}
+# extensions = [
+#     "sphinx.ext.autodoc",   # Core extension for docstring extraction
+#     "sphinx.ext.napoleon",  # For Google/NumPy-style docstrings
+#     "sphinx.ext.viewcode",  # Adds links to highlighted source code
+#     "myst_parser",          # (optional) Markdown support
+# ]
 
 # # Make sure Sphinx can import your code
 import os
