@@ -517,7 +517,7 @@ class SpectrumSolver(eqx.Module):
 
     def Cl_one_ell(self, idx, PT, BG):
         """
-        Compute angular power spectrum for single multipole.
+        Computes angular power spectrum for single multipole.
 
         Integrates transfer functions over wavenumber.
 
