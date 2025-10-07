@@ -9,7 +9,7 @@ ABCMB documentation
 ABCMB is a fully differentiable Boltzmann solver for the CMB.   
 It computes the matter and CMB power spectra and includes effects 
 like lensing, massive neutrinos, and a state-of-the-art treatment 
-of the physics of recombination through the companion code HYRAX.
+of the physics of recombination through the companion code HyRex.
 
 
 .. toctree::
