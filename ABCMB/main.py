@@ -150,7 +150,7 @@ class Model(eqx.Module):
         Cls = self.SS.get_Cl(PT, BG)
         return Cls
 
-    # @jit
+    @jit
     def get_PTBG(self, params : dict):
         """
         Get perturbation table and background.
@@ -175,7 +175,7 @@ class Model(eqx.Module):
         PT = PE.full_evolution_scan()
         return PT, BG
 
-    # @jit
+    @jit
     def get_BG(self, params : dict):
         """
         Get background for given parameters.
