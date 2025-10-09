@@ -304,12 +304,6 @@ class Model(eqx.Module):
                     "docs or https://arxiv.org/abs/2408.14538 for more information.")
                 sys.exit()
 
-            if params.get("omega_b") is not None:
-                print("You have specified a value of omega_b, but LINX instead expects a \n" \
-                    "parameter 'eta_fac' which will be used to compute omega_b.  Refer to LINX \n" \
-                    "docs or https://arxiv.org/abs/2408.14538 for more information.")
-                sys.exit()
-
 
             thermo_model_DNeff = BackgroundModel()
             (
@@ -317,8 +311,9 @@ class Model(eqx.Module):
             ) = thermo_model_DNeff(jnp.asarray(params['dNnu']))
 
             params['Neff'] = Neff_vec[-1]
-            eta_fac = jnp.asarray(params.get("eta_fac", 1.0))
-            params['omega_b'] = eta_fac*linxconst.eta0/linxconst.Omegabh2_to_eta0 # CG: LINX uses 0.02242 for omega_b by default
+
+            # convert user input omega_b to eta_fac LINX expects
+            eta_fac = params['omega_b'] * linxconst.Omegabh2_to_eta0/linxconst.eta0
 
             abundance_model = AbundanceModel(NuclearRates(nuclear_net=self.linx_reaction_net))
 
