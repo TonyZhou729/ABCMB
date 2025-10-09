@@ -40,7 +40,7 @@ def test_accuracy_checker(h = 0.6762):
             'T_ncdm': 0.71611 * 2.34865418e-4,
         }
 
-        model = Model(ellmin=ellmin, ellmax=ellmax, lensing=False, has_MasslessNeutrinos=True) # ZZ: model now takes ellmin, ellmax for Cls, and want_lensing
+        model = Model(ellmin=ellmin, ellmax=ellmax, lensing=False) # ZZ: model now takes ellmin, ellmax for Cls, and want_lensing
         ABC_Cls = model.run_cosmology(params)
         ABC_tt = ABC_Cls[0] 
         ABC_te = ABC_Cls[1] 
