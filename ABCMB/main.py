@@ -253,7 +253,7 @@ class Model(eqx.Module):
             params['omega_g']      = 8. * jnp.pi**3 * cnst.G / 45. / cnst.H0_over_h**2 / cnst.hbar**3 / cnst.c**3 * params['TCMB0']**4
             params['H0']           = params['h'] * cnst.H0_over_h
             params['N_ur']         = params['Neff'] - (params['T_ncdm'] / params['TCMB0'])**4 / (4. / 11.)**(4. / 3.) * params['N_ncdm']
-            params['omega_nu']     = 7. / 8. * params['N_ur'] * (4. / 11.)**(4. / 3.) * params['omega_g']
+            params['omega_nu']     = 7. / 8. * params['N_ur'] * (params['T_nu']/params['TCMB0'])**(4/3) * params['omega_g']
             params['omega_r']      = params['omega_g'] + params['omega_nu']
             params['R_nu']         = jnp.where(params['omega_r'] > 0.0, params['omega_nu'] / params['omega_r'], 0.0)
             params['omega_Lambda'] = params['h']**2 - params['omega_r'] - params['omega_m']
@@ -265,7 +265,9 @@ class Model(eqx.Module):
             YHe_all = bbn[:, 2]
 
             # unique_DNeff, idxNeff = jnp.unique(DNeff_all, return_index=True)
-            # we have to hardcode these values to be jit safe
+            # we have to hardcode these values to be jit safe (alternatively we 
+            # could read them in at runtime, but these tables don't update 
+            # frequently)
             n2 = 13 # unique_DNeff.size
             n1 = 701# bbn.shape[0] // n2
 
@@ -280,19 +282,14 @@ class Model(eqx.Module):
                                                 # corresponding to this temperature
             lna_bbn = jnp.log(a_bbn)
 
+            # this is more extensible than just using params['Neff']; if the user includes i.e. interacting
+            # dark radiation, the input parameter Neff tracks only the scaling of the neutrino
+            # energy density
+            Neff_BBN = (jnp.sum(jnp.asarray([s.rho(lna_bbn, params) for s in self.species_list])) - 
+                    self.species_list[-2].rho(lna_bbn,params))/(self.species_list[-1].rho(lna_bbn,params)/params['Neff'])
             # last two args are user input omega_b and (Neff_BBN - 3.046) (MUST be 3.046 as 
             # this was assumed when constructing the PArthENoPE table)
-            # less extensible version
-            Neff = params['Neff']
-
-            # we want to loop through everything possibly contributing to Neff.  However,
-            # we need to triple the contribution from neutrinos.  So we add extra terms for 
-            # neutrino contributions
-    
-            # This is not yet correct
-            # Neff = (jnp.sum(jnp.asarray([s.rho(lna_bbn, params) for s in self.species_list])) + 2*self.species_list[-1].rho(lna_bbn,params) - 
-            #         self.species_list[-2].rho(lna_bbn,params))/self.species_list[-1].rho(lna_bbn,params)
-            res_YHe = bilinear_interp(omegab, DNeff,YHe_grid, params['omega_b'],Neff - 3.046)
+            res_YHe = bilinear_interp(omegab, DNeff,YHe_grid, params['omega_b'],Neff_BBN - 3.046)
 
             # tabulated result is Yp_CMB
             params['YHe'] = res_YHe
@@ -342,7 +339,7 @@ class Model(eqx.Module):
             params['omega_g']      = 8. * jnp.pi**3 * cnst.G / 45. / cnst.H0_over_h**2 / cnst.hbar**3 / cnst.c**3 * params['TCMB0']**4
             params['H0']           = params['h'] * cnst.H0_over_h
             params['N_ur']         = params['Neff'] - (params['T_ncdm'] / params['TCMB0'])**4 / (4. / 11.)**(4. / 3.) * params['N_ncdm']
-            params['omega_nu']     = 7. / 8. * params['N_ur'] * (4. / 11.)**(4. / 3.) * params['omega_g']
+            params['omega_nu']     = 7. / 8. * params['N_ur'] * (params['T_nu']/params['TCMB0'])**(4/3) * params['omega_g']
             params['omega_r']      = params['omega_g'] + params['omega_nu']
             params['R_nu']         = jnp.where(params['omega_r'] > 0.0, params['omega_nu'] / params['omega_r'], 0.0)
             params['omega_Lambda'] = params['h']**2 - params['omega_r'] - params['omega_m']
@@ -353,7 +350,7 @@ class Model(eqx.Module):
         params['omega_g']      = 8. * jnp.pi**3 * cnst.G / 45. / cnst.H0_over_h**2 / cnst.hbar**3 / cnst.c**3 * params['TCMB0']**4
         params['H0']           = params['h'] * cnst.H0_over_h
         params['N_ur']         = params['Neff'] - (params['T_ncdm'] / params['TCMB0'])**4 / (4. / 11.)**(4. / 3.) * params['N_ncdm']
-        params['omega_nu']     = 7. / 8. * params['N_ur'] * (4. / 11.)**(4. / 3.) * params['omega_g']
+        params['omega_nu']     = 7. / 8. * params['N_ur'] * (params['T_nu']/params['TCMB0'])**(4/3) * params['omega_g']
         params['omega_r']      = params['omega_g'] + params['omega_nu']
         params['R_nu']         = jnp.where(params['omega_r'] > 0.0, params['omega_nu'] / params['omega_r'], 0.0)
         params['omega_Lambda'] = params['h']**2 - params['omega_r'] - params['omega_m']
