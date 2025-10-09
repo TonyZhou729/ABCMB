@@ -5,6 +5,7 @@ import numpy as np
 import equinox as eqx
 import diffrax
 
+import sys
 import os
 file_dir = os.path.dirname(__file__)
 
@@ -13,6 +14,10 @@ from . import cosmology, perturbations, spectrum
 from . import constants as cnst
 from . import AbstractSpecies as AS
 from .ABCMBTools import bilinear_interp
+
+from .linx.background import BackgroundModel
+from .linx.abundances import AbundanceModel
+from .linx.nuclear import NuclearRates
 
 config.update("jax_enable_x64", True)
 
@@ -92,7 +97,7 @@ class Model(eqx.Module):
                  has_MasslessNeutrinos=False, 
                  has_MassiveNeutrinos=False,
                  bbn_type = "",
-                 linx_reaction_net = ""
+                 linx_reaction_net = "key_PRIMAT_2023"
                  ): 
 
         self.SS = spectrum.SpectrumSolver(ellmin, ellmax, lensing, switch_sw=1., switch_isw=1., switch_dop=1., switch_pol=1.)
@@ -134,6 +139,7 @@ class Model(eqx.Module):
         #self.PE = perturbations.PerturbationEvolver(perturbations_list)
         self.PArthENoPE_CLASS_table = jnp.asarray(np.loadtxt(file_dir+'/sBBN_2025_CLASS.txt'))
         self.bbn_type = bbn_type
+        self.linx_reaction_net = linx_reaction_net
     
     # @jit
     @eqx.filter_jit
@@ -236,11 +242,6 @@ class Model(eqx.Module):
         params['R_b']          = params['omega_b'] / params['omega_m']
         params['omega_g']      = 8. * jnp.pi**3 * cnst.G / 45. / cnst.H0_over_h**2 / cnst.hbar**3 / cnst.c**3 * params['TCMB0']**4
         params['H0']           = params['h'] * cnst.H0_over_h
-        params['N_ur']         = params['Neff'] - (params['T_ncdm'] / params['TCMB0'])**4 / (4. / 11.)**(4. / 3.) * params['N_ncdm']
-        params['omega_nu']     = 7. / 8. * params['N_ur'] * (4. / 11.)**(4. / 3.) * params['omega_g']
-        params['omega_r']      = params['omega_g'] + params['omega_nu']
-        params['R_nu']         = jnp.where(params['omega_r'] > 0.0, params['omega_nu'] / params['omega_r'], 0.0)
-        params['omega_Lambda'] = params['h']**2 - params['omega_r'] - params['omega_m']
 
         if self.bbn_type=="Table" or self.bbn_type=="table":
             # interpolate CLASS ParthENoPE table
@@ -262,16 +263,53 @@ class Model(eqx.Module):
             a_bbn = cnst.TCMB_today*1e-6/0.01   # neutrino decoupling is well over by 10 keV, so 
                                                 # compute Neff at a scale factor approximately 
                                                 # corresponding to this temperature
+            lna_bbn = jnp.log(a_bbn)
 
             # last two args are user input omega_b and (Neff_BBN - 3.046) (MUST be 3.046 as 
             # this was assumed when constructing the PArthENoPE table)
-            # CG: put this inside BG
-            Neff = (jnp.sum(jnp.asarray([s.rho(a_bbn, params) for s in self.species_list])) - AS.Photon(idx=0,).rho(a_bbn,params))/AS.MasslessNeutrinos().rho(a_bbn,params)
+
+            # we want to loop through everything possibly contributing to Neff.  However,
+            # we need to triple the contribution from neutrinos.  So we add extra terms for 
+            # neutrino contributions
+            Neff = (jnp.sum(jnp.asarray([s.rho(lna_bbn, params) for s in self.species_list])) + 2*self.species_list[-1].rho(lna_bbn,params) - 
+                    self.species_list[-2].rho(lna_bbn,params))/self.species_list[-1].rho(lna_bbn,params)
+            print(Neff)
             res_YHe = bilinear_interp(omegab, DNeff,YHe_grid, params['omega_b'],Neff - 3.046)
             params['YHe'] = res_YHe
+            print(params['YHe'])
 
         elif self.bbn_type=="LINX" or self.bbn_type=="Linx" or self.bbn_type=="linx":
+            if params.get("Neff") is not None:
+                print("You have specified a value of Neff, but LINX expects a parameter " \
+                    "dNnu which will be used to compute Neff.  Refer to LINX docs or " \
+                    "https://arxiv.org/abs/2408.14538 for more information.")
+                sys.exit()
+
+            thermo_model_DNeff = BackgroundModel()
+            (
+                t_vec_ref, a_vec_ref, rho_g_vec, rho_nu_vec, rho_NP_vec, P_NP_vec, Neff_vec 
+            ) = thermo_model_DNeff(jnp.asarray(params['dNnu']))
+
+            abundance_model = AbundanceModel(NuclearRates(nuclear_net=self.linx_reaction_net))
+
+            abundances = abundance_model(
+                rho_g_vec,
+                rho_nu_vec,
+                rho_NP_vec,
+                P_NP_vec,
+                t_vec=t_vec_ref,
+                a_vec=a_vec_ref,     # CG add eta fac, tau n fac, nuclear_rates_q
+                )
+            
+            YHe_BBN = 4*abundances[5]
+            params['Neff'] = Neff_vec[-1]
+            params['YHe'] = YHe_BBN # CG NEED TO CONVERT TO WHAT ABCMB EXECTS
             # run LINX
-            pass
+        
+        params['N_ur']         = params['Neff'] - (params['T_ncdm'] / params['TCMB0'])**4 / (4. / 11.)**(4. / 3.) * params['N_ncdm']
+        params['omega_nu']     = 7. / 8. * params['N_ur'] * (4. / 11.)**(4. / 3.) * params['omega_g']
+        params['omega_r']      = params['omega_g'] + params['omega_nu']
+        params['R_nu']         = jnp.where(params['omega_r'] > 0.0, params['omega_nu'] / params['omega_r'], 0.0)
+        params['omega_Lambda'] = params['h']**2 - params['omega_r'] - params['omega_m']
 
         return params
