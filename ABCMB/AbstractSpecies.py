@@ -23,7 +23,7 @@ class AbstractFluid(eqx.Module, strict=True):
     """
 
     @abc.abstractmethod
-    def rho(self, lna, BG):
+    def rho(self, lna, params):
         """
         Compute energy density.
 
@@ -45,7 +45,7 @@ class AbstractFluid(eqx.Module, strict=True):
         raise NotImplementedError("Fluid species must implement an energy density function.")
 
     @abc.abstractmethod
-    def P(self, lna, BG):
+    def P(self, lna, params):
         """
         Compute pressure.
 
@@ -67,7 +67,7 @@ class AbstractFluid(eqx.Module, strict=True):
         raise NotImplementedError("Fluid species must implement a pressure function.")
 
     @abc.abstractmethod
-    def cs2(self, lna, BG):
+    def cs2(self, lna, params, BG):
         """
         Compute sound speed squared.
 
@@ -88,7 +88,7 @@ class AbstractFluid(eqx.Module, strict=True):
         """
         raise NotImplementedError("Fluid species must implement a sound speed squared.")
 
-    def w(self, lna, BG):
+    def w(self, lna, params):
         """
         Compute equation of state parameter.
 
@@ -107,7 +107,7 @@ class AbstractFluid(eqx.Module, strict=True):
         float
             Equation of state parameter (units: dimensionless)
         """
-        return self.P(lna, BG)/self.rho(lna, BG)
+        return self.P(lna, params)/self.rho(lna, params)
 
 class AbstractPerturbedFluid(AbstractFluid, strict=True):
     """
@@ -131,7 +131,7 @@ class AbstractPerturbedFluid(AbstractFluid, strict=True):
     num_ell_modes : eqx.AbstractVar[int]
 
     @abc.abstractmethod
-    def y_ini(self, k, tau_ini, om, BG):
+    def y_ini(self, k, tau_ini, om, params):
         """
         Compute initial conditions for perturbation modes.
 
@@ -156,7 +156,7 @@ class AbstractPerturbedFluid(AbstractFluid, strict=True):
         raise NotImplementedError("Fluid species must implement the initial conditions of their perturbation modes.")
 
     @abc.abstractmethod
-    def y_prime(self, k, lna, metric_h_prime, metric_eta_prime, y, BG):
+    def y_prime(self, k, lna, metric_h_prime, metric_eta_prime, y, params, BG):
         """
         Compute time derivatives of perturbation modes.
 
@@ -185,7 +185,7 @@ class AbstractPerturbedFluid(AbstractFluid, strict=True):
         raise NotImplementedError("Fluid species must implement a perturbation derivative function.")
 
     @abc.abstractmethod
-    def rho_delta(self, lna, y, BG):
+    def rho_delta(self, lna, y, params):
         """
         Compute density perturbation.
 
@@ -206,7 +206,7 @@ class AbstractPerturbedFluid(AbstractFluid, strict=True):
         raise NotImplementedError("Fluid species must implement a perturbation derivative function.")
 
     @abc.abstractmethod
-    def rho_plus_P_theta(self, lna, y, BG):
+    def rho_plus_P_theta(self, lna, y, params):
         """
         Compute velocity perturbation.
 
@@ -227,7 +227,7 @@ class AbstractPerturbedFluid(AbstractFluid, strict=True):
         raise NotImplementedError("Fluid species must implement a perturbation derivative function.")
 
     @abc.abstractmethod
-    def rho_plus_P_sigma(self, lna, y, BG):
+    def rho_plus_P_sigma(self, lna, y, params):
         """
         Compute shear perturbation.
 
@@ -261,7 +261,7 @@ class AbstractStandardPerturbedFluid(AbstractPerturbedFluid, strict=True):
     rho_plus_P_sigma : Compute standard shear perturbation (units: eV cm^{-3})
     """
     # Called by diffrax, child classes should never override. Okay to implement here.
-    def rho_delta(self, lna, y, BG):
+    def rho_delta(self, lna, y, params):
         """
         Compute density perturbation.
 
@@ -279,9 +279,9 @@ class AbstractStandardPerturbedFluid(AbstractPerturbedFluid, strict=True):
         float
             Density perturbation (units: eV cm^{-3})
         """
-        return self.rho(lna, BG) * y[self.delta_idx]
+        return self.rho(lna, params) * y[self.delta_idx]
 
-    def rho_plus_P_theta(self, lna, y, BG):
+    def rho_plus_P_theta(self, lna, y, params):
         """
         Compute velocity perturbation.
 
@@ -301,11 +301,11 @@ class AbstractStandardPerturbedFluid(AbstractPerturbedFluid, strict=True):
         """
         return jnp.where(
             self.num_ell_modes > 1,
-            (self.rho(lna, BG)+self.P(lna, BG)) * y[self.delta_idx+1],
+            (self.rho(lna, params)+self.P(lna, params)) * y[self.delta_idx+1],
             0.
         )
 
-    def rho_plus_P_sigma(self, lna, y, BG):
+    def rho_plus_P_sigma(self, lna, y, params):
         """
         Compute shear perturbation.
 
@@ -325,7 +325,7 @@ class AbstractStandardPerturbedFluid(AbstractPerturbedFluid, strict=True):
         """
         return jnp.where(
             self.num_ell_modes > 2,
-            (self.rho(lna, BG)+self.P(lna, BG)) * y[self.delta_idx+2],
+            (self.rho(lna, params)+self.P(lna, params)) * y[self.delta_idx+2],
             0.
         )
 
@@ -343,7 +343,7 @@ class DarkEnergy(AbstractFluid, strict=True):
     P : Compute dark energy pressure (units: eV cm^{-3})
     cs2 : Compute sound speed squared (units: dimensionless)
     """
-    def rho(self, lna, BG):
+    def rho(self, lna, params):
         """
         Compute dark energy density.
 
@@ -359,9 +359,9 @@ class DarkEnergy(AbstractFluid, strict=True):
         float
             Dark energy density (units: eV cm^{-3})
         """
-        return BG.params['omega_Lambda'] * (3.*cnst.H0_over_h**2/8./jnp.pi/cnst.G)
+        return params['omega_Lambda'] * (3.*cnst.H0_over_h**2/8./jnp.pi/cnst.G)
     
-    def P(self, lna, BG):
+    def P(self, lna, params):
         """
         Compute dark energy pressure.
 
@@ -377,9 +377,9 @@ class DarkEnergy(AbstractFluid, strict=True):
         float
             Dark energy pressure (units: eV cm^{-3})
         """
-        return -self.rho(lna, BG)
+        return -self.rho(lna, params)
 
-    def cs2(self, lna, BG):
+    def cs2(self, lna, params, BG):
         """
         Compute sound speed squared.
 
@@ -416,7 +416,7 @@ class ColdDarkMatter(AbstractStandardPerturbedFluid, strict=True):
     delta_idx : int
     num_ell_modes = 1
 
-    def rho(self, lna, BG):
+    def rho(self, lna, params):
         """
         Compute cold dark matter density.
 
@@ -432,9 +432,9 @@ class ColdDarkMatter(AbstractStandardPerturbedFluid, strict=True):
         float
             Cold dark matter density (units: eV cm^{-3})
         """
-        return BG.params['omega_cdm'] * (3.*cnst.H0_over_h**2/8./jnp.pi/cnst.G) / jnp.exp(lna)**3
+        return params['omega_cdm'] * (3.*cnst.H0_over_h**2/8./jnp.pi/cnst.G) / jnp.exp(lna)**3
 
-    def P(self, lna, BG):
+    def P(self, lna, params):
         """
         Compute cold dark matter pressure.
 
@@ -456,7 +456,7 @@ class ColdDarkMatter(AbstractStandardPerturbedFluid, strict=True):
         """
         return 0.
 
-    def cs2(self, lna, BG):
+    def cs2(self, lna, params, BG):
         """
         Compute sound speed squared.
 
@@ -479,7 +479,7 @@ class ColdDarkMatter(AbstractStandardPerturbedFluid, strict=True):
         """
         return 0.
     
-    def y_ini(self, k, tau_ini, om, BG):
+    def y_ini(self, k, tau_ini, om, params):
         """
         Compute initial conditions for cold dark matter perturbations.
 
@@ -502,7 +502,7 @@ class ColdDarkMatter(AbstractStandardPerturbedFluid, strict=True):
         delta = -(k*tau_ini)**2/4. * (1.-om*tau_ini/5.)
         return jnp.array([delta])
 
-    def y_prime(self, k, lna, metric_h_prime, metric_eta_prime, y, BG):
+    def y_prime(self, k, lna, metric_h_prime, metric_eta_prime, y, params, BG):
         """
         Compute time derivatives of cold dark matter perturbations.
 
@@ -543,7 +543,7 @@ class MasslessNeutrinos(AbstractStandardPerturbedFluid, strict=True):
     delta_idx : int
     num_ell_modes : int = eqx.field(default=7, static=True)
 
-    def rho(self, lna, BG):
+    def rho(self, lna, params):
         """
         Compute neutrino density.
 
@@ -559,9 +559,9 @@ class MasslessNeutrinos(AbstractStandardPerturbedFluid, strict=True):
         float
             Neutrino density (units: eV cm^{-3})
         """
-        return BG.params['omega_nu'] * (3.*cnst.H0_over_h**2/8./jnp.pi/cnst.G) / jnp.exp(lna)**4
+        return params['omega_nu'] * (3.*cnst.H0_over_h**2/8./jnp.pi/cnst.G) / jnp.exp(lna)**4
     
-    def P(self, lna, BG):
+    def P(self, lna, params):
         """
         Compute neutrino pressure.
 
@@ -577,9 +577,9 @@ class MasslessNeutrinos(AbstractStandardPerturbedFluid, strict=True):
         float
             Neutrino pressure (units: eV cm^{-3})
         """
-        return self.rho(lna, BG)/3.
+        return self.rho(lna, params)/3.
 
-    def cs2(self, lna, BG):
+    def cs2(self, lna, params, BG):
         """
         Compute sound speed squared.
 
@@ -602,8 +602,8 @@ class MasslessNeutrinos(AbstractStandardPerturbedFluid, strict=True):
         """
         return 1./3.
 
-    def y_ini(self, k, tau_ini, om, BG):
-        R_nu = BG.params['R_nu']
+    def y_ini(self, k, tau_ini, om, params):
+        R_nu = params['R_nu']
 
         delta = - (k*tau_ini)**2/3. * (1.-om*tau_ini/5.)
         theta = - k*(k*tau_ini)**3/36./(4.*R_nu+15.) \
@@ -614,7 +614,7 @@ class MasslessNeutrinos(AbstractStandardPerturbedFluid, strict=True):
         # For the neutrinos we track Fnu_2 = 2*sigma, for better structure within the hierarchy.
         return jnp.concatenate((jnp.array([delta, theta, sigma]), jnp.zeros(self.num_ell_modes-3)))
 
-    def y_prime(self, k, lna, metric_h_prime, metric_eta_prime, y, BG):
+    def y_prime(self, k, lna, metric_h_prime, metric_eta_prime, y, params, BG):
         aH    = BG.aH(lna)
         tau   = BG.tau(lna)
 
@@ -673,7 +673,7 @@ class MassiveNeutrinos(AbstractPerturbedFluid, strict=True):
         self.num_ells_per_bin = num_ells_per_bin
         self.num_ell_modes = num_q_bins * num_ells_per_bin
 
-    def rho(self, lna, BG):
+    def rho(self, lna, params):
         """
         Compute massive neutrino density.
 
@@ -693,8 +693,8 @@ class MassiveNeutrinos(AbstractPerturbedFluid, strict=True):
         # Ensure lna is at least 1D for broadcasting
         lna_arr = jnp.atleast_1d(lna)          # shape (N,)
         a = jnp.exp(lna_arr)[:, None]          # shape (N, 1)
-        T = BG.params['T_ncdm'] / a             # shape (N, 1)
-        x = BG.params['m_ncdm'] / T             # shape (N, 1)
+        T = params['T_ncdm'] / a             # shape (N, 1)
+        x = params['m_ncdm'] / T             # shape (N, 1)
 
         # q_5p, w_5p are shape (5,) → broadcast with (N, 1)
         integrand = (1. + jnp.exp(-self.q_5p)) / self.q_5p**2 \
@@ -708,7 +708,7 @@ class MassiveNeutrinos(AbstractPerturbedFluid, strict=True):
         # Remove extra dimension if original input was scalar
         return jnp.squeeze(rho_val) if jnp.ndim(lna) == 0 else rho_val
 
-    def P(self, lna, BG):
+    def P(self, lna, params):
         """
         Compute massive neutrino pressure.
 
@@ -728,8 +728,8 @@ class MassiveNeutrinos(AbstractPerturbedFluid, strict=True):
         # Ensure lna is at least 1D for broadcasting
         lna_arr = jnp.atleast_1d(lna)          # shape (N,)
         a = jnp.exp(lna_arr)[:, None]          # shape (N, 1)
-        T = BG.params['T_ncdm'] / a             # shape (N, 1)
-        x = BG.params['m_ncdm'] / T             # shape (N, 1)
+        T = params['T_ncdm'] / a             # shape (N, 1)
+        x = params['m_ncdm'] / T             # shape (N, 1)
 
         # q_5p, w_5p are shape (5,) → broadcast with (N, 1)
         integrand = (1. + jnp.exp(-self.q_5p)) / jnp.sqrt(self.q_5p**2 + x**2) # (N, 5)
@@ -742,7 +742,7 @@ class MassiveNeutrinos(AbstractPerturbedFluid, strict=True):
         # Remove extra dimension if original input was scalar
         return jnp.squeeze(P_val) if jnp.ndim(lna) == 0 else P_val
 
-    def cs2(self, lna, BG):
+    def cs2(self, lna, params, BG):
         """
         Compute sound speed squared.
 
@@ -762,9 +762,9 @@ class MassiveNeutrinos(AbstractPerturbedFluid, strict=True):
         ------
         Uses equation of state parameter w as approximation.
         """
-        return self.w(lna, BG) # ZZ : Is this correct?
+        return self.w(lna, params) # ZZ : Is this correct?
 
-    def y_ini(self, k, tau_ini, om, BG):
+    def y_ini(self, k, tau_ini, om, params):
         """
         Compute initial conditions for massive neutrino perturbations.
 
@@ -787,7 +787,7 @@ class MassiveNeutrinos(AbstractPerturbedFluid, strict=True):
         res = jnp.zeros(self.num_ell_modes)
 
         # Initial conditions for massless neutrinos first, needed here.
-        R_nu = BG.params['R_nu']
+        R_nu = params['R_nu']
 
         delta = - (k*tau_ini)**2/3. * (1.-om*tau_ini/5.)
         theta = - k*(k*tau_ini)**3/36./(4.*R_nu+15.) \
@@ -809,7 +809,7 @@ class MassiveNeutrinos(AbstractPerturbedFluid, strict=True):
 
         return res
 
-    def y_prime(self, k, lna, metric_h_prime, metric_eta_prime, y, BG):
+    def y_prime(self, k, lna, metric_h_prime, metric_eta_prime, y, params, BG):
         """
         Compute time derivatives of massive neutrino perturbations.
 
@@ -836,8 +836,8 @@ class MassiveNeutrinos(AbstractPerturbedFluid, strict=True):
         res = jnp.zeros(self.num_ell_modes)
 
         a = jnp.exp(lna)
-        T = BG.params['T_ncdm'] / a
-        x = BG.params['m_ncdm'] / T
+        T = params['T_ncdm'] / a
+        x = params['m_ncdm'] / T
         aH  = BG.aH(lna)
         tau = BG.tau(lna)
 
@@ -869,7 +869,7 @@ class MassiveNeutrinos(AbstractPerturbedFluid, strict=True):
 
         return res
 
-    def rho_delta(self, lna, y, BG):
+    def rho_delta(self, lna, y, params):
         """
         Compute massive neutrino density perturbation.
 
@@ -888,8 +888,8 @@ class MassiveNeutrinos(AbstractPerturbedFluid, strict=True):
             Density perturbation (units: eV cm^{-3})
         """
         a = jnp.exp(lna)
-        T = BG.params['T_ncdm'] / a  # (N,)
-        x = BG.params['m_ncdm'] / T  # (N,)
+        T = params['T_ncdm'] / a  # (N,)
+        x = params['m_ncdm'] / T  # (N,)
 
         res = 0.
         for i in range(self.num_q_bins):
@@ -901,7 +901,7 @@ class MassiveNeutrinos(AbstractPerturbedFluid, strict=True):
             res += w*(1.+jnp.exp(-q))*epsilon/q**2 * Psi0
         return res * 4./jnp.pi**2 * T**4 / cnst.hbar**3 / cnst.c**3
 
-    def rho_plus_P_theta(self, lna, y, BG):
+    def rho_plus_P_theta(self, lna, y, params):
         """
         Compute massive neutrino velocity perturbation.
 
@@ -920,8 +920,8 @@ class MassiveNeutrinos(AbstractPerturbedFluid, strict=True):
             Velocity perturbation (units: eV cm^{-3})
         """
         a = jnp.exp(lna)
-        T = BG.params['T_ncdm'] / a  # (N,)
-        x = BG.params['m_ncdm'] / T  # (N,)
+        T = params['T_ncdm'] / a  # (N,)
+        x = params['m_ncdm'] / T  # (N,)
 
         res = 0.
         for i in range(self.num_q_bins):
@@ -932,7 +932,7 @@ class MassiveNeutrinos(AbstractPerturbedFluid, strict=True):
             res += w*(1.+jnp.exp(-q))/q * kPsi1
         return res * 4./jnp.pi**2 * T**4 / cnst.hbar**3 / cnst.c**3
 
-    def rho_plus_P_sigma(self, lna, y, BG):
+    def rho_plus_P_sigma(self, lna, y, params):
         """
         Compute massive neutrino shear perturbation.
 
@@ -951,8 +951,8 @@ class MassiveNeutrinos(AbstractPerturbedFluid, strict=True):
             Shear perturbation (units: eV cm^{-3})
         """
         a = jnp.exp(lna)
-        T = BG.params['T_ncdm'] / a  # (N,)
-        x = BG.params['m_ncdm'] / T  # (N,)
+        T = params['T_ncdm'] / a  # (N,)
+        x = params['m_ncdm'] / T  # (N,)
 
         res = 0.
         for i in range(self.num_q_bins):
@@ -985,7 +985,7 @@ class Baryon(AbstractStandardPerturbedFluid, strict=True):
     photon : AbstractPerturbedFluid
     num_ell_modes = 2
 
-    def rho(self, lna, BG):
+    def rho(self, lna, params):
         """
         Compute baryon density.
 
@@ -1001,9 +1001,9 @@ class Baryon(AbstractStandardPerturbedFluid, strict=True):
         float
             Baryon density (units: eV cm^{-3})
         """
-        return BG.params['omega_b'] * (3.*cnst.H0_over_h**2/8./jnp.pi/cnst.G) / jnp.exp(lna)**3
+        return params['omega_b'] * (3.*cnst.H0_over_h**2/8./jnp.pi/cnst.G) / jnp.exp(lna)**3
 
-    def P(self, lna, BG):
+    def P(self, lna, params):
         """
         Compute baryon pressure.
 
@@ -1025,7 +1025,7 @@ class Baryon(AbstractStandardPerturbedFluid, strict=True):
         """
         return 0.
 
-    def cs2(self, lna, BG):
+    def cs2(self, lna, params, BG):
         """
         Compute sound speed squared.
 
@@ -1050,12 +1050,12 @@ class Baryon(AbstractStandardPerturbedFluid, strict=True):
         """
         Tm = BG.Tm(lna) # Baryon temp
         Tg = BG.TCMB(lna) # Photon temp
-        mu = self.mean_mass(lna, BG)
-        R = 4.*self.photon.rho(lna, BG)/3./self.rho(lna, BG)
+        mu = self.mean_mass(lna, params, BG)
+        R = 4.*self.photon.rho(lna, params)/3./self.rho(lna, params)
 
         return Tm/mu * (5./3. - 2./3.*mu*R/cnst.me/BG.aH(lna)/BG.tau_c(lna) * (Tg/Tm - 1.))
 
-    def mean_mass(self, lna, BG):
+    def mean_mass(self, lna, params, BG):
         """
         Compute mean baryon mass at given redshift.
 
@@ -1075,10 +1075,10 @@ class Baryon(AbstractStandardPerturbedFluid, strict=True):
         ------
         Defined to be mu = rho_b / n_b = rho_b / (nH + nHe + ne)
         """
-        denom = (1.+BG.xe(lna))*(1.-BG.params['YHe']) + cnst.mH / cnst.mHe * BG.params['YHe']
+        denom = (1.+BG.xe(lna))*(1.-params['YHe']) + cnst.mH / cnst.mHe * params['YHe']
         return cnst.mH / denom
 
-    def y_ini(self, k, tau_ini, om, BG):
+    def y_ini(self, k, tau_ini, om, params):
         """
         Compute initial conditions for baryon perturbations.
 
@@ -1099,10 +1099,10 @@ class Baryon(AbstractStandardPerturbedFluid, strict=True):
             Initial perturbation mode values (units: dimensionless)
         """
         delta = -(k*tau_ini)**2/4. * (1.-om*tau_ini/5.)
-        theta = - k**4 * tau_ini**3/36. * (1.-3.*(1.+5.*BG.params['R_b']-BG.params['R_nu'])/20./(1.-BG.params['R_nu'])*om*tau_ini)
+        theta = - k**4 * tau_ini**3/36. * (1.-3.*(1.+5.*params['R_b']-params['R_nu'])/20./(1.-params['R_nu'])*om*tau_ini)
         return jnp.array([delta, theta])
 
-    def y_prime(self, k, lna, metric_h_prime, metric_eta_prime, y, BG):
+    def y_prime(self, k, lna, metric_h_prime, metric_eta_prime, y, params, BG):
         """
         Compute time derivatives of baryon perturbations.
 
@@ -1127,8 +1127,8 @@ class Baryon(AbstractStandardPerturbedFluid, strict=True):
             Time derivatives of perturbation modes (units: dimensionless)
         """
         aH = BG.aH(lna)
-        cs2 = self.cs2(lna, BG)
-        R = 4.*self.photon.rho(lna, BG)/3./self.rho(lna, BG)
+        cs2 = self.cs2(lna, params, BG)
+        R = 4.*self.photon.rho(lna, params)/3./self.rho(lna, params)
         tau_c = BG.tau_c(lna)
 
         delta = y[self.delta_idx]
@@ -1166,7 +1166,7 @@ class Photon(AbstractStandardPerturbedFluid, strict=True):
         self.num_G_ell_modes = num_G_ell_modes
         self.num_ell_modes = num_F_ell_modes + num_G_ell_modes
 
-    def rho(self, lna, BG):
+    def rho(self, lna, params):
         """
         Compute photon density.
 
@@ -1182,9 +1182,9 @@ class Photon(AbstractStandardPerturbedFluid, strict=True):
         float
             Photon density (units: eV cm^{-3})
         """
-        return BG.params['omega_g'] * (3.*cnst.H0_over_h**2/8./jnp.pi/cnst.G) / jnp.exp(lna)**4
+        return params['omega_g'] * (3.*cnst.H0_over_h**2/8./jnp.pi/cnst.G) / jnp.exp(lna)**4
 
-    def P(self, lna, BG):
+    def P(self, lna, params):
         """
         Compute photon pressure.
 
@@ -1200,9 +1200,9 @@ class Photon(AbstractStandardPerturbedFluid, strict=True):
         float
             Photon pressure (units: eV cm^{-3})
         """
-        return self.rho(lna, BG)/3.
+        return self.rho(lna, params)/3.
 
-    def cs2(self, lna, BG):
+    def cs2(self, lna, params, BG):
         """
         Compute sound speed squared.
 
@@ -1224,7 +1224,7 @@ class Photon(AbstractStandardPerturbedFluid, strict=True):
         """
         return 1./3.
 
-    def y_ini(self, k, tau_ini, om, BG):
+    def y_ini(self, k, tau_ini, om, params):
         """
         Compute initial conditions for photon perturbations.
 
@@ -1245,10 +1245,10 @@ class Photon(AbstractStandardPerturbedFluid, strict=True):
             Initial perturbation mode values (units: dimensionless)
         """
         delta = - (k*tau_ini)**2/3. * (1.-om*tau_ini/5.)
-        theta = - k**4 * tau_ini**3/36. * (1.-3.*(1.+5.*BG.params['R_b']-BG.params['R_nu'])/20./(1.-BG.params['R_nu'])*om*tau_ini)
+        theta = - k**4 * tau_ini**3/36. * (1.-3.*(1.+5.*params['R_b']-params['R_nu'])/20./(1.-params['R_nu'])*om*tau_ini)
         return jnp.concatenate((jnp.array([delta, theta]), jnp.zeros(self.num_ell_modes - 2)))
 
-    def y_prime(self, k, lna, metric_h_prime, metric_eta_prime, y, BG):
+    def y_prime(self, k, lna, metric_h_prime, metric_eta_prime, y, params, BG):
         """
         Compute time derivatives of photon perturbations.
 

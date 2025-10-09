@@ -161,10 +161,11 @@ class Model(eqx.Module):
         ### COMPUTING POWER SPECTRA ###
         #idxs = jnp.arange(18, 30) # Only compute at tabulated l positions. Future: Adjust l_max # CG: 80 for l = 2000
         #return spectrum.bessel_l_tab[idxs], self.SS.get_Cl(idxs, PT, BG)
+        params = self.add_derived_parameters(params)
         PT, BG = self.get_PTBG(params)
         #return self.SS.Pk_lin(PT.k, 0., PT, BG)
         #return PT.delta_b
-        Cls = self.SS.get_Cl(PT, BG)
+        Cls = self.SS.get_Cl(PT, BG, params)
         return Cls
 
     # @jit
