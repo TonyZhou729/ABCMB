@@ -135,7 +135,8 @@ class Model(eqx.Module):
         self.PArthENoPE_CLASS_table = jnp.asarray(np.loadtxt(file_dir+'/sBBN_2025_CLASS.txt'))
         self.bbn_type = bbn_type
     
-    @jit
+    # @jit
+    @eqx.filter_jit
     def run_cosmology(self, params : dict):
         """
         Compute CMB angular power spectra for given parameters.
@@ -166,7 +167,8 @@ class Model(eqx.Module):
         Cls = self.SS.get_Cl(PT, BG)
         return Cls
 
-    @jit
+    # @jit
+    @eqx.filter_jit
     def get_PTBG(self, params : dict):
         """
         Get perturbation table and background.
@@ -184,7 +186,7 @@ class Model(eqx.Module):
             (PerturbationTable, Background) objects
         """
         BG = self.get_BG(params)
-        PE = perturbations.PerturbationEvolver(self.perturbations_list, BG)
+        PE = perturbations.PerturbationEvolver(self.perturbations_list, BG, params)
         
         # Specify whether to use full_evolution() or full_evolution_scan()
         #PT = PE.full_evolution()

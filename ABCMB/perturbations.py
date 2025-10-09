@@ -39,6 +39,7 @@ class PerturbationEvolver(eqx.Module):
 
     perturbations_list : tuple  #= eqx.static_field()
     BG : "cosmology.Background" #= eqx.static_field()
+    params : dict
 
     def full_evolution(self):
         """
@@ -190,16 +191,16 @@ class PerturbationEvolver(eqx.Module):
         a = jnp.exp(lna_ini)
         tau_ini = self.BG.tau(lna_ini)
  
-        rho_crit = 3*self.BG.params["H0"]**2 / 8. / jnp.pi / cnst.G # Crit density today, eV/cm^3
-        rho_m = self.BG.params["omega_m"]/self.BG.params["h"]**2 * rho_crit / a**3
-        rho_r = self.BG.params["omega_r"]/self.BG.params["h"]**2 * rho_crit / a**4
+        rho_crit = 3*self.params["H0"]**2 / 8. / jnp.pi / cnst.G # Crit density today, eV/cm^3
+        rho_m = self.params["omega_m"]/self.params["h"]**2 * rho_crit / a**3
+        rho_r = self.params["omega_r"]/self.params["h"]**2 * rho_crit / a**4
 
         om = a*rho_m/jnp.sqrt(rho_r) * jnp.sqrt(8.*jnp.pi*cnst.G/3.) / cnst.c_Mpc_over_s # In units of 1/Mpc
 
-        metric_eta_ini = (1.-k**2*tau_ini**2/12./(15.+4.*self.BG.params['R_nu'])*(5.+4.*self.BG.params['R_nu'] - (16.*self.BG.params['R_nu']*self.BG.params['R_nu']+280.*self.BG.params['R_nu']+325)/10./(2.*self.BG.params['R_nu']+15.)*tau_ini*om))
+        metric_eta_ini = (1.-k**2*tau_ini**2/12./(15.+4.*self.params['R_nu'])*(5.+4.*self.params['R_nu'] - (16.*self.params['R_nu']*self.params['R_nu']+280.*self.params['R_nu']+325)/10./(2.*self.params['R_nu']+15.)*tau_ini*om))
         metric_h_ini   = 0.5 * (k * tau_ini)**2 * (1.-om*tau_ini/5.)
 
-        all_fluid_ini = jnp.concatenate([p.y_ini(k, tau_ini, om, self.BG) for p in self.perturbations_list])
+        all_fluid_ini = jnp.concatenate([p.y_ini(k, tau_ini, om, self.params) for p in self.perturbations_list])
         y_ini = jnp.concatenate((jnp.array([metric_h_ini, metric_eta_ini]), all_fluid_ini))
         
         return y_ini
@@ -238,9 +239,9 @@ class PerturbationEvolver(eqx.Module):
         for i in range(len(self.perturbations_list)):
             species = self.perturbations_list[i]
             # If species has density perturbation, add to total.
-            sum_rho_delta += species.rho_delta(lna, y, self.BG)
+            sum_rho_delta += species.rho_delta(lna, y, self.params)
             # If species has velocity perturbation, add to total.
-            sum_rho_plus_P_theta += species.rho_plus_P_theta(lna, y, self.BG)
+            sum_rho_plus_P_theta += species.rho_plus_P_theta(lna, y, self.params)
 
         metric_h_prime   = 2./aH**2 * (k**2*metric_eta + 4.*jnp.pi*cnst.G*a**2/cnst.c_Mpc_over_s**2 * sum_rho_delta)
         metric_eta_prime = 4.*jnp.pi*cnst.G*a**2/aH/k**2 * sum_rho_plus_P_theta / cnst.c_Mpc_over_s**2
@@ -249,7 +250,7 @@ class PerturbationEvolver(eqx.Module):
         y_prime = jnp.array([metric_h_prime, metric_eta_prime])
         for i in range(len(self.perturbations_list)):
             species = self.perturbations_list[i]
-            y_prime = jnp.concatenate((y_prime, species.y_prime(k, lna, metric_h_prime, metric_eta_prime, y, self.BG)))
+            y_prime = jnp.concatenate((y_prime, species.y_prime(k, lna, metric_h_prime, metric_eta_prime, y, self.params, self.BG)))
 
         return y_prime
 
@@ -401,8 +402,8 @@ class PerturbationEvolver(eqx.Module):
         karr = k[None, :]
         a  = jnp.exp(lna)[:, None]
         aH = self.BG.aH(lna)[:, None]
-        cs2 = Baryon.cs2(lna, self.BG)[:, None]
-        R = 4.*Photon.rho(lna, self.BG)[:, None]/3./Baryon.rho(lna, self.BG)[:, None]
+        cs2 = Baryon.cs2(lna, self.params, self.BG)[:, None]
+        R = 4.*Photon.rho(lna, self.params)[:, None]/3./Baryon.rho(lna, self.params)[:, None]
         tau_c = self.BG.tau_c(lna)[:, None]
 
         # Baryon velocity derivative is needed for CMB
@@ -415,9 +416,9 @@ class PerturbationEvolver(eqx.Module):
         sum_rho_plus_P_sigma = jnp.zeros_like(modes[0])
 
         for s in self.perturbations_list:
-            sum_rho_delta += vmap(s.rho_delta, in_axes=(0, 1, None))(lna, modes, self.BG)
-            sum_rho_plus_P_theta += vmap(s.rho_plus_P_theta, in_axes=(0, 1, None))(lna, modes, self.BG)
-            sum_rho_plus_P_sigma += vmap(s.rho_plus_P_sigma, in_axes=(0, 1, None))(lna, modes, self.BG)
+            sum_rho_delta += vmap(s.rho_delta, in_axes=(0, 1, None))(lna, modes, self.params)
+            sum_rho_plus_P_theta += vmap(s.rho_plus_P_theta, in_axes=(0, 1, None))(lna, modes, self.params)
+            sum_rho_plus_P_sigma += vmap(s.rho_plus_P_sigma, in_axes=(0, 1, None))(lna, modes, self.params)
 
         # Metric perturbation derivatives
         metric_h_prime = 2./aH**2 * (karr**2*metric_eta + 4.*jnp.pi*cnst.G*a**2/cnst.c_Mpc_over_s**2 * sum_rho_delta)

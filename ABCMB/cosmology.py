@@ -133,7 +133,7 @@ class Background(eqx.Module):
         """
         rho_tot = 0.
         for i in range(len(self.species_list)):
-            rho_tot += self.species_list[i].rho(lna, self)
+            rho_tot += self.species_list[i].rho(lna, self.params)
         return rho_tot
     
     def P_tot(self, lna):
@@ -158,7 +158,7 @@ class Background(eqx.Module):
         """
         P_tot = 0.
         for i in range(len(self.species_list)):
-            P_tot += self.species_list[i].P(lna, self)
+            P_tot += self.species_list[i].P(lna, self.params)
         return P_tot
 
     def H(self, lna):
@@ -651,8 +651,8 @@ class Background(eqx.Module):
         float
             Baryon drag ratio (units: dimensionless)
         """
-        rho_b = self.species_list[3].rho(lna,self)
-        rho_g = self.species_list[4].rho(lna,self)
+        rho_b = self.species_list[3].rho(lna,self.params)
+        rho_g = self.species_list[4].rho(lna,self.params)
         return 3. * rho_b / (4 * rho_g)
 
     @jax.named_scope("tabulate kappa d")
