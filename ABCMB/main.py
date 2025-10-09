@@ -265,13 +265,16 @@ class Model(eqx.Module):
 
             # last two args are user input omega_b and (Neff_BBN - 3.046) (MUST be 3.046 as 
             # this was assumed when constructing the PArthENoPE table)
+            # less extensible version
+            Neff = params['Neff']
 
             # we want to loop through everything possibly contributing to Neff.  However,
             # we need to triple the contribution from neutrinos.  So we add extra terms for 
             # neutrino contributions
-            Neff = (jnp.sum(jnp.asarray([s.rho(lna_bbn, params) for s in self.species_list])) + 2*self.species_list[-1].rho(lna_bbn,params) - 
-                    self.species_list[-2].rho(lna_bbn,params))/self.species_list[-1].rho(lna_bbn,params)
-            print(Neff)
+    
+            # This is not yet correct
+            # Neff = (jnp.sum(jnp.asarray([s.rho(lna_bbn, params) for s in self.species_list])) + 2*self.species_list[-1].rho(lna_bbn,params) - 
+                    # self.species_list[-2].rho(lna_bbn,params))/self.species_list[-1].rho(lna_bbn,params)
             res_YHe = bilinear_interp(omegab, DNeff,YHe_grid, params['omega_b'],Neff - 3.046)
             params['YHe'] = res_YHe
             print(params['YHe'])
