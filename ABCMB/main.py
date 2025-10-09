@@ -206,7 +206,7 @@ class Model(eqx.Module):
         PT = PE.full_evolution_scan()
         return PT, BG
 
-    @eqx.filter_jit
+    # @eqx.filter_jit
     def get_BG(self, params : dict):
         """
         Get background for given parameters.
@@ -247,18 +247,30 @@ class Model(eqx.Module):
 
 
         if self.bbn_type=="Table" or self.bbn_type=="table":
+            # other derived params must be specified *before* BBN computation
+            params['omega_m']      = params['omega_cdm'] + params['omega_b']
+            params['R_b']          = params['omega_b'] / params['omega_m']
+            params['omega_g']      = 8. * jnp.pi**3 * cnst.G / 45. / cnst.H0_over_h**2 / cnst.hbar**3 / cnst.c**3 * params['TCMB0']**4
+            params['H0']           = params['h'] * cnst.H0_over_h
+            params['N_ur']         = params['Neff'] - (params['T_ncdm'] / params['TCMB0'])**4 / (4. / 11.)**(4. / 3.) * params['N_ncdm']
+            params['omega_nu']     = 7. / 8. * params['N_ur'] * (4. / 11.)**(4. / 3.) * params['omega_g']
+            params['omega_r']      = params['omega_g'] + params['omega_nu']
+            params['R_nu']         = jnp.where(params['omega_r'] > 0.0, params['omega_nu'] / params['omega_r'], 0.0)
+            params['omega_Lambda'] = params['h']**2 - params['omega_r'] - params['omega_m']
+            
             # interpolate CLASS ParthENoPE table
             bbn = self.PArthENoPE_CLASS_table
             omegab_all = bbn[:, 0]
             DNeff_all = bbn[:, 1]
             YHe_all = bbn[:, 2]
 
-            unique_DNeff, idxNeff = jnp.unique(DNeff_all, return_index=True)
-            n2 = unique_DNeff.size
-            n1 = bbn.shape[0] // n2
+            # unique_DNeff, idxNeff = jnp.unique(DNeff_all, return_index=True)
+            # we have to hardcode these values to be jit safe
+            n2 = 13 # unique_DNeff.size
+            n1 = 701# bbn.shape[0] // n2
 
             omegab = omegab_all[:n1]
-            DNeff = unique_DNeff
+            DNeff = DNeff_all[::n1] # unique_DNeff
 
             YHe_grid = YHe_all.reshape(n2, n1)
             
@@ -279,10 +291,11 @@ class Model(eqx.Module):
     
             # This is not yet correct
             # Neff = (jnp.sum(jnp.asarray([s.rho(lna_bbn, params) for s in self.species_list])) + 2*self.species_list[-1].rho(lna_bbn,params) - 
-                    # self.species_list[-2].rho(lna_bbn,params))/self.species_list[-1].rho(lna_bbn,params)
+            #         self.species_list[-2].rho(lna_bbn,params))/self.species_list[-1].rho(lna_bbn,params)
             res_YHe = bilinear_interp(omegab, DNeff,YHe_grid, params['omega_b'],Neff - 3.046)
+
+            # tabulated result is Yp_CMB
             params['YHe'] = res_YHe
-            print(params['YHe'])
 
         elif self.bbn_type=="LINX" or self.bbn_type=="Linx" or self.bbn_type=="linx":
             if params.get("Neff") is not None:
@@ -328,7 +341,18 @@ class Model(eqx.Module):
             Yp_CMB = 1./(4*cnst.mH/cnst.mHe*(1/YHe_BBN - 1) + 1)
             params['YHe'] = Yp_CMB
 
+            # other derived params must be specified *after* BBN computation
+            params['omega_m']      = params['omega_cdm'] + params['omega_b']
+            params['R_b']          = params['omega_b'] / params['omega_m']
+            params['omega_g']      = 8. * jnp.pi**3 * cnst.G / 45. / cnst.H0_over_h**2 / cnst.hbar**3 / cnst.c**3 * params['TCMB0']**4
+            params['H0']           = params['h'] * cnst.H0_over_h
+            params['N_ur']         = params['Neff'] - (params['T_ncdm'] / params['TCMB0'])**4 / (4. / 11.)**(4. / 3.) * params['N_ncdm']
+            params['omega_nu']     = 7. / 8. * params['N_ur'] * (4. / 11.)**(4. / 3.) * params['omega_g']
+            params['omega_r']      = params['omega_g'] + params['omega_nu']
+            params['R_nu']         = jnp.where(params['omega_r'] > 0.0, params['omega_nu'] / params['omega_r'], 0.0)
+            params['omega_Lambda'] = params['h']**2 - params['omega_r'] - params['omega_m']
 
+        # if neither is specified, don't forget to specify other derived parameters
         params['omega_m']      = params['omega_cdm'] + params['omega_b']
         params['R_b']          = params['omega_b'] / params['omega_m']
         params['omega_g']      = 8. * jnp.pi**3 * cnst.G / 45. / cnst.H0_over_h**2 / cnst.hbar**3 / cnst.c**3 * params['TCMB0']**4
