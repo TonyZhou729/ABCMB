@@ -203,8 +203,8 @@ class SpectrumSolver(eqx.Module):
         -----------
         k : float or array
             Wavenumber (units: Mpc^{-1})
-        BG : cosmology.Background
-            Background cosmology module
+        params : dict
+            Dictionary of input and derived parameters
 
         Returns:
         --------
@@ -225,8 +225,8 @@ class SpectrumSolver(eqx.Module):
             Redshift to evaluate.
         PT : perturbations.PerturbationTable
             Perturbation evolution table
-        BG : cosmology.Background
-            Background cosmology module
+        params : dict
+            Dictionary of input and derived parameters
 
         Returns
         -------
@@ -272,6 +272,8 @@ class SpectrumSolver(eqx.Module):
             Perturbation evolution table
         BG : cosmology.Background
             Background cosmology module
+        params : dict
+            Dictionary of input and derived parameters
 
         Returns
         -------
@@ -308,6 +310,8 @@ class SpectrumSolver(eqx.Module):
             Perturbation evolution table
         BG : cosmology.Background
             Background cosmology module
+        params : dict
+            Dictionary of input and derived parameters
 
         Returns
         -------
@@ -529,6 +533,8 @@ class SpectrumSolver(eqx.Module):
             Perturbation evolution table
         BG : cosmology.Background
             Background cosmology module
+        params : dict
+            Dictionary of input and derived parameters
 
         Returns:
         --------
@@ -650,6 +656,8 @@ class SpectrumSolver(eqx.Module):
             Perturbation evolution table
         BG : cosmology.Background
             Background cosmology module
+        params : dict
+            Dictionary of input and derived parameters
 
         Returns:
         --------

@@ -51,12 +51,7 @@ for i in range(2):
     }
 
     model = Model(ellmin=2, ellmax=2500, lensing=False)
-    #k = jnp.logspace(-3., 0., 200, base=10)
-    #k_np = np.logspace(-3., 0., 200, base=10)
-    #PT, BG = model.get_PTBG(params)
-    #ABC_Cl = model.SS.get_Cl(PT, BG)[0] # [0] is TT
 
-    # NOTE FOR CARA: Add @jit decorator on model.run_cosmology
     ABC_Cl = model.run_cosmology(params)[0]
     ABC_ell = model.SS.ells
 
