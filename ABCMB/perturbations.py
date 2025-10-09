@@ -382,9 +382,9 @@ class PerturbationEvolver(eqx.Module):
             Organized perturbation data for interpolation
 
         """
-        CDM    = self.perturbations_list[0]
-        Baryon = self.perturbations_list[1]
-        Photon = self.perturbations_list[2]
+        CDM    = self.perturbations_list[-4]
+        Baryon = self.perturbations_list[-3]
+        Photon = self.perturbations_list[-2]
 
         # Shapes are (Nlna, Nk)
         metric_h   = modes[0]
