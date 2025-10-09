@@ -6,13 +6,13 @@ import jax.numpy as jnp
 import equinox as eqx
 from diffrax import diffeqsolve, ODETerm, Tsit5, Kvaerno3, PIDController, SaveAt
 
-import linx.nuclear as nucl
-import linx.const as const 
-from linx.const import ma, me, mn, mp
-import linx.weak_rates as wr
-import linx.thermo as thermo
-from linx.thermo import rho_EM_std_v, p_EM_std_v, nB
-from linx.special_funcs import zeta_3 
+from . import nuclear as nucl
+from . import const as const 
+from .const import ma, me, mn, mp
+from . import weak_rates as wr
+from . import thermo as thermo
+from .thermo import rho_EM_std_v, p_EM_std_v, nB
+from .special_funcs import zeta_3 
 
 class AbundanceModel(eqx.Module): 
     """

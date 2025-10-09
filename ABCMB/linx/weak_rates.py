@@ -13,15 +13,15 @@ except ImportError:
 
 import equinox as eqx
 
-import linx.const as const 
-from linx.special_funcs import gamma 
+from . import const as const 
+from .special_funcs import gamma 
 from jax.scipy.special import spence
 from jax.scipy.special import expit
 
 file_dir = os.path.dirname(__file__)
 
 # Particle masses
-from linx.const import me, mn, mp
+from .const import me, mn, mp
 Q = mn - mp # Mass difference between neutrons and protons
 
 class WeakRates(eqx.Module): 

@@ -1,8 +1,8 @@
 import jax.numpy as jnp
 import equinox as eqx
 
-import linx.const as const 
-from linx.reactions import Reaction
+from . import const as const 
+from .reactions import Reaction
 
 class NuclearRates(eqx.Module): 
     """
