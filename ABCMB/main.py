@@ -1,12 +1,18 @@
 from jax import jit, config
 import jax.numpy as jnp
+from jaxtyping import Array
+import numpy as np
 import equinox as eqx
 import diffrax
+
+import os
+file_dir = os.path.dirname(__file__)
 
 from .hyrex import hyrex
 from . import cosmology, perturbations, spectrum
 from . import constants as cnst
 from . import AbstractSpecies as AS
+from .ABCMBTools import bilinear_interp
 
 config.update("jax_enable_x64", True)
 
@@ -71,6 +77,11 @@ class Model(eqx.Module):
     species_list       : tuple = ()
     perturbations_list : tuple = ()
 
+    bbn_type                : str = ""
+    linx_reaction_net       : str = ""
+    
+    PArthENoPE_CLASS_table  : Array #= eqx.field(converter=jnp.asarray)
+
     ### ADDING SPECIES: add has_ parameter and add condition to append to tuple.
     # In the init, all species that are present within the model should be set to True.
     # All couplings present between species should be set to true. 
@@ -79,7 +90,10 @@ class Model(eqx.Module):
                  ellmax = 2500,
                  lensing = False,
                  has_MasslessNeutrinos=False, 
-                 has_MassiveNeutrinos=False): 
+                 has_MassiveNeutrinos=False,
+                 bbn_type = "",
+                 linx_reaction_net = ""
+                 ): 
 
         self.SS = spectrum.SpectrumSolver(ellmin, ellmax, lensing, switch_sw=1., switch_isw=1., switch_dop=1., switch_pol=1.)
 
@@ -118,6 +132,8 @@ class Model(eqx.Module):
 
         self.RM = hyrex.recomb_model()
         #self.PE = perturbations.PerturbationEvolver(perturbations_list)
+        self.PArthENoPE_CLASS_table = jnp.asarray(np.loadtxt(file_dir+'/sBBN_2025_CLASS.txt'))
+        self.bbn_type = bbn_type
     
     @jit
     def run_cosmology(self, params : dict):
@@ -175,7 +191,7 @@ class Model(eqx.Module):
         PT = PE.full_evolution_scan()
         return PT, BG
 
-    @jit
+    # @jit
     def get_BG(self, params : dict):
         """
         Get background for given parameters.
@@ -193,6 +209,8 @@ class Model(eqx.Module):
         params = self.add_derived_parameters(params)
         BG = cosmology.Background(params, self.species_list, self.RM)
         return BG
+    
+
 
     def add_derived_parameters(self, params : dict) -> dict:
         """
@@ -220,4 +238,37 @@ class Model(eqx.Module):
         params['omega_r']      = params['omega_g'] + params['omega_nu']
         params['R_nu']         = jnp.where(params['omega_r'] > 0.0, params['omega_nu'] / params['omega_r'], 0.0)
         params['omega_Lambda'] = params['h']**2 - params['omega_r'] - params['omega_m']
+
+        if self.bbn_type=="Table" or self.bbn_type=="table":
+            # interpolate CLASS ParthENoPE table
+            bbn = self.PArthENoPE_CLASS_table
+            omegab_all = bbn[:, 0]
+            DNeff_all = bbn[:, 1]
+            YHe_all = bbn[:, 2]
+
+            unique_DNeff, idxNeff = jnp.unique(DNeff_all, return_index=True)
+            n2 = unique_DNeff.size
+            n1 = bbn.shape[0] // n2
+
+            omegab = omegab_all[:n1]
+            DNeff = unique_DNeff
+
+            YHe_grid = YHe_all.reshape(n2, n1)
+            
+            Neff = params["Neff"] # less extensible option
+            a_bbn = cnst.TCMB_today*1e-6/0.01   # neutrino decoupling is well over by 10 keV, so 
+                                                # compute Neff at a scale factor approximately 
+                                                # corresponding to this temperature
+
+            # last two args are user input omega_b and (Neff_BBN - 3.046) (MUST be 3.046 as 
+            # this was assumed when constructing the PArthENoPE table)
+            # CG: put this inside BG
+            # Neff = (jnp.sum([s.rho(a_bbn) for s in self.species_list]) - AS.Photon.rho(a_bbn))/AS.MasslessNeutrinos.rho(a_bbn)
+            res_YHe = bilinear_interp(omegab, DNeff,YHe_grid, params['omega_b'],Neff - 3.046)
+            params['YHe'] = res_YHe
+
+        elif self.bbn_type=="LINX" or self.bbn_type=="Linx" or self.bbn_type=="linx":
+            # run LINX
+            pass
+
         return params

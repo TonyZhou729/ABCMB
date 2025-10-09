@@ -346,6 +346,7 @@ class hydrogen_model(eqx.Module):
             lna = state.tprev
             return lna > lna_axis_final
 
+        # use diffrax default max_steps of 4096
         sol = diffeqsolve(
             term, solver, t0=t0, t1=t1, dt0=1e-3, 
             y0=initial_state, 

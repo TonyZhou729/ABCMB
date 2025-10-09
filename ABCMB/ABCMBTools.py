@@ -104,3 +104,26 @@ def fast_interp(x, xp_min, xp_max, fp):
     return w_lower * fp[i_lower] + w_upper * fp[i_upper]
 
 
+def bilinear_interp(x, y, z, xq, yq):
+    # find indices for x and y
+    ix = jnp.clip(jnp.searchsorted(x, xq) - 1, 0, x.size - 2)
+    iy = jnp.clip(jnp.searchsorted(y, yq) - 1, 0, y.size - 2)
+
+    # grid corner points
+    x0, x1 = x[ix], x[ix + 1]
+    y0, y1 = y[iy], y[iy + 1]
+
+    # fractional positions
+    tx = (xq - x0) / (x1 - x0)
+    ty = (yq - y0) / (y1 - y0)
+
+    # get z values
+    z00 = z[iy, ix]
+    z01 = z[iy, ix + 1]
+    z10 = z[iy + 1, ix]
+    z11 = z[iy + 1, ix + 1]
+
+    # bilinear interpolation
+    return (1 - tx) * (1 - ty) * z00 + tx * (1 - ty) * z01 + (1 - tx) * ty * z10 + tx * ty * z11
+
+
