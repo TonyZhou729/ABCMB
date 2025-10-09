@@ -651,8 +651,8 @@ class Background(eqx.Module):
         float
             Baryon drag ratio (units: dimensionless)
         """
-        rho_b = self.species_list[3].rho(lna,self)
-        rho_g = self.species_list[4].rho(lna,self)
+        rho_b = self.species_list[-3].rho(lna,self)
+        rho_g = self.species_list[-2].rho(lna,self)
         return 3. * rho_b / (4 * rho_g)
 
     @jax.named_scope("tabulate kappa d")

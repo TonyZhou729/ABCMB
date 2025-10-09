@@ -78,7 +78,6 @@ class Model(eqx.Module):
                  ellmin = 2,
                  ellmax = 2500,
                  lensing = False,
-                 has_MasslessNeutrinos=False, 
                  has_MassiveNeutrinos=False): 
 
         self.SS = spectrum.SpectrumSolver(ellmin, ellmax, lensing, switch_sw=1., switch_isw=1., switch_dop=1., switch_pol=1.)
@@ -86,12 +85,24 @@ class Model(eqx.Module):
         diffrax_vector_idx = 2 # The first two indices (0 and 1) are always reserved for the metric perturbations.
         perturbations_list = ()
 
+        dark_energy = AS.DarkEnergy()
+        self.species_list = self.species_list + (dark_energy,)
+
+        if has_MassiveNeutrinos:
+            massive_neutrinos = AS.MassiveNeutrinos(diffrax_vector_idx)
+            self.species_list   = self.species_list + (massive_neutrinos,)
+            diffrax_vector_idx += massive_neutrinos.num_ell_modes # Add to total length of Diffrax vector
+
         cold_dark_matter = AS.ColdDarkMatter(diffrax_vector_idx)
         self.species_list = self.species_list + (cold_dark_matter,)
         diffrax_vector_idx += cold_dark_matter.num_ell_modes # Add to total length of Diffrax vector
 
-        dark_energy = AS.DarkEnergy()
-        self.species_list = self.species_list + (dark_energy,)
+        # These perturbed species are always present in all runs.
+        # massless neutrinos are last, photons are second to last, baryons third to last, CDM fourth to last.
+
+        cold_dark_matter = AS.ColdDarkMatter(diffrax_vector_idx)
+        self.species_list = self.species_list + (cold_dark_matter,)
+        diffrax_vector_idx += cold_dark_matter.num_ell_modes # Add to total length of Diffrax vector
 
         baryon = AS.Baryon(diffrax_vector_idx, dark_energy)
         diffrax_vector_idx += baryon.num_ell_modes # Add to total length of Diffrax vector
@@ -102,15 +113,9 @@ class Model(eqx.Module):
         baryon = eqx.tree_at(lambda b : b.photon, baryon, photon)
         self.species_list = self.species_list + (baryon, photon,)
 
-        if has_MasslessNeutrinos:
-            massless_neutrinos = AS.MasslessNeutrinos(diffrax_vector_idx)
-            self.species_list   = self.species_list + (massless_neutrinos,)
-            diffrax_vector_idx += massless_neutrinos.num_ell_modes # Add to total length of Diffrax vector
-
-        if has_MassiveNeutrinos:
-            massive_neutrinos = AS.MassiveNeutrinos(diffrax_vector_idx)
-            self.species_list   = self.species_list + (massive_neutrinos,)
-            diffrax_vector_idx += massive_neutrinos.num_ell_modes # Add to total length of Diffrax vector
+        massless_neutrinos = AS.MasslessNeutrinos(diffrax_vector_idx)
+        self.species_list   = self.species_list + (massless_neutrinos,)
+        diffrax_vector_idx += massless_neutrinos.num_ell_modes # Add to total length of Diffrax vector
 
         for species in self.species_list:
             if isinstance(species, AS.AbstractPerturbedFluid):
