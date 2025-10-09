@@ -113,10 +113,6 @@ class Model(eqx.Module):
             self.species_list   = self.species_list + (massive_neutrinos,)
             diffrax_vector_idx += massive_neutrinos.num_ell_modes # Add to total length of Diffrax vector
 
-        cold_dark_matter = AS.ColdDarkMatter(diffrax_vector_idx)
-        self.species_list = self.species_list + (cold_dark_matter,)
-        diffrax_vector_idx += cold_dark_matter.num_ell_modes # Add to total length of Diffrax vector
-
         # These perturbed species are always present in all runs.
         # massless neutrinos are last, photons are second to last, baryons third to last, CDM fourth to last.
 
