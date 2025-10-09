@@ -459,7 +459,7 @@ class SpectrumSolver(eqx.Module):
         """
 
         def scan_fun(_, idx):
-            cltt, clte, clee = self.Cl_one_ell(idx, PT, BG)
+            cltt, clte, clee = self.Cl_ee_only(idx, PT, BG)
             return None, jnp.array([cltt, clte, clee])
 
         _, Cls_raw = lax.scan(scan_fun, None, self.ells_indices)
@@ -494,7 +494,7 @@ class SpectrumSolver(eqx.Module):
         Compute angular power spectra for multiple multipoles using lax.scan.
         """
 
-        tt_raw, te_raw, ee_raw = vmap(self.Cl_one_ell, in_axes=(0, None, None))(self.ells_indices, PT, BG)
+        tt_raw, te_raw, ee_raw = vmap(self.Cl_ee_only, in_axes=(0, None, None))(self.ells_indices, PT, BG)
 
         ells = bessel_l_tab[self.ells_indices]
         tt_unlensed = CubicSpline(ells, tt_raw, check=False)(self.ells)
@@ -553,13 +553,13 @@ class SpectrumSolver(eqx.Module):
         g   = BG.visibility(lna_axis)
         g_prime = vmap(grad(BG.visibility))(lna_axis) # Derivative of g w.r.t. lna
         aH  = BG.aH(lna_axis)
-        kappa = BG.kappa(lna_axis)
+        expmkappa = BG.expmkappa(lna_axis)
         aH_dot = BG.aH_prime(lna_axis) * aH # Derivative of aH w.r.t. conformal time tau.
 
         g        = g[:, None]
         g_prime  = g_prime[:, None]
         aH       = aH[:, None]
-        kappa    = kappa[:, None]
+        expmkappa    = expmkappa[:, None]
         aH_dot   = aH_dot[:, None]
 
         # Perturbations, all (Nk, Nlna) 2D vectors
@@ -585,7 +585,7 @@ class SpectrumSolver(eqx.Module):
         sourceT0 = self.switch_sw * g * (delta_g/4. + aH*alpha_prime) \
                 + self.switch_isw * (
                     g * (eta - aH*alpha_prime - 2.*aH*alpha) \
-                    + 2.*jnp.exp(-kappa) * (aH*eta_prime - aH_dot*alpha - aH**2*alpha_prime)
+                    + 2.*expmkappa * (aH*eta_prime - aH_dot*alpha - aH**2*alpha_prime)
                 ) \
                 + self.switch_dop * (
                     aH * (g*((theta_b_prime / k_T0_axis**2) + alpha_prime) \
@@ -593,7 +593,7 @@ class SpectrumSolver(eqx.Module):
                 )
         #sourceT0 = 0.
 
-        sourceT1 = self.switch_isw * jnp.exp(-kappa) * \
+        sourceT1 = self.switch_isw * expmkappa * \
                 ((aH*alpha_prime + 2.*aH*alpha - eta) * k_T0_axis)
         #sourceT1 = 0.
 
@@ -636,147 +636,47 @@ class SpectrumSolver(eqx.Module):
         #return k_T0_axis, (integrandTT, integrandTE, integrandEE)
         return (jnp.trapezoid(integrandTT, k_T0_axis), jnp.trapezoid(integrandTE, k_T0_axis), jnp.trapezoid(integrandEE, k_T0_axis))
 
-    def Cl_one_ell_split(self, idx, PT, BG):
-        """
-        Compute angular power spectrum for single multipole.
-
-        Integrates transfer functions over wavenumber.
-
-        Parameters:
-        -----------
-        idx : int
-            Index into bessel_l_tab for multipole ℓ
-        PT : perturbations.PerturbationTable
-            Perturbation evolution table
-        BG : cosmology.Background
-            Background cosmology module
-
-        Returns:
-        --------
-        tuple
-            (C_ℓ^TT, C_ℓ^TE, C_ℓ^EE) angular power spectra
-        """
+    def Cl_ee_only(self, idx, PT, BG):
         # Beyond this k point the bessel function vanishes exponentially.
         k_cut_small = 0.9*bessel_l_tab[idx]/BG.rA_rec
 
-        # The upperbound of the integral is given by the multipole cut approximation in arxiv:1312.2697
-        # For now, the integration axis is chosen to be a logspaced grid, from kmin to kmin+kcut.
-        # This is because for k>kmin, the integrand ~jl^2 which experiences asymptotic damping for larger k's.
-        # The peak values of the envelope drop by a few orders of magnitude within 3-4 peaks or so, so its
-        # only really important to have high resolution near kmin. 
-        k_T0_axis = jnp.geomspace(k_cut_small, k_cut_small+0.15, 500) 
-        k_T1_axis = jnp.geomspace(k_cut_small, k_cut_small+0.04, 150)
-        k_E_axis  = jnp.geomspace(k_cut_small, k_cut_small+0.11, 370)
+        k_E_axis = jnp.geomspace(k_cut_small, k_cut_small+0.11, 5000) 
         lna_axis = PT.lna
 
-        ### TRANSFER FUNCTION ###
-        # Background quantities, all Nlna 1D vectors
         tau0 = BG.tau0
         tau = BG.tau(lna_axis)
-        g   = BG.visibility(lna_axis)
-        g_prime = vmap(grad(BG.visibility))(lna_axis) # Derivative of g w.r.t. lna
-        aH  = BG.aH(lna_axis)
-        kappa = BG.kappa(lna_axis)
-        aH_dot = BG.aH_prime(lna_axis) * aH # Derivative of aH w.r.t. conformal time tau.
+        aH = BG.aH(lna_axis)
+        g = BG.visibility(lna_axis)
 
-        g        = g[:, None]
-        g_prime  = g_prime[:, None]
-        aH       = aH[:, None]
-        kappa    = kappa[:, None]
-        aH_dot   = aH_dot[:, None]
+        tau = tau[:, None]
+        aH = aH[:, None]
+        g = g[:, None]
 
-        # Perturbations, all (Nk, Nlna) 2D vectors
-        #interp_column = lambda col : jnp.interp(k_T0_axis, PT.k, col)
-        interp_column = lambda col : jnp.interp(jnp.log10(k_T0_axis), jnp.log10(PT.k), col)
-        #interp_column = lambda col : tools.fast_interp(jnp.log10(k_T0_axis), jnp.log10(PT.k[0]), jnp.log10(PT.k[-1]), col)
+        interp_column = lambda col : jnp.interp(jnp.log10(k_E_axis), jnp.log10(PT.k), col)
 
-        # Found that this is much much faster than RegularGridInterpolator
-        delta_g       = vmap(interp_column, in_axes=0, out_axes=0)(PT.delta_g)
-        theta_b       = vmap(interp_column, in_axes=0, out_axes=0)(PT.theta_b)
-        theta_b_prime = vmap(interp_column, in_axes=0, out_axes=0)(PT.theta_b_prime)
         sigma_g       = vmap(interp_column, in_axes=0, out_axes=0)(PT.sigma_g)
         Gg0           = vmap(interp_column, in_axes=0, out_axes=0)(PT.Gg0)
         Gg2           = vmap(interp_column, in_axes=0, out_axes=0)(PT.Gg2)
-        eta           = vmap(interp_column, in_axes=0, out_axes=0)(PT.metric_eta)
-        eta_prime     = vmap(interp_column, in_axes=0, out_axes=0)(PT.metric_eta_prime)
-        alpha         = vmap(interp_column, in_axes=0, out_axes=0)(PT.metric_alpha)
-        alpha_prime   = vmap(interp_column, in_axes=0, out_axes=0)(PT.metric_alpha_prime)
-        
-        #sourceT0 = self.switch_sw * g * (delta_g/4. + aH*alpha_prime) 
-        #sourceT0 = 1.
-
-        # Source terms
-        # TODO: fix ISW term
-        sourceT0 = self.switch_sw * g * (delta_g/4. + aH*alpha_prime) \
-                + self.switch_isw * (
-                    g * (eta - aH*alpha_prime - 2.*aH*alpha) \
-                    + 2.*jnp.exp(-kappa) * (aH*eta_prime - aH_dot*alpha - aH**2*alpha_prime)
-                ) \
-                + self.switch_dop * (
-                    aH * (g*((theta_b_prime / k_T0_axis**2) + alpha_prime) \
-                    + g_prime*((theta_b / k_T0_axis**2) + alpha))
-                )
-        #sourceT0 = 0.
-
-        sourceT1 = self.switch_isw * jnp.exp(-kappa) * \
-                ((aH*alpha_prime + 2.*aH*alpha - eta) * k_T1_axis)
-        #sourceT1 = 0.
 
         sourceT2 = self.switch_pol * g * (2*sigma_g + Gg0 + Gg2) / 8.
 
         sourceE  = jnp.sqrt(6) * sourceT2
 
-        # Bessel functions
-        #chiT0 = jnp.outer(k_T0_axis, tau0 - tau)
-        #chiT0 = jnp.outer(tau0-tau, k_T0_axis)
-        # chiT1 = jnp.outer(k_T1_axis, tau0 - tau)
-        # chiT2 = jnp.outer(k_T2_axis, tau0 - tau)
-        # chiE  = jnp.outer(k_E_axis, tau0 - tau)
+        chi = jnp.outer(tau0-tau, k_E_axis)
 
-        #transfer_integrand = sourceT0 / aH  * self.jl(ell, chi) # Shape should be (Nk, Nlna)
-        #transfer = jnp.trapezoid(transfer_integrand, lna_axis) # Shape should be (Nk,)
-
-        chiT0 = jnp.outer(tau0-tau, k_T0_axis)
-        transferT0 = jnp.trapezoid(
-            sourceT0 / aH * phi0(idx, chiT0),
-            lna_axis, axis=0
-        )
-
-        transferT2 = jnp.trapezoid(
-            sourceT2 / aH * phi2(idx, chiT0),
-            lna_axis, axis=0
-        )
-        del chiT0
-
-        chiT1 = jnp.outer(k_T1_axis, tau0 - tau)
-        transferT1 = jnp.trapezoid(
-            sourceT1 / aH * phi1(idx, chiT1),
-            lna_axis, axis=0
-        )
-        del chiT1
-
-        chiE  = jnp.outer(k_E_axis, tau0 - tau)
         transferE = jnp.trapezoid(
-            sourceE / aH * epsilon(idx, chiE),
+            sourceE / aH * epsilon(idx, chi),
             lna_axis, axis=0
         )
-        del chiE
 
-        #transferT = transferT0 + transferT1 + transferT2
+        del chi
+
         ### END OF TRANSFER FUNCTION ###
 
         ### LINE OF SIGHT INTEGRAL ###
-        integrandTT = 4.*jnp.pi * BG.params['A_s'] * (k_T0_axis/self.k_pivot)**(BG.params['n_s']-1.) * transferT**2 / k_T0_axis
-        integrandTE = 4.*jnp.pi * BG.params['A_s'] * (k_T0_axis/self.k_pivot)**(BG.params['n_s']-1.) * transferT*transferE / k_T0_axis
-        integrandEE = 4.*jnp.pi * BG.params['A_s'] * (k_T0_axis/self.k_pivot)**(BG.params['n_s']-1.) * transferE**2 / k_T0_axis
-        return k_T0_axis, (integrandTT, integrandTE, integrandEE)
-        return (jnp.trapezoid(integrandTT, k_T0_axis), jnp.trapezoid(integrandTE, k_T0_axis), jnp.trapezoid(integrandEE, k_T0_axis))
+        integrandEE = 4.*jnp.pi * BG.params['A_s'] * (k_E_axis/self.k_pivot)**(BG.params['n_s']-1.) * transferE**2 / k_E_axis
 
-        # integrandTT = 4.*jnp.pi * BG.params['A_s'] * (k_T0_axis/self.k_pivot)**(BG.params['n_s']-1.) * transferT**2 / k_T0_axis
-        # integrandTE = 4.*jnp.pi * BG.params['A_s'] * (k_T0_axis/self.k_pivot)**(BG.params['n_s']-1.) * transferT*transferE / k_T0_axis
-        # integrandEE = 4.*jnp.pi * BG.params['A_s'] * (k_T0_axis/self.k_pivot)**(BG.params['n_s']-1.) * transferE**2 / k_T0_axis
-        #return k_T0_axis, (integrandTT, integrandTE, integrandEE)
-        #return (jnp.trapezoid(integrandTT, jnp.log10(k_T0_axis)), jnp.trapezoid(integrandTE, jnp.log10(k_T0_axis)), jnp.trapezoid(integrandEE, jnp.log10(k_T0_axis)))
+        return ((0, 0, jnp.trapezoid(integrandEE, k_E_axis)))
 
     ### OLD CODE ###
 

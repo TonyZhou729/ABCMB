@@ -765,7 +765,7 @@ class MockBackground(Background):
     H_tab : jnp.array
 
     def __init__(self):
-        self.species_list = (AS.ColdDarkMatter(0), AS.DarkEnergy(), AS.Baryon(0, None), AS.Photon(0, None))
+        self.species_list = (AS.ColdDarkMatter(0), AS.DarkEnergy(), AS.Baryon(0, None), AS.Photon(0, None), AS.MasslessNeutrinos(0))
         self.params = {k: float(v) for k, v in np.loadtxt(file_dir+"/../Module_Tests/params.txt", dtype=str)}
 
         # Other tabulated things
