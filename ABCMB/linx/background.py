@@ -6,8 +6,8 @@ import equinox as eqx
 
 from diffrax import diffeqsolve, ODETerm, Tsit5, PIDController, SaveAt, Event
 
-import linx.thermo as thermo
-import linx.const as const 
+from . import thermo  
+from . import const
 
 rho_massless_BE_v = vmap(
     thermo.rho_massless_BE, in_axes=(0, None, None)

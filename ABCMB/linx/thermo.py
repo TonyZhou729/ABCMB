@@ -6,8 +6,8 @@ import jax.numpy as jnp
 import jax.lax as lax
 from jax import grad, vmap, device_put, devices
 
-import linx.const as const 
-from linx.special_funcs import Li, K1, K2
+from . import const 
+from .special_funcs import Li, K1, K2
 
 ###########################################
 #                 Cosmology               #
