@@ -135,6 +135,8 @@ class recomb_model(eqx.Module):
         xe_4He, lna_4He = helium_model(lna_axis_4Heequil)(BG)
         xe_full, lna_full, Tm, lna_Tm = hydrogen_model(xe_4He,lna_4He,lna_axis_late,lna_4He.lastval)(BG)
 
+        return (xe_full, lna_full, Tm, lna_Tm)
+
         ### Hydrogen Reionization ###
         # We patch a simple tanh solution to the tail of the electron fraction result.
         fHe = BG.params['YHe'] / 4 / (1-BG.params['YHe'])

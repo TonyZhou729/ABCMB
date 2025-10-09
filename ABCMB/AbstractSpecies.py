@@ -541,7 +541,7 @@ class MasslessNeutrinos(AbstractStandardPerturbedFluid, strict=True):
     cs2 : Compute sound speed squared (units: dimensionless)
     """
     delta_idx : int
-    num_ell_modes : int = eqx.field(default=7, static=True)
+    num_ell_modes : int = eqx.field(default=18, static=True)
 
     def rho(self, lna, BG):
         """
@@ -1159,7 +1159,7 @@ class Photon(AbstractStandardPerturbedFluid, strict=True):
     num_G_ell_modes : int = eqx.field(static=True)
     num_ell_modes : int = eqx.field(static=True)
 
-    def __init__(self, delta_idx, baryon, num_F_ell_modes=7, num_G_ell_modes=7):
+    def __init__(self, delta_idx, baryon, num_F_ell_modes=13, num_G_ell_modes=11):
         self.delta_idx = delta_idx
         self.baryon = baryon
         self.num_F_ell_modes = num_F_ell_modes
