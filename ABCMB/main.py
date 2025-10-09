@@ -18,6 +18,7 @@ from .ABCMBTools import bilinear_interp
 from .linx.background import BackgroundModel
 from .linx.abundances import AbundanceModel
 from .linx.nuclear import NuclearRates
+from .linx import const as linxconst
 
 config.update("jax_enable_x64", True)
 
@@ -200,7 +201,7 @@ class Model(eqx.Module):
         PT = PE.full_evolution_scan()
         return PT, BG
 
-    # @jit
+    # @eqx.filter_jit
     def get_BG(self, params : dict):
         """
         Get background for given parameters.
@@ -238,10 +239,7 @@ class Model(eqx.Module):
         dict
             Extended parameter dictionary with derived quantities
         """
-        params['omega_m']      = params['omega_cdm'] + params['omega_b']
-        params['R_b']          = params['omega_b'] / params['omega_m']
-        params['omega_g']      = 8. * jnp.pi**3 * cnst.G / 45. / cnst.H0_over_h**2 / cnst.hbar**3 / cnst.c**3 * params['TCMB0']**4
-        params['H0']           = params['h'] * cnst.H0_over_h
+
 
         if self.bbn_type=="Table" or self.bbn_type=="table":
             # interpolate CLASS ParthENoPE table
@@ -280,10 +278,17 @@ class Model(eqx.Module):
 
         elif self.bbn_type=="LINX" or self.bbn_type=="Linx" or self.bbn_type=="linx":
             if params.get("Neff") is not None:
-                print("You have specified a value of Neff, but LINX expects a parameter " \
-                    "dNnu which will be used to compute Neff.  Refer to LINX docs or " \
-                    "https://arxiv.org/abs/2408.14538 for more information.")
+                print("You have specified a value of Neff, but LINX instead expects a \n" \
+                    "parameter 'dNnu' which will be used to compute Neff.  Refer to LINX \n" \
+                    "docs or https://arxiv.org/abs/2408.14538 for more information.")
                 sys.exit()
+
+            if params.get("omega_b") is not None:
+                print("You have specified a value of omega_b, but LINX instead expects a \n" \
+                    "parameter 'eta_fac' which will be used to compute omega_b.  Refer to LINX \n" \
+                    "docs or https://arxiv.org/abs/2408.14538 for more information.")
+                sys.exit()
+
 
             thermo_model_DNeff = BackgroundModel()
             (
@@ -291,6 +296,8 @@ class Model(eqx.Module):
             ) = thermo_model_DNeff(jnp.asarray(params['dNnu']))
 
             params['Neff'] = Neff_vec[-1]
+            eta_fac = jnp.asarray(params.get("eta_fac", 1.0))
+            params['omega_b'] = eta_fac*linxconst.eta0/linxconst.Omegabh2_to_eta0 # CG: LINX uses 0.02242 for omega_b by default
 
             abundance_model = AbundanceModel(NuclearRates(nuclear_net=self.linx_reaction_net))
 
@@ -300,7 +307,10 @@ class Model(eqx.Module):
                 rho_NP_vec,
                 P_NP_vec,
                 t_vec=t_vec_ref,
-                a_vec=a_vec_ref,     # CG add eta fac, tau n fac, nuclear_rates_q
+                a_vec=a_vec_ref,  
+                eta_fac = eta_fac,
+                tau_n_fac = jnp.asarray(params.get("tau_n_fac", 1.0)),
+                nuclear_rates_q = jnp.asarray( params.get("nuclear_rates_q", jnp.ones( len(abundance_model.nuclear_net.reactions) )) )
                 )
             
             # number abundance
@@ -308,9 +318,13 @@ class Model(eqx.Module):
         
             # CMB uses real mass fraction
             Yp_CMB = 1./(4*cnst.mH/cnst.mHe*(1/YHe_BBN - 1) + 1)
-            print(Yp_CMB)
             params['YHe'] = Yp_CMB
-        
+
+
+        params['omega_m']      = params['omega_cdm'] + params['omega_b']
+        params['R_b']          = params['omega_b'] / params['omega_m']
+        params['omega_g']      = 8. * jnp.pi**3 * cnst.G / 45. / cnst.H0_over_h**2 / cnst.hbar**3 / cnst.c**3 * params['TCMB0']**4
+        params['H0']           = params['h'] * cnst.H0_over_h
         params['N_ur']         = params['Neff'] - (params['T_ncdm'] / params['TCMB0'])**4 / (4. / 11.)**(4. / 3.) * params['N_ncdm']
         params['omega_nu']     = 7. / 8. * params['N_ur'] * (4. / 11.)**(4. / 3.) * params['omega_g']
         params['omega_r']      = params['omega_g'] + params['omega_nu']
