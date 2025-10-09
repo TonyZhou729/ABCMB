@@ -201,7 +201,7 @@ class Model(eqx.Module):
         PT = PE.full_evolution_scan()
         return PT, BG
 
-    # @eqx.filter_jit
+    @eqx.filter_jit
     def get_BG(self, params : dict):
         """
         Get background for given parameters.
