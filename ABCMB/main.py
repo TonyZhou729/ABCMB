@@ -290,6 +290,8 @@ class Model(eqx.Module):
                 t_vec_ref, a_vec_ref, rho_g_vec, rho_nu_vec, rho_NP_vec, P_NP_vec, Neff_vec 
             ) = thermo_model_DNeff(jnp.asarray(params['dNnu']))
 
+            params['Neff'] = Neff_vec[-1]
+
             abundance_model = AbundanceModel(NuclearRates(nuclear_net=self.linx_reaction_net))
 
             abundances = abundance_model(
@@ -301,10 +303,13 @@ class Model(eqx.Module):
                 a_vec=a_vec_ref,     # CG add eta fac, tau n fac, nuclear_rates_q
                 )
             
+            # number abundance
             YHe_BBN = 4*abundances[5]
-            params['Neff'] = Neff_vec[-1]
-            params['YHe'] = YHe_BBN # CG NEED TO CONVERT TO WHAT ABCMB EXECTS
-            # run LINX
+        
+            # CMB uses real mass fraction
+            Yp_CMB = 1./(4*cnst.mH/cnst.mHe*(1/YHe_BBN - 1) + 1)
+            print(Yp_CMB)
+            params['YHe'] = Yp_CMB
         
         params['N_ur']         = params['Neff'] - (params['T_ncdm'] / params['TCMB0'])**4 / (4. / 11.)**(4. / 3.) * params['N_ncdm']
         params['omega_nu']     = 7. / 8. * params['N_ur'] * (4. / 11.)**(4. / 3.) * params['omega_g']
