@@ -30,6 +30,9 @@ exclude_patterns = [
     'ABCMB/hyrex',      # exclude the subpackage
     '../ABCMB/hyrex',   # relative path safety
     'HyRex',            # in case of capitalization variants
+    'ABCMB/linx',
+    '../ABCMB/linx',
+    'LINX',
     '_build',
     'Thumbs.db',
     '.DS_Store',

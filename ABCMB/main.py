@@ -258,7 +258,7 @@ class Model(eqx.Module):
 
             YHe_grid = YHe_all.reshape(n2, n1)
             
-            Neff = params["Neff"] # less extensible option
+            # Neff = params["Neff"] # less extensible option
             a_bbn = cnst.TCMB_today*1e-6/0.01   # neutrino decoupling is well over by 10 keV, so 
                                                 # compute Neff at a scale factor approximately 
                                                 # corresponding to this temperature
@@ -266,7 +266,7 @@ class Model(eqx.Module):
             # last two args are user input omega_b and (Neff_BBN - 3.046) (MUST be 3.046 as 
             # this was assumed when constructing the PArthENoPE table)
             # CG: put this inside BG
-            # Neff = (jnp.sum([s.rho(a_bbn) for s in self.species_list]) - AS.Photon.rho(a_bbn))/AS.MasslessNeutrinos.rho(a_bbn)
+            Neff = (jnp.sum(jnp.asarray([s.rho(a_bbn, params) for s in self.species_list])) - AS.Photon(idx=0,).rho(a_bbn,params))/AS.MasslessNeutrinos().rho(a_bbn,params)
             res_YHe = bilinear_interp(omegab, DNeff,YHe_grid, params['omega_b'],Neff - 3.046)
             params['YHe'] = res_YHe
 
