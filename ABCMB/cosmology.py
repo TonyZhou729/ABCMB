@@ -807,27 +807,22 @@ class ClassBackground(Background):
     H_tab : jnp.array
 
     def __init__(self):
-        self.species_list = (AS.ColdDarkMatter(0), AS.DarkEnergy(), AS.Baryon(0, None), AS.Photon(0, None))
+        self.species_list = (AS.ColdDarkMatter(0), AS.DarkEnergy(), AS.Baryon(0, None), AS.Photon(0, None), AS.MasslessNeutrinos(0))
         self.params = {k: float(v) for k, v in np.loadtxt(file_dir+"/../Module_Tests/params.txt", dtype=str)}
 
-        class_res_dir = "/home/zz1994/packages/class/output/ABCMB_test/noneutrinos00"
-        bac = np.loadtxt(class_res_dir+"_background.dat")
-        therm = np.loadtxt(class_res_dir+"_thermodynamics.dat")
+        # Other tabulated things
+        data = np.load(file_dir+"/../Module_Tests/class_background.npz")
 
-        #self.lna_tau_tab = jnp.array(np.loadtxt("MockBackgroundTabs/lna_tau.txt"))
-        self.tau_tab = jnp.interp(self.lna_tau_tab, -jnp.log(1.+bac[:, 0]), bac[:, 2])
+        self.tau_tab = jnp.array(data["tau_tab"])
         self.tau0 = self.tau_tab[-1]
-        self.H_tab = jnp.interp(self.lna_tau_tab, -jnp.log(1.+bac[:, 0]), bac[:, 3]) * cnst.c_Mpc_over_s
+        self.H_tab = jnp.array(data["H_tab"])
 
-        #thermo_class = np.loadtxt("/home/zz1994/packages/class/output/ABCMB_test"+"/noufarsa00_thermodynamics.dat")
-        a = therm[:, 0]
-        xe_class = therm[:, 3]
-        Tm_class = therm[:, 7]
-        self.lna_xe_tab = array_with_padding(jnp.array(jnp.log(jnp.flip(a))))
-        self.xe_tab = array_with_padding(jnp.array(jnp.flip(xe_class)))
-        self.lna_Tm_tab = array_with_padding(jnp.array(jnp.log(jnp.flip(a))))
-        self.Tm_tab = array_with_padding(jnp.array(jnp.flip(Tm_class)*cnst.kB))
-        self.kappa_tab = jnp.interp(self.lna_tau_tab, -jnp.log(a), -jnp.log(therm[:, 5]))
+        self.lna_xe_tab = array_with_padding(jnp.array(data["lna_xe_tab"]))
+        self.xe_tab = array_with_padding(jnp.array(data["xe_tab"]))
+        self.lna_Tm_tab = array_with_padding(jnp.array(data["lna_Tm_tab"]))
+        self.Tm_tab = array_with_padding(jnp.array(data["Tm_tab"]))
+        self.kappa_tab = jnp.array(data["kappa_tab"])
+        # self.kappa_tab = self._tabulate_optical_depth()
 
         self.lna_rec = -6.99666444
         self.lna_transfer_start = -7.27285457
@@ -842,3 +837,6 @@ class ClassBackground(Background):
 
     def Tm(self, lna):
         return jnp.interp(lna, self.lna_Tm_tab.arr, self.Tm_tab.arr)
+
+    def expmkappa(self, lna):
+        return jnp.exp(-jnp.interp(lna, self.lna_xe_tab.arr, self.kappa_tab))
