@@ -471,6 +471,7 @@ class SpectrumSolver(eqx.Module):
         ee_raw = Cls_raw[:, 2]
 
         ells = bessel_l_tab[self.ells_indices]
+        return ells, ee_raw
         tt_unlensed = CubicSpline(ells, tt_raw, check=False)(self.ells)
         te_unlensed = CubicSpline(ells, te_raw, check=False)(self.ells)
         ee_unlensed = CubicSpline(ells, ee_raw, check=False)(self.ells)
@@ -497,6 +498,8 @@ class SpectrumSolver(eqx.Module):
         tt_raw, te_raw, ee_raw = vmap(self.Cl_ee_only, in_axes=(0, None, None))(self.ells_indices, PT, BG)
 
         ells = bessel_l_tab[self.ells_indices]
+
+        return ells, ee_raw
         tt_unlensed = CubicSpline(ells, tt_raw, check=False)(self.ells)
         te_unlensed = CubicSpline(ells, te_raw, check=False)(self.ells)
         ee_unlensed = CubicSpline(ells, ee_raw, check=False)(self.ells)
@@ -640,7 +643,7 @@ class SpectrumSolver(eqx.Module):
         # Beyond this k point the bessel function vanishes exponentially.
         k_cut_small = 0.9*bessel_l_tab[idx]/BG.rA_rec
 
-        k_E_axis = jnp.geomspace(k_cut_small, k_cut_small+0.11, 5000) 
+        k_E_axis = jnp.linspace(k_cut_small, k_cut_small+0.32, 2000) 
         lna_axis = PT.lna
 
         tau0 = BG.tau0
