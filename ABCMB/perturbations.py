@@ -89,9 +89,9 @@ class PerturbationEvolver(eqx.Module):
         #lna = jnp.linspace(self.BG.lna_transfer_start, 0., 500)  # lna_end hardcoded
         lna = jnp.linspace(-8., 0., 700)
         #k = jnp.geomspace(1.e-4, 0.4, 300)
-        k1 = jnp.geomspace(1.e-4, 0.1, 300)
-        k2 = jnp.linspace(0.1, 0.4, 100)
-        k = jnp.concatenate((k1[:-1], k2))
+        k1 = jnp.geomspace(1.e-4, 0.1, 700)
+        k2 = jnp.linspace(0.1, 0.4, 300)
+        k = jnp.concatenate((k1, k2[1:]))
         #k = jnp.array([1.e-3, 1.e-2, 1.e-1, 0.4])
 
         def body_fun(_, ki):
@@ -345,7 +345,7 @@ class PerturbationEvolver(eqx.Module):
         term = diffrax.ODETerm(self.get_derivatives)
         solver = diffrax.Kvaerno5()
         #stepsize_controller = diffrax.PIDController(pcoeff=0.25, icoeff=0.80, dcoeff=0, rtol=1.e-3, atol=1.e-6) # DISCO-EB settings
-        stepsize_controller = diffrax.PIDController(pcoeff=0.4, icoeff=0.3, dcoeff=0, rtol=1.e-6, atol=1.e-6)
+        stepsize_controller = diffrax.PIDController(pcoeff=0.4, icoeff=0.3, dcoeff=0, rtol=1.e-3, atol=1.e-6)
         #stepsize_controller = diffrax.PIDController(rtol=1.e-3, atol=1.e-6)
         saveat = diffrax.SaveAt(dense=True)
         adjoint=diffrax.ForwardMode()
@@ -354,7 +354,7 @@ class PerturbationEvolver(eqx.Module):
             term, solver,
             t0=lna_start, t1=lna_end, dt0=1.e-2, y0=y_ini,
             stepsize_controller=stepsize_controller,
-            max_steps=8192,
+            max_steps=2048,
             saveat=saveat,
             args=k,
             adjoint=adjoint

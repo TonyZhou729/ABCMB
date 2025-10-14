@@ -471,7 +471,7 @@ class SpectrumSolver(eqx.Module):
         ee_raw = Cls_raw[:, 2]
 
         ells = bessel_l_tab[self.ells_indices]
-        return ells, ee_raw
+        return ells, tt_raw, te_raw, ee_raw
         tt_unlensed = CubicSpline(ells, tt_raw, check=False)(self.ells)
         te_unlensed = CubicSpline(ells, te_raw, check=False)(self.ells)
         ee_unlensed = CubicSpline(ells, ee_raw, check=False)(self.ells)
@@ -641,9 +641,18 @@ class SpectrumSolver(eqx.Module):
 
     def Cl_ee_only(self, idx, PT, BG):
         # Beyond this k point the bessel function vanishes exponentially.
-        k_cut_small = 0.9*bessel_l_tab[idx]/BG.rA_rec
+        k_cut_small = 0.7*bessel_l_tab[idx]/BG.rA_rec
 
-        k_E_axis = jnp.linspace(k_cut_small, k_cut_small+0.32, 2000) 
+        k_E_axis = jnp.linspace(k_cut_small, k_cut_small+0.15, 500) 
+        k_E_axis = jnp.geomspace(k_cut_small, k_cut_small+0.15, 500)
+
+        k_E_axis = jnp.where(
+            bessel_l_tab[idx] > 50,
+            jnp.linspace(k_cut_small, k_cut_small+0.15, 1000),
+            jnp.geomspace(k_cut_small, k_cut_small+0.05, 1000)
+        )
+
+        #k_E_axis = PT.k
         lna_axis = PT.lna
 
         tau0 = BG.tau0
@@ -673,6 +682,9 @@ class SpectrumSolver(eqx.Module):
         )
 
         del chi
+        del sourceE
+
+        #return k_E_axis, transferE
 
         ### END OF TRANSFER FUNCTION ###
 
