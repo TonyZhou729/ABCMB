@@ -4,6 +4,8 @@ import jax.numpy as jnp
 from jax import config, lax, grad
 import equinox as eqx
 
+import jax
+
 from diffrax import diffeqsolve, SaveAt, ODETerm, Tsit5, Kvaerno3, PIDController, ForwardMode, Event
 
 from ABCMB import constants as cnst
@@ -154,7 +156,7 @@ class hydrogen_model(eqx.Module):
         ### END HYREC2 EMLA + FULL TWO PHOTON PHASE ###
 
         ### HYREC2 EMLA ONLY PHASE ###
-        xe_output_late, Tm_output_late, lna_output_late = self.solve_emla(self.lna_axis_late , xe_4He_post_2g.lastval, BG, rtol, atol, solver, max_steps)
+        xe_output_late, Tm_output_late, lna_output_late = self.solve_emla(self.lna_axis_late , xe_4He_post_2g.lastval, BG, rtol, atol, solver)
 
 
         lna_Tm = array_with_padding(lna_output_late)
@@ -454,6 +456,7 @@ class hydrogen_model(eqx.Module):
             TR_MIN = recomb_functions.TR_MIN    # Minimum Tcmb in eV 
             T_RATIO_MIN = recomb_functions.T_RATIO_MIN  # Minimum Tratio 
             ratio = jnp.minimum(Tm / TCMB, TCMB / Tm)
+            # jax.debug.print("{TCMB},{lna}",TCMB=TCMB,lna=lna)
             return jnp.logical_or(TCMB < TR_MIN, ratio < T_RATIO_MIN) # stop when true
         
         event = Event(temperature_check)
@@ -472,6 +475,7 @@ class hydrogen_model(eqx.Module):
         xe_output = sol.ys[:, 0] 
         Tm_output = sol.ys[:, 1] 
 
+        jax.debug.print("{last}",last=sol.ts[-1])
         return xe_output, Tm_output, sol.ts
 
     def dxe_dlna_twophoton(self, xe, TCMB, Tm, H, nH, Delta):
@@ -713,7 +717,7 @@ class hydrogen_model(eqx.Module):
         """
         t0 = lna0
         t1 = jnp.inf # lna_axis.max
-
+        jax.debug.print("{lna}",lna=lna0)
         # need to go at least twice max_steps to make sure we catch t1
         t_arr = jnp.linspace(t0+self.integration_spacing, t0+2*max_steps*self.integration_spacing, 2*max_steps)
 
