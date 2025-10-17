@@ -1,14 +1,11 @@
 import numpy as np
 
 import jax.numpy as jnp
-from jax import jit, config, lax, grad
-from jax import debug
+from jax import config, lax, grad
 import equinox as eqx
 
-from diffrax import diffeqsolve, SaveAt, ODETerm, Tsit5, Kvaerno3, PIDController, DiscreteTerminatingEvent, ForwardMode
+from diffrax import diffeqsolve, SaveAt, ODETerm, Tsit5, Kvaerno3, PIDController, ForwardMode, Event
 
-#import cosmology
-#from cosmology import mH, c, hbar, kB
 from ABCMB import constants as cnst
 from . import recomb_functions
 from .array_with_padding import array_with_padding
@@ -50,7 +47,7 @@ class hydrogen_model(eqx.Module):
     last_4He_lna : jnp.float64
     twog_redshift : jnp.float64
 
-    def __init__(self,xe_4He,lna_4He,lna_axis_late,last_4He_lna,integration_spacing = 5.0e-4, Nsteps=800,swift = jnp.array(np.loadtxt(file_dir+"/tabs/fit_swift.dat"))):
+    def __init__(self,xe_4He,lna_4He,lna_axis_late,last_4He_lna,twog_redshift,integration_spacing = 5.0e-4, Nsteps=800,swift = jnp.array(np.loadtxt(file_dir+"/tabs/fit_swift.dat"))):
         """
         Initialize hydrogen recombination model.
 
@@ -83,7 +80,7 @@ class hydrogen_model(eqx.Module):
         self.lna_4He = lna_4He
 
         self.last_4He_lna = last_4He_lna
-        self.twog_redshift = 701.
+        self.twog_redshift = twog_redshift
 
     def __call__(self, BG, rtol=1e-6, atol=1e-9,solver=Kvaerno3(),max_steps=1024):
         """
@@ -114,8 +111,8 @@ class hydrogen_model(eqx.Module):
         """
         Compute complete hydrogen recombination history through all phases.
 
-        Sequentially computes hydrogen ionization fraction through Saha equilibrium,
-        post-Saha expansion, HYREC-2 EMLA with two-photon processes, and late-time
+        Sequentially computes hydrogen ionization fraction through post-Saha 
+        expansion, HYREC-2 EMLA with two-photon processes, and late-time 
         EMLA-only evolution phases.
 
         Parameters:
@@ -142,7 +139,6 @@ class hydrogen_model(eqx.Module):
         ################## move to H ################## 
 
         ### POST SAHA EXPANSION PHASE ###
-        # this one starts at the last lna from above, no off-by-one
         xe_output_post, lna_output_post = self.post_Saha_expansion(self.last_4He_lna+self.integration_spacing, BG)
 
         xe_4He_and_post = self.xe_4He.concat(array_with_padding(xe_output_post))
@@ -158,17 +154,29 @@ class hydrogen_model(eqx.Module):
         ### END HYREC2 EMLA + FULL TWO PHOTON PHASE ###
 
         ### HYREC2 EMLA ONLY PHASE ###
-        xe_output_late, Tm_output_late = self.solve_emla(self.lna_axis_late , xe_4He_post_2g.lastval, BG, rtol, atol, solver, max_steps)
+        xe_output_late, Tm_output_late, lna_output_late = self.solve_emla(self.lna_axis_late , xe_4He_post_2g.lastval, BG, rtol, atol, solver, max_steps)
 
 
-        lna_Tm = array_with_padding(self.lna_axis_late)
+        lna_Tm = array_with_padding(lna_output_late)
         Tm = array_with_padding(Tm_output_late)
 
         xe_4He_post_2g_late = xe_4He_post_2g.concat(array_with_padding(xe_output_late))
-        lna_4He_post_2g_late = lna_4He_post_2g.concat(array_with_padding(self.lna_axis_late))
+        lna_4He_post_2g_late = lna_4He_post_2g.concat(lna_Tm)
         ### END OF HYREC2 EMLA ONLY PHASE ###
 
-        return (xe_4He_post_2g_late, lna_4He_post_2g_late, Tm, lna_Tm)
+        ### Begin TLA phase ###
+        xe_output_TLA, Tm_output_TLA, lna_output_TLA = self.solve_TLA(lna_Tm.lastval, self.lna_axis_late, 
+                                                                      xe_4He_post_2g_late.lastval, Tm.lastval, 
+                                                                      BG)
+
+        xe_all = xe_4He_post_2g_late.concat(array_with_padding(xe_output_TLA))
+        lna_all = lna_4He_post_2g_late.concat(array_with_padding(lna_output_TLA))
+        Tm_all = Tm.concat(array_with_padding(Tm_output_TLA))
+        lna_Tm_all = lna_Tm.concat(array_with_padding(lna_output_TLA))
+        ### End TLA ###
+        
+        return (xe_all, lna_all, Tm_all, lna_Tm_all)
+
 
 
     def post_Saha_expansion(self, starting_lna, BG, threshold=1e-5):
@@ -193,8 +201,6 @@ class hydrogen_model(eqx.Module):
         tuple
             (xe_output, lna_output) - ionization fraction and log scale factor arrays
         """
-        # Calculate omega_rad today using input Neff, where
-        # omega_rad = cosmology.omega_rad0(Neff)  
 
         # Initial conditions
         TCMB = BG.TCMB(starting_lna)
@@ -212,7 +218,6 @@ class hydrogen_model(eqx.Module):
             xe_output, lna_output, xe, iz, stop = carry
 
             lna = starting_lna + iz*self.integration_spacing
-            z = jnp.exp(-lna) - 1.
 
             # Cosmological parameters
             TCMB = BG.TCMB(lna)
@@ -280,7 +285,6 @@ class hydrogen_model(eqx.Module):
         """
         BG = args
     
-        z = 1. / jnp.exp(lna) - 1.
         x1s = 1. - xe                # fraction of neutral hydrogen
         TCMB = BG.TCMB(lna)          # eV
         nH = BG.nH(lna)              # hydrogen number density, 1/cm^3
@@ -327,7 +331,7 @@ class hydrogen_model(eqx.Module):
         """
 
         # Initial conditions
-        TCMB_init = BG.TCMB(lna_axis_init)  # Initial matter temperature
+        TCMB_init = BG.TCMB(lna_axis_init)  # Initial CMB temperature
         initial_state = xe0
         term = ODETerm(self.xe_derivative_twophoton)
 
@@ -342,9 +346,10 @@ class hydrogen_model(eqx.Module):
         save_at = SaveAt(ts=t_arr) 
         adjoint=ForwardMode()
 
-        def lna_check(state, **kwargs):
-            lna = state.tprev
-            return lna > lna_axis_final
+        def lna_check(t, y, args, **kwargs):
+            return t > lna_axis_final
+
+        event = Event(lna_check)
 
         # use diffrax default max_steps of 4096
         sol = diffeqsolve(
@@ -352,7 +357,7 @@ class hydrogen_model(eqx.Module):
             y0=initial_state, 
             args=BG,
             stepsize_controller=PIDController(rtol, atol),saveat=save_at,
-            discrete_terminating_event = DiscreteTerminatingEvent(lna_check),
+            event = event,
             adjoint=adjoint
         )
         
@@ -385,7 +390,6 @@ class hydrogen_model(eqx.Module):
         xe, Tm = state
         BG = args
         
-        z = 1. / jnp.exp(lna) - 1.   # redshift z
         TCMB = BG.TCMB(lna)          # eV
         nH = BG.nH(lna)              # hydrogen number density, 1/cm^3
         H = BG.H(lna)                # Hubble parameter, 1/s
@@ -424,20 +428,35 @@ class hydrogen_model(eqx.Module):
         Returns:
         --------
         tuple
-            (xe_output, Tm_output) - ionization fraction and matter temperature arrays
+            (xe_output, Tm_output, lna_output) - ionization fraction, matter temperature, 
+            and lna arrays
         """
         # Initial conditions
-        t0 = lna_axis.min()
-        t1 = lna_axis.max()
-        save_at = SaveAt(ts=lna_axis)
-        
-        TCMB_init = BG.TCMB(t0)  # Initial matter temperature
+        t0 = lna_axis.min()-self.integration_spacing # need to back up a step since that's where we specified xe0
+        t1 = jnp.inf 
 
+        # need to go at least twice max_steps to make sure we catch the t1 we actually want
+        t_arr = jnp.linspace(t0+self.integration_spacing, t0+2*max_steps*self.integration_spacing, 2*max_steps)
+
+        save_at = SaveAt(ts=t_arr) 
+        
+        TCMB_init = BG.TCMB(t0)  # Initial CMB temperature
         Tm0 = TCMB_init * (1.-BG.H(t0)/recomb_functions.Gamma_compton(xe0, TCMB_init, BG.params['YHe']))
 
         initial_state = jnp.array([xe0, Tm0])
         term = ODETerm(self.xe_tm_derivative)
         adjoint=ForwardMode()
+
+        def temperature_check(t, y, args, **kwargs):
+            lna = t
+            _, Tm = y
+            TCMB = BG.TCMB(lna) 
+            TR_MIN = recomb_functions.TR_MIN    # Minimum Tcmb in eV 
+            T_RATIO_MIN = recomb_functions.T_RATIO_MIN  # Minimum Tratio 
+            ratio = jnp.minimum(Tm / TCMB, TCMB / Tm)
+            return jnp.logical_or(TCMB < TR_MIN, ratio < T_RATIO_MIN) # stop when true
+        
+        event = Event(temperature_check)
 
         # Call the solver
         sol = diffeqsolve(
@@ -445,13 +464,15 @@ class hydrogen_model(eqx.Module):
             y0=initial_state, 
             args=BG,
             stepsize_controller=PIDController(rtol, atol),saveat=save_at,
-            adjoint=adjoint
+            adjoint=adjoint,
+            max_steps=max_steps,
+            event = event
         )
         
         xe_output = sol.ys[:, 0] 
         Tm_output = sol.ys[:, 1] 
 
-        return xe_output, Tm_output
+        return xe_output, Tm_output, sol.ts
 
     def dxe_dlna_twophoton(self, xe, TCMB, Tm, H, nH, Delta):
         """
@@ -616,3 +637,109 @@ class hydrogen_model(eqx.Module):
         RLya = 8.*jnp.pi*H/3./nH/x1s/lambda_lya**3      # Rate of escape of Lyman-alpha
         RLyn = (4*(n**2-1)/3/n**2)**3 * RLya            # (lambda_lya/lambda_lyn)^3 * RLya
         return RLyn
+
+    def TLA_xe_deriv(self, lna, state, args):
+        """
+        Compute coupled derivatives for ionization fraction and matter temperature
+        using Peebles three-level atom.
+
+        Parameters:
+        -----------
+        lna : float
+            Log scale factor
+        state : array
+            Current state [xe, Tm]
+        args : cosmology.Background
+            Background cosmology module
+
+        Returns:
+        --------
+        array
+            Time derivatives [dxe/dlna, dTm/dlna] (units: dimensionless, eV)
+        """
+        xe, Tm  = state
+        BG = args
+
+        xHII = xe # since everything else is fully recombined
+        nH = BG.nH(lna)
+        TCMB = BG.TCMB(lna)          # eV
+        H = BG.H(lna)  
+
+        C = recomb_functions.peebles_C(jnp.exp(-lna) - 1.0, xHII, H, nH, BG)
+        alpha = recomb_functions.alpha_H(Tm)                     
+        beta  = recomb_functions.beta_H(Tm)                  
+
+        # dxe/d(lna) = (1/H) * dxe/dt
+        dxe_dt = C * (beta * (1.0 - xe) - alpha * nH * xe**2)
+        dxe_dloga = dxe_dt / H
+
+        dTm_dloga = -2.0 * Tm + (recomb_functions.Gamma_compton(xe, TCMB, BG.params['YHe']) / H) * (TCMB - Tm)
+
+        return jnp.array([dxe_dloga, dTm_dloga])
+    
+    def solve_TLA(self, lna0, lna_axis, xe0, Tm0, BG, rtol=1e-7, atol=1e-9, solver=Kvaerno3(), max_steps = 4096):
+        """
+        Solve late-time TLA evolution.
+
+        Integrates hydrogen recombination using Peebles TLA in the region
+        beyond where SWIFT corrections are tabulated.
+
+        Parameters:
+        -----------
+        lna0 : float
+            Starting log scale factor
+        lna_axis : array
+            Log scale factor grid
+        xe0 : float
+            Initial ionization fraction
+        Tm0: float
+            Starting matter temperature
+        BG : cosmology.Background
+            Background cosmology module
+        rtol : float, optional
+            Relative tolerance (default: 1e-7)
+        atol : float, optional
+            Absolute tolerance (default: 1e-9)
+        solver : diffrax.Solver, optional
+            ODE solver (default: Tsit5())
+        max_steps : int, optional
+            Maximum steps (default: 4096)
+
+        Returns:
+        --------
+        tuple
+            (xe_output, Tm_output, lna_output) - ionization fraction, matter temperature, 
+            and log scale factor arrays
+        """
+        t0 = lna0
+        t1 = jnp.inf # lna_axis.max
+
+        # need to go at least twice max_steps to make sure we catch t1
+        t_arr = jnp.linspace(t0+self.integration_spacing, t0+2*max_steps*self.integration_spacing, 2*max_steps)
+
+        save_at = SaveAt(ts=t_arr) 
+        # save_at = SaveAt(ts=lna_axis) # but start saving output at step 1 or later
+
+        initial_state = jnp.array([xe0, Tm0])
+        term = ODETerm(self.TLA_xe_deriv)
+        adjoint=ForwardMode()
+
+        def lna_check(t, y, args, **kwargs):
+            return t > jnp.max(lna_axis) # stop when true
+        
+        event = Event(lna_check)
+
+        sol = diffeqsolve(
+            term, solver, t0=t0, t1=t1, dt0=1e-3, 
+            y0=initial_state, 
+            args=BG,
+            stepsize_controller=PIDController(rtol, atol),saveat=save_at,
+            adjoint=adjoint,
+            max_steps=max_steps,
+            event=event
+        )
+        
+        xe_output = sol.ys[:, 0]
+        Tm_output = sol.ys[:, 1]
+
+        return xe_output, Tm_output, sol.ts

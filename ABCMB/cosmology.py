@@ -95,7 +95,7 @@ class Background(eqx.Module):
         ### RECOMBINATION RELATED ###
 
         # Run hyrex to tabulate recombination output
-        self.xe_tab, self.lna_xe_tab, self.Tm_tab, self.lna_Tm_tab = RM(self)
+        self.xe_tab, self.lna_xe_tab, self.Tm_tab, self.lna_Tm_tab = RM(self,z_reion = 0, Delta_z_reion = 0, z_reion_He = 0, Delta_z_reion_He = 0)
         self.kappa_tab = self._tabulate_optical_depth()
 
         # Find approximate maximum of visibility function.

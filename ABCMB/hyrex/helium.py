@@ -2,7 +2,7 @@ import jax.numpy as jnp
 from jax import jit, config, lax, grad
 import equinox as eqx
 
-from diffrax import diffeqsolve, SaveAt, ODETerm, Kvaerno3, PIDController, DiscreteTerminatingEvent, ForwardMode
+from diffrax import diffeqsolve, SaveAt, ODETerm, Kvaerno3, PIDController, ForwardMode, Event
 
 from ABCMB import constants as cnst
 from . import recomb_functions
@@ -61,10 +61,6 @@ class helium_model(eqx.Module):
         self.lna_axis_4Heequil = lna_axis_4Heequil
         self.concrete_axis_size = jnp.zeros(Nsteps)
 
-    # ZZ: Modified on March 12th to replace all input cosmological parameters with the BG module. 
-    # TODO: Finish converting all cosmology functions and parameters into the BG package.
-
-    # @jit # filter_jit is slower...  I'd guess cache misses
     def __call__(self, BG, rtol=1e-6, atol=1e-9,solver=Kvaerno3(),max_steps=1024):
         """
         Compute helium recombination history.
@@ -493,20 +489,23 @@ class helium_model(eqx.Module):
         save_at = SaveAt(ts=t_arr)
         adjoint=ForwardMode()
 
-        def He_check(state, **kwargs):
-            lna = state.tprev
+        def He_check(t, y, args, **kwargs):
+            lna = t
             xH1 = self.xH1_Saha(lna, BG)
 
             # use xe  = xHeII + (1.-xH1)
-            xHeII = state.y[0] - (1.-xH1)
+            # y is current state, [0] flattens jnp.array
+            xHeII = y[0] - (1.-xH1)
             return xHeII < 1e-4
+        
+        event = Event(He_check)
 
         sol = diffeqsolve(
             term, solver, t0=t0, t1=t1, dt0=1e-3, 
             y0=initial_state, 
             args=BG,
             stepsize_controller=PIDController(rtol, atol),saveat=save_at,
-            discrete_terminating_event = DiscreteTerminatingEvent(He_check),
+            event = event,
             adjoint=adjoint
         )
         

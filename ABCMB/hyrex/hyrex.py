@@ -1,7 +1,6 @@
 import numpy as np
 import jax.numpy as jnp
-from jax import jit, config, lax, grad
-from jax import debug
+from jax import config
 import equinox as eqx
 from diffrax import Kvaerno3
 
@@ -10,7 +9,6 @@ from functools import partial
 from .hydrogen import hydrogen_model
 from .helium import helium_model
 from .array_with_padding import array_with_padding
-import time
 config.update("jax_enable_x64", True)
 
 class recomb_model(eqx.Module):
@@ -68,7 +66,7 @@ class recomb_model(eqx.Module):
         self.idx_4He_equil = jnp.where(self.lna_axis_full <= -jnp.log(self.He4equil_redshift))[0]
         self.idx_late  = jnp.where(self.lna_axis_full >= -jnp.log(self.twog_redshift))[0]
 
-    def __call__(self, BG,  z_reion = 11, Delta_z_reion = 0.5, rtol=1e-6, atol=1e-9,solver=Kvaerno3(),max_steps=1024):
+    def __call__(self, BG,  z_reion = 11, Delta_z_reion = 0.5, z_reion_He = 3.5, Delta_z_reion_He = 0.5, exp_reion = 1.5, rtol=1e-6, atol=1e-9,solver=Kvaerno3(),max_steps=1024):
         """
         Compute complete recombination and reionization history.
 
@@ -80,6 +78,12 @@ class recomb_model(eqx.Module):
             Reionization redshift (default: 11)
         Delta_z_reion : float, optional
             Reionization transition width (default: 0.5)
+        z_reion_He : float, optional
+            Reionization redshift of singly-ionized helium (default: 3.5)
+        Delta_z_reion_He : float, optional
+            Reionization transition width for singly-ionized helium (default: 0.5)
+        exp_reion : float, optional
+            Power of 1+z appearing in tanh argument during reionization (default: 3/2)
         rtol : float, optional
             Relative tolerance for ODE solver (default: 1e-6)
         atol : float, optional
@@ -95,9 +99,9 @@ class recomb_model(eqx.Module):
             (xe_full_reion, lna_full, Tm, lna_Tm) - complete ionization history
             with reionization, log scale factor, matter temperature, and temperature grid
         """
-        return self.get_history(BG, z_reion, Delta_z_reion, rtol, atol, solver, max_steps)
+        return self.get_history(BG, z_reion, Delta_z_reion, z_reion_He, Delta_z_reion_He, exp_reion, rtol, atol, solver, max_steps)
     
-    def get_history(self, BG,  z_reion = 11, Delta_z_reion = 0.5,rtol=1e-6, atol=1e-9,solver=Kvaerno3(),max_steps=1024):
+    def get_history(self, BG,  z_reion = 11, Delta_z_reion = 0.5, z_reion_He = 3.5, Delta_z_reion_He = 0.5, exp_reion = 1.5,rtol=1e-6, atol=1e-9,solver=Kvaerno3(),max_steps=1024):
         """
         Compute complete recombination and reionization history.
 
@@ -109,9 +113,15 @@ class recomb_model(eqx.Module):
         BG : cosmology.Background
             Background cosmology module
         z_reion : float, optional
-            Reionization redshift (default: 11)
+            Reionization redshift of hydorgen and neutral helium (default: 11)
         Delta_z_reion : float, optional
-            Reionization transition width (default: 0.5)
+            Reionization transition width for hydorgen and neutral helium (default: 0.5)
+        z_reion_He : float, optional
+            Reionization redshift of singly-ionized helium (default: 3.5)
+        Delta_z_reion_He : float, optional
+            Reionization transition width for singly-ionized helium (default: 0.5)
+        exp_reion : float, optional
+            Power of 1+z appearing in tanh argument during reionization (default: 3/2)
         rtol : float, optional
             Relative tolerance for ODE solver (default: 1e-6)
         atol : float, optional
@@ -133,22 +143,29 @@ class recomb_model(eqx.Module):
         lna_axis_late  = self.lna_axis_full[self.idx_late]
 
         xe_4He, lna_4He = helium_model(lna_axis_4Heequil)(BG)
-        xe_full, lna_full, Tm, lna_Tm = hydrogen_model(xe_4He,lna_4He,lna_axis_late,lna_4He.lastval)(BG)
+        xe_full, lna_full, Tm, lna_Tm = hydrogen_model(xe_4He,lna_4He,lna_axis_late,lna_4He.lastval,self.twog_redshift)(BG)
 
         ### Hydrogen Reionization ###
         # We patch a simple tanh solution to the tail of the electron fraction result.
         fHe = BG.params['YHe'] / 4 / (1-BG.params['YHe'])
         z = 1/jnp.exp(lna_full.arr) - 1
-        y = (1+z)**(3./2)
+        y = (1+z)**(exp_reion)
 
-        y_reion = (1+z_reion)**(3./2)
-        Delta_y_reion = 3./2 * jnp.sqrt(1+z_reion) * Delta_z_reion
+        y_reion = (1+z_reion)**(exp_reion)
+        Delta_y_reion = exp_reion * (1+z_reion)**(exp_reion-1) * Delta_z_reion
         tanh_arg = (y_reion - y) / Delta_y_reion
 
         xe_reion_correction = (1+fHe)/2 * (1 + jnp.tanh(tanh_arg))
-        xe_full_arr = xe_reion_correction + xe_full.arr 
+        
+        ### Helium Reionization ###
+        # The above accounts for hydrogen and the first ionization level of helium.
+        # Let's also account for the second ionization of helium:
+        tanh_arg_He = (z_reion_He - z)/Delta_z_reion_He
+        xe_HeII_reion_correction = fHe/2 * (1 + jnp.tanh(tanh_arg_He))
+        xe_full_arr = xe_reion_correction + xe_HeII_reion_correction + xe_full.arr 
+
         xe_full_reion = array_with_padding(xe_full_arr)
-        ### End of Hydrogen Reionization ###
+        ### End of Reionization ###
 
         # best return the whole array-with-padding object 
         # so we can interpolate over the padding
