@@ -63,9 +63,9 @@ class PerturbationEvolver(eqx.Module):
     ### RSA ###
     k_RSA_off : jnp.array
     k_RSA_on  : jnp.array
-    k_RSA_break = 0.09 # Hard coded, all higher k modes get RSA treatment.
+    k_RSA_break = 0.05 # Hard coded, all higher k modes get RSA treatment.
 
-    lna_RSA_break = -4.0 # Hard coded, evolution for k>k_RSA_break, lna > lna_RSA_break uses RSA.
+    lna_RSA_break = -5.0 # Hard coded, evolution for k>k_RSA_break, lna > lna_RSA_break uses RSA.
     lna_axis_perturbations = jnp.linspace(-8.0, 0.0, 550) # Hard coded.
     lna_RSA_off = lna_axis_perturbations[lna_axis_perturbations < lna_RSA_break] 
     lna_RSA_on  = lna_axis_perturbations[lna_axis_perturbations >= lna_RSA_break] 
@@ -122,7 +122,7 @@ class PerturbationEvolver(eqx.Module):
             return None, y
 
         if jax.default_backend() =='gpu':
-            res = vmap(self.evolution_one_k,in_axes=[0,None,None])(self.k_axis_perturbations, self.lna_axis_perturbations, args)
+            res, _ = vmap(self.evolution_one_k,in_axes=[0,None,None])(self.k_axis_perturbations, self.lna_axis_perturbations, args)
         else: 
             _, res = lax.scan(scan_fun, None, self.k_axis_perturbations)      # res has shape (Nk, Nlna, Ny)
 
@@ -447,7 +447,7 @@ class PerturbationEvolver(eqx.Module):
 
         ### END OF DIFFRAX INTEGRATION ###
 
-        return sol.ys
+        return sol.ys, sol.stats
 
     def make_output_table(self, lna, modes, args):
         """
