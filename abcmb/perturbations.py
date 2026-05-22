@@ -122,7 +122,7 @@ class PerturbationEvolver(eqx.Module):
             return None, y
 
         if jax.default_backend() =='gpu':
-            res, _ = vmap(self.evolution_one_k,in_axes=[0,None,None])(self.k_axis_perturbations, self.lna_axis_perturbations, args)
+            res = vmap(self.evolution_one_k,in_axes=[0,None,None])(self.k_axis_perturbations, self.lna_axis_perturbations, args)
         else: 
             _, res = lax.scan(scan_fun, None, self.k_axis_perturbations)      # res has shape (Nk, Nlna, Ny)
 
@@ -386,7 +386,7 @@ class PerturbationEvolver(eqx.Module):
         ### DIFFRAX INTEGRATION ###
 
         lna_start = self.get_starting_time(k, args) # Start and end times from tight coupling settings
-        lna_end = lna[-1] # End at the last lna requested. 
+        lna_end = self.lna_axis_perturbations[-1] # End at the last lna requested. 
 
         # For small k's the superhorizon time can be set relatively late, but we impose a of lna_min = -8.0, 
         # so that initial condition don't start later than the first number of saveat.
@@ -395,8 +395,17 @@ class PerturbationEvolver(eqx.Module):
         # Initial conditions for tight coupling
         y_ini = self.initial_conditions_one_k(k, lna_start, args)
 
-        # Settings for post-tight coupling
-        term = diffrax.ODETerm(self.get_derivatives)
+        # Derivative is a branched function, computes both and returns the one depending on RSA conditions
+        def derivative_func(lna, y, args):
+            k, _, _ = args
+            return jnp.where(
+                (k >= self.k_RSA_break) & (lna >= self.lna_RSA_break),
+                self.get_derivatives_RSA(lna, y, args),
+                self.get_derivatives(lna, y, args)
+            )
+
+        term = diffrax.ODETerm(derivative_func)
+
         # LCDM defaults for very high k sometimes failed with reverseAD.
         # The reason for that was the default precision parameter in
         # the Kvaerno5 rootfinder (via VeryChord).  Parameter now read
@@ -438,64 +447,7 @@ class PerturbationEvolver(eqx.Module):
 
         ### END OF DIFFRAX INTEGRATION ###
 
-        return sol.ys, sol.stats
-
-    def evolution_one_k_RSA(self, k, args):
-        """
-        Perturbation evolution for large k values that use RSA at late times.
-        First get the early time solution using evolution_one_k with the full equations.
-        Then at lna_RSA_break, switch to another solve using the abbreviated RSA equations.
-        """
-
-        # Get pre RSA solution
-        res_RSA_off, sol_RSA_off_stats = self.evolution_one_k(k, self.lna_RSA_off, args)
-
-        # Set initial conditions
-        y_ini = res_RSA_off[-1]
-        photon = self.species_list[self.species_dict["Photon"]]
-        nu = self.species_list[self.species_dict["MasslessNeutrino"]]
-
-        # Zeroth order, set all radiation perturbations to zero.
-        y_ini = y_ini.at[photon.first_idx:photon.first_idx+photon.num_equations].set(jnp.zeros(photon.num_equations))
-        y_ini = y_ini.at[nu.first_idx:nu.first_idx+nu.num_equations].set(jnp.zeros(nu.num_equations))
-
-        # Diffrax settings
-        _rf = eqx.tree_at(
-            lambda s: s.kappa,
-            with_stepsize_controller_tols(VeryChord)(),
-            replace=self.specs["kappa_PE"],
-        )
-        solver = diffrax.Kvaerno5(root_finder=_rf)
-
-        rtol=jnp.where(
-            k > self.specs["k_split_PE"],
-            self.specs["rtol_large_k_PE"],
-            self.specs["rtol_small_k_PE"]
-        )
-
-        atol=jnp.where(
-            k > self.specs["k_split_PE"],
-            self.specs["atol_large_k_PE"],
-            self.specs["atol_small_k_PE"]
-        )
-        stepsize_controller = diffrax.PIDController(pcoeff=self.specs["pcoeff_PE"], icoeff=self.specs["icoeff_PE"], dcoeff=self.specs["dcoeff_PE"], rtol=rtol, atol=atol)
-        saveat = diffrax.SaveAt(ts=self.lna_RSA_on)
-        adjoint=self.adjoint()
-
-        # Differential equations with RSA
-        term = diffrax.ODETerm(self.get_derivatives_RSA)
-        sol_RSA_on = diffrax.diffeqsolve(
-            term, solver,
-            t0=self.lna_RSA_off[-1], t1=self.lna_RSA_on[-1], dt0=1.e-2, y0=y_ini,
-            stepsize_controller=stepsize_controller,
-            max_steps=self.specs["max_steps_PE"],
-            saveat=saveat,
-            args=(k,*args),
-            adjoint=adjoint
-        )
-
-        return jnp.concatenate((res_RSA_off, sol_RSA_on.ys)), sol_RSA_on.stats, sol_RSA_off_stats
-
+        return sol.ys
 
     def make_output_table(self, lna, modes, args):
         """
