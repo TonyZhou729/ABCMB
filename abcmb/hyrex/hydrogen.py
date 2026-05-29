@@ -210,7 +210,7 @@ class hydrogen_model(eqx.Module):
         tuple
             (xe_output, lna_output) - ionization fraction and log scale factor arrays
         """
-        recomb_inputs, params = args
+        recomb_inputs, params, species_list = args
         # Initial conditions
         TCMB = recomb_inputs.TCMB(starting_lna)
         nH = recomb_inputs.nH(starting_lna)
@@ -297,8 +297,8 @@ class hydrogen_model(eqx.Module):
         float
             Time derivative dxe/dlna (units: dimensionless)
         """
-        recomb_inputs, params = args
-    
+        recomb_inputs, params, species_list = args
+
         x1s = 1. - xe                # fraction of neutral hydrogen
         TCMB = recomb_inputs.TCMB(lna)          # eV
         nH = recomb_inputs.nH(lna)              # hydrogen number density, 1/cm^3
@@ -309,6 +309,8 @@ class hydrogen_model(eqx.Module):
 
         Delta = self.get_current_correction_func(TCMB, args)
         dxedlna = self.dxe_dlna_twophoton(xe, TCMB, Tm, H, nH, Delta)
+        for fluid in species_list:
+            dxedlna = dxedlna + fluid.dxedlna(lna, xe, Tm, params)
 
         return dxedlna
 
@@ -344,7 +346,7 @@ class hydrogen_model(eqx.Module):
         tuple
             (xe_output, lna_output) - ionization fraction and log scale factor arrays
         """
-        recomb_inputs, params = args
+        recomb_inputs, params, species_list = args
 
         # Initial conditions
         TCMB_init = recomb_inputs.TCMB(lna_axis_init)  # Initial CMB temperature
@@ -405,8 +407,8 @@ class hydrogen_model(eqx.Module):
             Time derivatives [dxe/dlna, dTm/dlna] (units: dimensionless, eV)
         """
         xe, Tm = state
-        recomb_inputs, params = args
-        
+        recomb_inputs, params, species_list = args
+
         TCMB = recomb_inputs.TCMB(lna)          # eV
         nH = recomb_inputs.nH(lna)              # hydrogen number density, 1/cm^3
         H = recomb_inputs.H(lna)                # Hubble parameter, 1/s
@@ -415,6 +417,9 @@ class hydrogen_model(eqx.Module):
         Delta = 0.0
         dxedlna = self.dxe_dlna_twophoton(xe, TCMB, Tm, H, nH, Delta)
         dTmdlna = (-2 * H * Tm + GammaC * (TCMB - Tm)) / H
+        for fluid in species_list:
+            dxedlna = dxedlna + fluid.dxedlna(lna, xe, Tm, params)
+            dTmdlna = dTmdlna + fluid.dTmdlna(lna, xe, Tm, params)
 
         return jnp.array([dxedlna, dTmdlna])
 
@@ -453,7 +458,7 @@ class hydrogen_model(eqx.Module):
         t0 = lna0
         t1 = jnp.inf 
 
-        recomb_inputs, params = args
+        recomb_inputs, params, species_list = args
 
         # need to go at least twice max_steps to make sure we catch the t1 we actually want
         t_arr = jnp.linspace(t0+self.integration_spacing, t0+2*max_steps*self.integration_spacing, 2*max_steps)
@@ -560,8 +565,7 @@ class hydrogen_model(eqx.Module):
         omega_cb_fid = 0.14175
         Neff_fid     = 3.046
 
-        recomb_inputs, params = args
-
+        recomb_inputs, params, species_list = args
 
         # For the user inputed cosmology currently scanned over.
         omega_H  = params['omega_b']*(1-params['YHe'])
@@ -682,22 +686,25 @@ class hydrogen_model(eqx.Module):
             Time derivatives [dxe/dlna, dTm/dlna] (units: dimensionless, eV)
         """
         xe, Tm  = state
-        recomb_inputs, params = args
+        recomb_inputs, params, species_list = args
 
         xHII = xe # since everything else is fully recombined
         nH = recomb_inputs.nH(lna)
         TCMB = recomb_inputs.TCMB(lna)          # eV
-        H = recomb_inputs.H(lna)  
+        H = recomb_inputs.H(lna)
 
-        C = recomb_functions.peebles_C(jnp.exp(-lna) - 1.0, xHII, H, nH, args)
-        alpha = recomb_functions.alpha_H(Tm)                     
-        beta  = recomb_functions.beta_H(Tm)                  
+        C = recomb_functions.peebles_C(jnp.exp(-lna) - 1.0, xHII, H, nH, (recomb_inputs, params))
+        alpha = recomb_functions.alpha_H(Tm)
+        beta  = recomb_functions.beta_H(Tm)
 
         # dxe/d(lna) = (1/H) * dxe/dt
         dxe_dt = C * (beta * (1.0 - xe) - alpha * nH * xe**2)
         dxe_dloga = dxe_dt / H
 
         dTm_dloga = -2.0 * Tm + (recomb_functions.Gamma_compton(xe, TCMB, params['YHe']) / H) * (TCMB - Tm)
+        for fluid in species_list:
+            dxe_dloga = dxe_dloga + fluid.dxedlna(lna, xe, Tm, params)
+            dTm_dloga = dTm_dloga + fluid.dTmdlna(lna, xe, Tm, params)
 
         return jnp.array([dxe_dloga, dTm_dloga])
     

@@ -175,7 +175,7 @@ class helium_model(eqx.Module):
         tuple
             (xe_output, lna_output) - ionization fraction and log scale factor arrays
         """
-        recomb_inputs, params = args
+        recomb_inputs, params, species_list = args
         # Pre-allocate xe_output
         xe_output = jnp.ones_like(lna_axis)*jnp.inf
         lna_output = jnp.ones_like(lna_axis)*jnp.inf
@@ -251,7 +251,7 @@ class helium_model(eqx.Module):
         float
             HeII fraction (units: dimensionless)
         """
-        recomb_inputs, params = args
+        recomb_inputs, params, species_list = args
         fHe = params['YHe']/(1.-params['YHe'])/3.97153
 
         TCMB = recomb_inputs.TCMB(lna)
@@ -283,7 +283,7 @@ class helium_model(eqx.Module):
         float
             Neutral hydrogen fraction (units: dimensionless)
         """
-        recomb_inputs, params = args
+        recomb_inputs, params, species_list = args
         TCMB = recomb_inputs.TCMB(lna)
         nH = recomb_inputs.nH(lna)    
         xHeII = self.xHeII_post_Saha(lna, args)
@@ -316,7 +316,7 @@ class helium_model(eqx.Module):
         tuple
             (xe_output, lna_output) - ionization fraction and log scale factor arrays
         """
-        recomb_inputs, params = args
+        recomb_inputs, params, species_list = args
         # Pre-allocate xe_output
         xe_output = jnp.ones_like(self.concrete_axis_size_postSahaHe)*jnp.inf
         lna_output = jnp.ones_like(self.concrete_axis_size_postSahaHe)*jnp.inf
@@ -394,7 +394,7 @@ class helium_model(eqx.Module):
         float
             HeII recombination rate dxHeII/dlna (units: dimensionless)
         """
-        recomb_inputs, params = args
+        recomb_inputs, params, species_list = args
 
         fHe = params['YHe']/(1.-params['YHe'])/3.97153 # abundance of helium by number
 
@@ -475,7 +475,7 @@ class helium_model(eqx.Module):
             Time derivative of HeII fraction (units: dimensionless)
         """
         
-        recomb_inputs, params = args
+        recomb_inputs, params, species_list = args
         #z = 1. / jnp.exp(lna) - 1.
         # use xe  = xHeII + (1.-xH1)
         xe = state + self.xH1_Saha(lna, args)
@@ -512,7 +512,7 @@ class helium_model(eqx.Module):
         tuple
             (xe_output, lna_output) - ionization fraction and log scale factor arrays
         """
-        recomb_inputs, params = args
+        recomb_inputs, params, species_list = args
 
         # Initial conditions
         TCMB_init = recomb_inputs.TCMB(starting_lna)  # Initial matter temperature

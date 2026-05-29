@@ -198,7 +198,7 @@ class recomb_model(eqx.Module):
             matter temperature, and temperature grid
         """
 
-        recomb_inputs, params = args
+        recomb_inputs, params, species_list = args
         lna_axis_4Heequil  = self.lna_axis_full[self.idx_4He_equil]
 
         xe_4He, lna_4He = helium_model(lna_axis_4Heequil, adjoint=self.adjoint)(args)

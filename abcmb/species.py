@@ -248,6 +248,13 @@ class Fluid(eqx.Module):
         """
         return {}
 
+    ### CONTRIBUTION TO ELECTRON FRACTION HISTORY ###
+    def dxedlna(self, lna, xe, Tm, params):
+        return 0.
+    
+    def dTmdlna(self, lna, xe, Tm, params):
+        return 0.
+
 class StandardFluid(Fluid):
     """
     Standard implementation of perturbation methods for fluid species.
