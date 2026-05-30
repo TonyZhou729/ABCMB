@@ -80,11 +80,12 @@ def beta_H(TCMB):
         Case B photoionization coefficient for hydrogen at given CMB (radiation) temperature.        
     """
 
-    # Electron de Broglie wavelength at given CMB temperature, in cm (keep in mind h=2pi*hbar)
-    lambda_dB = 2.*jnp.pi*cnst.hbar*cnst.c / jnp.sqrt(2.*jnp.pi*cnst.mu_e*TCMB)
+    # Note that in 1011.3758, g_e addtionally has nH in the denominator, so is dimensionless. 
+    # But that nH is canceled by the nH in equation (2), so overall there are no nH factors.
+    g_e = (2*jnp.pi*cnst.mu_e*TCMB)**(3/2)/(2*jnp.pi)**3 / (cnst.hbar * cnst.c)**3 # 1/cm^3
+    E2 = -cnst.rydberg/4. # energy of n=2 level, eV
 
-    beta_H = (1./lambda_dB)**3 * jnp.exp(-cnst.rydberg/4./TCMB) * alpha_H(TCMB) / 4.
-
+    beta_H = g_e/4. * jnp.exp(E2/TCMB) * alpha_H(TCMB) # alpha_H is cm^3/s, so this line is 1/s over all.
     return beta_H
 
 def peebles_C(z, xHII, H, nH, args):

@@ -698,7 +698,7 @@ class hydrogen_model(eqx.Module):
         beta  = recomb_functions.beta_H(TCMB)
 
         # dxe/d(lna) = (1/H) * dxe/dt
-        dxe_dt = C * (beta * (1.0 - xe) - alpha * nH * xe**2)
+        dxe_dt = C * (4.0 * beta * jnp.exp(-cnst.E21/TCMB) * (1.0 - xe) - alpha * nH * xe**2)
         dxe_dloga = dxe_dt / H
 
         dTm_dloga = -2.0 * Tm + (recomb_functions.Gamma_compton(xe, TCMB, params['YHe']) / H) * (TCMB - Tm)
