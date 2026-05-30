@@ -211,36 +211,38 @@ def effective_coefficients(TCMB, Tm, H, nH, x1s):
     """
     """ Step 0: Set up interpolation environment. """
 
-    # Determine which columns of alpha_tab to use based on TCMB, Tm
-    # Always take the smaller of the two in numerator, such that ratio is < 1.
-    
-    # The if statements are only necessary if Tm > TCMB ever, but that seems not realistic?
-    #T_RATIO_now = jnp.where(Tm < TCMB, Tm/TCMB, TCMB/Tm) # The input point to interpolate at.
-    #A2s_column = jnp.where(Tm < TCMB, 0, 2)
-    #A2p_column = A2s_column + 1
-    T_RATIO_now = Tm/TCMB
-    A2s_column = 0
-    A2p_column = 1
+    # T_RATIO is always min(Tm/TCMB, TCMB/Tm) so it stays in [T_RATIO_MIN, 1].
+    # When Tm < TCMB use T_RATIO = Tm/TCMB and columns 0,1.
+    # When Tm > TCMB use T_RATIO = TCMB/Tm and columns 2,3.
+    T_RATIO_now = jnp.where(Tm < TCMB, Tm/TCMB, TCMB/Tm)
 
     # Determine the array position of the requested temperatures relative to the tabulated axis.
     # For instance, if axis is [0, 2, 4, 6, 8], requesting 3 should be position 1.5
     # This is needed to use ndimage.map_coordinates
     TCMB_index = jnp.interp(jnp.log(TCMB), TR_axis, jnp.arange(TR_axis.size))
     T_RATIO_index = jnp.interp(T_RATIO_now, T_RATIO_axis, jnp.arange(T_RATIO_axis.size))
-    
-    """ Step 1: Obtain recombination coefficients A2s, A2p by interpolating tabulated alpha. """    
-    A2s = jnp.exp(map_coordinates(jnp.log(A2s_table[:, :, A2s_column]), [TCMB_index, T_RATIO_index], order=1))
-    A2p = jnp.exp(map_coordinates(jnp.log(A2p_table[:, :, A2p_column]), [TCMB_index, T_RATIO_index], order=1))
+
+    """ Step 1: Obtain recombination coefficients A2s, A2p by interpolating tabulated alpha. """
+    A2s = jnp.where(Tm < TCMB,
+        jnp.exp(map_coordinates(jnp.log(A2s_table[:, :, 0]), [TCMB_index, T_RATIO_index], order=1)),
+        jnp.exp(map_coordinates(jnp.log(A2s_table[:, :, 2]), [TCMB_index, T_RATIO_index], order=1))
+    )
+    A2p = jnp.where(Tm < TCMB,
+        jnp.exp(map_coordinates(jnp.log(A2p_table[:, :, 1]), [TCMB_index, T_RATIO_index], order=1)),
+        jnp.exp(map_coordinates(jnp.log(A2p_table[:, :, 3]), [TCMB_index, T_RATIO_index], order=1))
+    )
 
     """ Step 2: Obtain photoionization coefficients B2s, B2p from A2s, A2p via detailed balance. """
-    # See equation (22) of arXiv:1006.1355 for detail. 
+    # See equation (22) of arXiv:1006.1355 for detail.
     # nl state energy -EI/n^2, where EI is the hydrogen ionization energy, for n=2.
     E2 = -cnst.rydberg / 4.
     # equation (C7) of arXiv:1006.1355, times c^3, dimensions of cm^3
     q = (2*jnp.pi*cnst.mu_e*TCMB / (2*jnp.pi*cnst.hbar)**2)**(3/2) / cnst.c**3
-    
-    B2s = jnp.exp(E2/TCMB) * q * jnp.exp(map_coordinates(jnp.log(A2s_table[:, :, A2s_column]), [TCMB_index, NTM-1], order=1))
-    B2p = (1./3.)*jnp.exp(E2/TCMB) * q * jnp.exp(map_coordinates(jnp.log(A2p_table[:, :, A2p_column]), [TCMB_index, NTM-1], order=1))
+
+    # B is obtained via detailed balance at T_r (A evaluated at Tm=Tr, i.e. T_RATIO=1 = NTM-1).
+    # Both column branches agree at T_RATIO=1 (the Tm=Tr boundary), so column 0,1 suffices.
+    B2s = jnp.exp(E2/TCMB) * q * jnp.exp(map_coordinates(jnp.log(A2s_table[:, :, 0]), [TCMB_index, NTM-1], order=1))
+    B2p = (1./3.)*jnp.exp(E2/TCMB) * q * jnp.exp(map_coordinates(jnp.log(A2p_table[:, :, 1]), [TCMB_index, NTM-1], order=1))
 
     """ Step 3: Obtain 2p->2s transition rate by interpolating tabulated R, and 2s->2p rate via detailed balance. """ 
     R2p2s = jnp.exp(jnp.interp(jnp.log(TCMB), TR_axis, jnp.log(R_tab)))
