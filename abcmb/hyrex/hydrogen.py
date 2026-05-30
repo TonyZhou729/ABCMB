@@ -695,7 +695,7 @@ class hydrogen_model(eqx.Module):
 
         C = recomb_functions.peebles_C(jnp.exp(-lna) - 1.0, xHII, H, nH, (recomb_inputs, params))
         alpha = recomb_functions.alpha_H(Tm)
-        beta  = recomb_functions.beta_H(Tm)
+        beta  = recomb_functions.beta_H(TCMB)
 
         # dxe/d(lna) = (1/H) * dxe/dt
         dxe_dt = C * (beta * (1.0 - xe) - alpha * nH * xe**2)
