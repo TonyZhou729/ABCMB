@@ -531,7 +531,8 @@ class Background(BackgroundPreRecomb):
         self.tau_reion = reion_model.tau_reion
 
         xe_reion_correction = reion_model.xe_reion(self.lna_xe_tab.arr, self.z_reion, params)
-        xe_full_arr = xe_reion_correction + xe.arr
+        #xe_full_arr = xe_reion_correction + xe.arr
+        xe_full_arr = jnp.maximum(xe.arr, xe_reion_correction)
         self.xe_tab = array_with_padding(xe_full_arr)
 
         # Replace inf padding in the recomb tabs with `lastval`. Forward
