@@ -310,7 +310,7 @@ class hydrogen_model(eqx.Module):
         Delta = self.get_current_correction_func(TCMB, args)
         dxedlna = self.dxe_dlna_twophoton(xe, TCMB, Tm, H, nH, Delta)
         for fluid in species_list:
-            dxedlna = dxedlna + fluid.dxedlna(lna, xe, Tm, params)
+            dxedlna = dxedlna + fluid.dxedlna(lna, xe, Tm, args)
 
         return dxedlna
 
@@ -418,8 +418,8 @@ class hydrogen_model(eqx.Module):
         dxedlna = self.dxe_dlna_twophoton(xe, TCMB, Tm, H, nH, Delta)
         dTmdlna = (-2 * H * Tm + GammaC * (TCMB - Tm)) / H
         for fluid in species_list:
-            dxedlna = dxedlna + fluid.dxedlna(lna, xe, Tm, params)
-            dTmdlna = dTmdlna + fluid.dTmdlna(lna, xe, Tm, params)
+            dxedlna = dxedlna + fluid.dxedlna(lna, xe, Tm, args)
+            dTmdlna = dTmdlna + fluid.dTmdlna(lna, xe, Tm, args)
 
         return jnp.array([dxedlna, dTmdlna])
 
@@ -703,8 +703,8 @@ class hydrogen_model(eqx.Module):
 
         dTm_dloga = -2.0 * Tm + (recomb_functions.Gamma_compton(xe, TCMB, params['YHe']) / H) * (TCMB - Tm)
         for fluid in species_list:
-            dxe_dloga = dxe_dloga + fluid.dxedlna(lna, xe, Tm, params)
-            dTm_dloga = dTm_dloga + fluid.dTmdlna(lna, xe, Tm, params)
+            dxe_dloga = dxe_dloga + fluid.dxedlna(lna, xe, Tm, args)
+            dTm_dloga = dTm_dloga + fluid.dTmdlna(lna, xe, Tm, args)
 
         return jnp.array([dxe_dloga, dTm_dloga])
     

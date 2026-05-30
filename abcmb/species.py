@@ -249,10 +249,10 @@ class Fluid(eqx.Module):
         return {}
 
     ### CONTRIBUTION TO ELECTRON FRACTION HISTORY ###
-    def dxedlna(self, lna, xe, Tm, params):
+    def dxedlna(self, lna, xe, Tm, args):
         return 0.
     
-    def dTmdlna(self, lna, xe, Tm, params):
+    def dTmdlna(self, lna, xe, Tm, args):
         return 0.
 
 class StandardFluid(Fluid):
