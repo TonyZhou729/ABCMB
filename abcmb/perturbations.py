@@ -3,8 +3,6 @@ import jax.numpy as jnp
 import numpy as np
 from jax import vmap, lax
 import diffrax
-from diffrax import with_stepsize_controller_tols
-from diffrax._root_finder import VeryChord
 import equinox as eqx
 
 from . import constants as cnst
@@ -60,16 +58,6 @@ class PerturbationEvolver(eqx.Module):
 
     adjoint : "diffrax.adjoint" = eqx.field(static=True)
 
-    ### RSA ###
-    k_RSA_off : jnp.array
-    k_RSA_on  : jnp.array
-    k_RSA_break = 0.05 # Hard coded, all higher k modes get RSA treatment.
-
-    lna_RSA_break = -5.0 # Hard coded, evolution for k>k_RSA_break, lna > lna_RSA_break uses RSA.
-    lna_axis_perturbations = jnp.linspace(-8.0, 0.0, 550) # Hard coded.
-    lna_RSA_off = lna_axis_perturbations[lna_axis_perturbations < lna_RSA_break] 
-    lna_RSA_on  = lna_axis_perturbations[lna_axis_perturbations >= lna_RSA_break] 
-    
     def __init__(
         self,
         species_list,
@@ -83,9 +71,6 @@ class PerturbationEvolver(eqx.Module):
         self.k_axis_perturbations = k_axis_perturbations
         self.specs = specs
         self.adjoint = adjoint
-
-        self.k_RSA_off = self.k_axis_perturbations[self.k_axis_perturbations < self.k_RSA_break]
-        self.k_RSA_on  = self.k_axis_perturbations[self.k_axis_perturbations >= self.k_RSA_break]
 
     def full_evolution(self, args):
         """
@@ -122,59 +107,13 @@ class PerturbationEvolver(eqx.Module):
             return None, y
 
         if jax.default_backend() =='gpu':
-            res, _ = vmap(self.evolution_one_k,in_axes=[0,None,None])(self.k_axis_perturbations, self.lna_axis_perturbations, args)
+            res = vmap(self.evolution_one_k,in_axes=[0,None,None])(self.k_axis_perturbations, lna, args)
         else: 
             _, res = lax.scan(scan_fun, None, self.k_axis_perturbations)      # res has shape (Nk, Nlna, Ny)
 
         res = res.transpose(2, 1, 0) # Transpose so the shape is (Ny, Nlna, Nk), easier for vmapping over in PT
 
-        PT = self.make_output_table(self.lna_axis_perturbations, res, args)
-        return PT
-
-    def full_evolution_RSA(self, args):
-        """
-        Evolve perturbations for multiple wavenumber modes.
-
-        Integrates perturbation equations for a range of k modes,
-        then interpolates results onto common time grid.
-
-        Parameters:
-        -----------
-        k    : jnp.array
-            1D axis of wavenumbers k. Perturbations are computed and stored at these values.
-        args : tuple
-            Background cosmology and cosmological parameters (BG, params)
-
-        Returns:
-        --------
-        PerturbationTable
-            Interpolatable table of perturbation evolution
-
-        Notes:
-        ------
-        Uses logarithmic k spacing from 10^-4 to ~0.5 Mpc^-1 with 100 points.
-        Time integration runs from early times to z=1 (lna=-ln(2)).
-        """
-        BG, params = args
-        lna = jnp.linspace(BG.lna_transfer_start,  0., 500)
-
-        # This scan function is only used if on CPU.
-        # For GPUs we vmap over the wavenumbers instead
-        def scan_fun(_, ki):
-            # evolution_one_k returns shape (Nlna, Ny)
-            y = self.evolution_one_k(ki, lna, args) 
-            return None, y
-
-        if jax.default_backend() =='gpu':
-            res_no_RSA, _ = vmap(self.evolution_one_k,in_axes=[0,None,None])(self.k_RSA_off, self.lna_axis_perturbations, args)
-            res_RSA, _ , _  = vmap(self.evolution_one_k_RSA,in_axes=[0, None])(self.k_RSA_on, args)
-            res = jnp.concatenate((res_no_RSA, res_RSA))
-        else: 
-            _, res = lax.scan(scan_fun, None, self.k_axis_perturbations)      # res has shape (Nk, Nlna, Ny)
-
-        res = res.transpose(2, 1, 0) # Transpose so the shape is (Ny, Nlna, Nk), easier for vmapping over in PT
-
-        PT = self.make_output_table(self.lna_axis_perturbations, res, args)
+        PT = self.make_output_table(lna, res, args)
         return PT
 
     def get_starting_time(self, k, args):
@@ -292,9 +231,9 @@ class PerturbationEvolver(eqx.Module):
         for i in range(len(self.species_list)):
             species = self.species_list[i]
             # If species has density perturbation, add to total.
-            sum_rho_delta += species.rho_delta(lna, y, params)
+            sum_rho_delta += species.rho_delta(lna, y, (k, BG, params))
             # If species has velocity perturbation, add to total.
-            sum_rho_plus_P_theta += species.rho_plus_P_theta(lna, y, params)
+            sum_rho_plus_P_theta += species.rho_plus_P_theta(lna, y, (k, BG, params))
 
         metric_h_prime   = 2./aH**2 * (k**2*metric_eta + 4.*jnp.pi*cnst.G*a**2/cnst.c_Mpc_over_s**2 * sum_rho_delta)
         metric_eta_prime = 4.*jnp.pi*cnst.G*a**2/aH/k**2 * sum_rho_plus_P_theta / cnst.c_Mpc_over_s**2
@@ -305,59 +244,6 @@ class PerturbationEvolver(eqx.Module):
         for i in range(len(self.species_list)):
             species = self.species_list[i]
             y_prime = jnp.concatenate((y_prime, species.y_prime(k, lna, metric_h_prime, metric_eta_prime, y, args)))
-
-        return y_prime
-
-    def get_derivatives_RSA(self, lna, y, args):
-        """
-        Compute time derivatives for perturbation evolution.
-
-        Assembles the full system of Einstein-Boltzmann equations for
-        metric and fluid perturbations in synchronous gauge.
-
-        Parameters:
-        -----------
-        lna : float
-            Logarithm of scale factor
-        y : array
-            Current perturbation state vector
-        args : tuple
-            Wavenumber k and background cosmology (k, BG, params)
-
-        Returns:
-        --------
-        array
-            Time derivatives of perturbation state
-        """
-        k, BG, params = args
-        a  = jnp.exp(lna)
-        aH = BG.aH(lna, params)
-        metric_eta = y[0]
-
-        # Metric perturbation derivatives
-        sum_rho_delta = 0.
-        sum_rho_plus_P_theta = 0.
-        
-        for s in self.species_list:
-            # Simply skip radiation
-            if s.name != "Photon" and s.name != "MasslessNeutrino":
-                # If species has density perturbation, add to total.
-                sum_rho_delta += s.rho_delta(lna, y, params)
-                # If species has velocity perturbation, add to total.
-                sum_rho_plus_P_theta += s.rho_plus_P_theta(lna, y, params)
-
-        metric_h_prime   = 2./aH**2 * (k**2*metric_eta + 4.*jnp.pi*cnst.G*a**2/cnst.c_Mpc_over_s**2 * sum_rho_delta)
-        metric_eta_prime = 4.*jnp.pi*cnst.G*a**2/aH/k**2 * sum_rho_plus_P_theta / cnst.c_Mpc_over_s**2
-
-        # Now loop over all species and assemble their respective y_primes
-        args = (BG, params, self.species_list, self.species_dict)
-        y_prime = jnp.array([metric_eta_prime])
-        for s in self.species_list:
-            # Radiation now gets trivial zero derivative.
-            if s.name == "Photon" or s.name == "MasslessNeutrino":
-                y_prime = jnp.concatenate((y_prime, jnp.zeros(s.num_equations)))
-            else:
-                y_prime = jnp.concatenate((y_prime, s.y_prime(k, lna, metric_h_prime, metric_eta_prime, y, args)))
 
         return y_prime
 
@@ -386,38 +272,18 @@ class PerturbationEvolver(eqx.Module):
         ### DIFFRAX INTEGRATION ###
 
         lna_start = self.get_starting_time(k, args) # Start and end times from tight coupling settings
-        lna_end = self.lna_axis_perturbations[-1] # End at the last lna requested. 
+        lna_end = 0.0
 
-        # For small k's the superhorizon time can be set relatively late, but we impose a of lna_min = -8.0, 
-        # so that initial condition don't start later than the first number of saveat.
-        lna_start = jnp.minimum(lna_start, self.lna_axis_perturbations[0])
+        # For small k's the superhorizon time can be set relatively late, but we impose a cutoff of z~20000 for all modes
+        # at the very least.
+        lna_start = jnp.minimum(lna_start, -10.)
     
         # Initial conditions for tight coupling
         y_ini = self.initial_conditions_one_k(k, lna_start, args)
 
-        # Derivative is a branched function, computes both and returns the one depending on RSA conditions
-        def derivative_func(lna, y, args):
-            k, _, _ = args
-            return jnp.where(
-                (k >= self.k_RSA_break) & (lna >= self.lna_RSA_break),
-                self.get_derivatives_RSA(lna, y, args),
-                self.get_derivatives(lna, y, args)
-            )
-
-        term = diffrax.ODETerm(derivative_func)
-
-        # LCDM defaults for very high k sometimes failed with reverseAD.
-        # The reason for that was the default precision parameter in
-        # the Kvaerno5 rootfinder (via VeryChord).  Parameter now read
-        # in from specs; if reverse-AD produces NaNs (especially on omega_b/
-        # omega_cdm), decrease kappa_PE in specs (e.g. to 1e-3) to tighten 
-        # convergence.
-        _rf = eqx.tree_at(
-            lambda s: s.kappa,
-            with_stepsize_controller_tols(VeryChord)(),
-            replace=self.specs["kappa_PE"],
-        )
-        solver = diffrax.Kvaerno5(root_finder=_rf)
+        # Settings for post-tight coupling
+        term = diffrax.ODETerm(self.get_derivatives)
+        solver = diffrax.Kvaerno5()
 
         rtol=jnp.where(
             k > self.specs["k_split_PE"],
@@ -447,7 +313,7 @@ class PerturbationEvolver(eqx.Module):
 
         ### END OF DIFFRAX INTEGRATION ###
 
-        return sol.ys, sol.stats
+        return sol.ys
 
     def make_output_table(self, lna, modes, args):
         """
@@ -473,11 +339,12 @@ class PerturbationEvolver(eqx.Module):
         k = self.k_axis_perturbations
         BG, params = args
 
-        metric_eta = modes[0]
+        # Modes is of shape (Ny, Nlna, Nk), first index for Ny is for metric_eta
+        metric_eta = modes[0] # Shape (Nlna, Nk)
 
         # Build per-species perturbation dicts first; theta_b_prime draws from them.
         species_perturbations = {
-            s.name: s.output_perturbations(lna, modes, (BG, params))
+            s.name: s.output_perturbations(lna, modes, (k, BG, params))
             for s in self.species_list
         }
 
@@ -507,10 +374,10 @@ class PerturbationEvolver(eqx.Module):
 
         for s in self.species_list:
             if s.num_equations > 0:
-                rho_delta = vmap(s.rho_delta, in_axes=(0, 1, None))(lna, modes, params)
+                rho_delta = vmap(s.rho_delta, in_axes=(0, 1, None))(lna, modes, (k, BG, params))
                 sum_rho_delta        += rho_delta
-                sum_rho_plus_P_theta += vmap(s.rho_plus_P_theta, in_axes=(0, 1, None))(lna, modes, params)
-                sum_rho_plus_P_sigma += vmap(s.rho_plus_P_sigma, in_axes=(0, 1, None))(lna, modes, params)
+                sum_rho_plus_P_theta += vmap(s.rho_plus_P_theta, in_axes=(0, 1, None))(lna, modes, (k, BG, params))
+                sum_rho_plus_P_sigma += vmap(s.rho_plus_P_sigma, in_axes=(0, 1, None))(lna, modes, (k, BG, params))
 
                 if s.is_matter:
                     sum_rho_delta_m += rho_delta

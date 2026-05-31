@@ -174,8 +174,8 @@ class Fluid(eqx.Module):
             Logarithm of scale factor
         y : array
             Perturbation mode values
-        args : dict
-            Cosmological parameters (params)
+        args : tuple
+            (k, BG, params) — wavenumber, background cosmology, cosmological parameters
 
         Returns:
         --------
@@ -194,8 +194,8 @@ class Fluid(eqx.Module):
             Logarithm of scale factor
         y : array
             Perturbation mode values
-        args : dict
-            Cosmological parameters (params)
+        args : tuple
+            (k, BG, params) — wavenumber, background cosmology, cosmological parameters
 
         Returns:
         --------
@@ -214,8 +214,8 @@ class Fluid(eqx.Module):
             Logarithm of scale factor
         y : array
             Perturbation mode values
-        args : dict
-            Cosmological parameters (params)
+        args : tuple
+            (k, BG, params) — wavenumber, background cosmology, cosmological parameters
 
         Returns:
         --------
@@ -276,15 +276,15 @@ class StandardFluid(Fluid):
             Logarithm of scale factor
         y : array
             Perturbation mode values
-        args : dict
-            Cosmological parameters (params)
+        args : tuple
+            (k, BG, params) — wavenumber, background cosmology, cosmological parameters
 
         Returns:
         --------
         float
             Density perturbation (units: eV cm^{-3})
         """
-        params = args
+        _, _, params = args
         return self.rho(lna, params) * y[self.first_idx]
 
     def rho_plus_P_theta(self, lna, y, args):
@@ -297,15 +297,15 @@ class StandardFluid(Fluid):
             Logarithm of scale factor
         y : array
             Perturbation mode values
-        args : dict
-            Cosmological parameters (params)
+        args : tuple
+            (k, BG, params) — wavenumber, background cosmology, cosmological parameters
 
         Returns:
         --------
         float
             Velocity perturbation (units: eV cm^{-3} Mpc^{-1})
         """
-        params = args
+        _, _, params = args
         return jnp.where(
             self.num_equations > 1,
             (self.rho(lna, params)+self.P(lna, params)) * y[self.first_idx+1],
@@ -322,15 +322,15 @@ class StandardFluid(Fluid):
             Logarithm of scale factor
         y : array
             Perturbation mode values
-        args : dict
-            Cosmological parameters (params)
+        args : tuple
+            (k, BG, params) — wavenumber, background cosmology, cosmological parameters
 
         Returns:
         --------
         float
             Shear perturbation (units: eV cm^{-3})
         """
-        params = args
+        _, _, params = args
         return jnp.where(
             self.num_equations > 2,
             (self.rho(lna, params)+self.P(lna, params)) * y[self.first_idx+2],
@@ -932,7 +932,7 @@ class MassiveNeutrino(Fluid):
         float
             Density perturbation (units: eV cm^{-3})
         """
-        params = args
+        _, _, params = args
         a = jnp.exp(lna)
         T = params['T_nu_massive'] * params['TCMB0'] / a  # (N,)
         x = params['m_nu_massive'] / T  # (N,)
@@ -957,15 +957,15 @@ class MassiveNeutrino(Fluid):
             Logarithm of scale factor
         y : array
             Perturbation mode values
-        args : dict
-            Cosmological parameters (params)
+        args : tuple
+            (k, BG, params) — wavenumber, background cosmology, cosmological parameters
 
         Returns:
         --------
         float
             Velocity perturbation (units: eV cm^{-3} Mpc^{-1})
         """
-        params = args
+        _, _, params = args
         a = jnp.exp(lna)
         T = params['T_nu_massive'] * params['TCMB0'] / a  # (N,)
         x = params['m_nu_massive'] / T  # (N,)
@@ -989,15 +989,15 @@ class MassiveNeutrino(Fluid):
             Logarithm of scale factor
         y : array
             Perturbation mode values
-        args : dict
-            Cosmological parameters (params)
+        args : tuple
+            (k, BG, params) — wavenumber, background cosmology, cosmological parameters
 
         Returns:
         --------
         float
             Shear perturbation (units: eV cm^{-3})
         """
-        params = args
+        _, _, params = args
         a = jnp.exp(lna)
         T = params['T_nu_massive'] * params['TCMB0'] / a  # (N,)
         x = params['m_nu_massive'] / T  # (N,)
@@ -1013,13 +1013,13 @@ class MassiveNeutrino(Fluid):
         return params['N_nu_massive'] * res * 8./3./jnp.pi**2 * T**4 / cnst.hbar**3 / cnst.c**3
 
     def output_perturbations(self, lna, modes, args):
-        BG, params = args
+        k, BG, params = args
         rho  = vmap(self.rho, in_axes=(0, None))(lna, params)   # (Nlna,)
         rhoP = rho + vmap(self.P, in_axes=(0, None))(lna, params)
 
-        rho_delta    = vmap(self.rho_delta,        in_axes=(0, 1, None))(lna, modes, params)  # (Nlna, Nk)
-        rho_P_theta  = vmap(self.rho_plus_P_theta, in_axes=(0, 1, None))(lna, modes, params)
-        rho_P_sigma  = vmap(self.rho_plus_P_sigma, in_axes=(0, 1, None))(lna, modes, params)
+        rho_delta    = vmap(self.rho_delta,        in_axes=(0, 1, None))(lna, modes, (k, BG, params))  # (Nlna, Nk)
+        rho_P_theta  = vmap(self.rho_plus_P_theta, in_axes=(0, 1, None))(lna, modes, (k, BG, params))
+        rho_P_sigma  = vmap(self.rho_plus_P_sigma, in_axes=(0, 1, None))(lna, modes, (k, BG, params))
 
         return {
             "delta": rho_delta   / rho[:, None],
