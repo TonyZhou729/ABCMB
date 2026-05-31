@@ -224,18 +224,17 @@ class PerturbationEvolver(eqx.Module):
         aH = BG.aH(lna, params)
         metric_eta = y[0]
 
-        # Metric perturbation derivatives
+        # Metric perturbation derivatives — two passes so metric_h_prime is available to rho_plus_P_theta
         sum_rho_delta = 0.
-        sum_rho_plus_P_theta = 0.
-        
         for i in range(len(self.species_list)):
-            species = self.species_list[i]
-            # If species has density perturbation, add to total.
-            sum_rho_delta += species.rho_delta(lna, y, (k, BG, params))
-            # If species has velocity perturbation, add to total.
-            sum_rho_plus_P_theta += species.rho_plus_P_theta(lna, y, (k, BG, params))
+            sum_rho_delta += self.species_list[i].rho_delta(lna, y, (k, BG, params))
 
-        metric_h_prime   = 2./aH**2 * (k**2*metric_eta + 4.*jnp.pi*cnst.G*a**2/cnst.c_Mpc_over_s**2 * sum_rho_delta)
+        metric_h_prime = 2./aH**2 * (k**2*metric_eta + 4.*jnp.pi*cnst.G*a**2/cnst.c_Mpc_over_s**2 * sum_rho_delta)
+
+        sum_rho_plus_P_theta = 0.
+        for i in range(len(self.species_list)):
+            sum_rho_plus_P_theta += self.species_list[i].rho_plus_P_theta(lna, metric_h_prime, y, (k, BG, params))
+
         metric_eta_prime = 4.*jnp.pi*cnst.G*a**2/aH/k**2 * sum_rho_plus_P_theta / cnst.c_Mpc_over_s**2
 
         # Now loop over all species and assemble their respective y_primes
@@ -342,9 +341,30 @@ class PerturbationEvolver(eqx.Module):
         # Modes is of shape (Ny, Nlna, Nk), first index for Ny is for metric_eta
         metric_eta = modes[0] # Shape (Nlna, Nk)
 
-        # Build per-species perturbation dicts first; theta_b_prime draws from them.
+        karr  = k[None, :]
+        a     = jnp.exp(lna)[:, None]
+        aH    = BG.aH(lna, params)[:, None]
+
+        # Pass 1: sum_rho_delta — needed before metric_h_prime can be formed.
+        sum_rho_delta   = jnp.zeros_like(modes[0])
+        sum_rho_delta_m = jnp.zeros_like(modes[0])
+        sum_rho_m       = 0.
+
+        for s in self.species_list:
+            if s.num_equations > 0:
+                rho_delta = vmap(s.rho_delta, in_axes=(0, 1, None))(lna, modes, (k, BG, params))
+                sum_rho_delta += rho_delta
+                if s.is_matter:
+                    sum_rho_delta_m += rho_delta
+                    sum_rho_m       += s.rho(lna, params)
+
+        delta_m        = sum_rho_delta_m / sum_rho_m[:, None]
+        metric_h_prime = 2./aH**2 * (karr**2*metric_eta + 4.*jnp.pi*cnst.G*a**2/cnst.c_Mpc_over_s**2 * sum_rho_delta)
+
+        # Build per-species perturbation dicts; theta_b_prime draws from them.
+        # metric_h_prime is passed so RSA species can use it in rho_plus_P_theta.
         species_perturbations = {
-            s.name: s.output_perturbations(lna, modes, (k, BG, params))
+            s.name: s.output_perturbations(lna, modes, (k, BG, params, metric_h_prime))
             for s in self.species_list
         }
 
@@ -356,36 +376,21 @@ class PerturbationEvolver(eqx.Module):
         theta_b = species_perturbations["Baryon"]["theta"]
         theta_g = species_perturbations["Photon"]["theta"]
 
-        karr  = k[None, :]
-        a     = jnp.exp(lna)[:, None]
-        aH    = BG.aH(lna, params)[:, None]
         cs2   = Baryon.cs2(lna, (BG, params, self.species_list, self.species_dict))[:, None]
         R     = 4.*Photon.rho(lna, params)[:, None]/3./Baryon.rho(lna, params)[:, None]
         tau_c = BG.tau_c(lna, params)[:, None]
 
         theta_b_prime = -theta_b + cs2/aH*(karr**2*delta_b) + R/aH/tau_c*(theta_g-theta_b)
 
-        # Sum density/velocity/shear over all species for metric derivatives and delta_m.
-        sum_rho_delta        = jnp.zeros_like(modes[0])
+        # Pass 2: rho_plus_P_theta and rho_plus_P_sigma — metric_h_prime now available.
         sum_rho_plus_P_theta = jnp.zeros_like(modes[0])
         sum_rho_plus_P_sigma = jnp.zeros_like(modes[0])
-        sum_rho_delta_m      = jnp.zeros_like(modes[0])
-        sum_rho_m            = 0.
 
         for s in self.species_list:
             if s.num_equations > 0:
-                rho_delta = vmap(s.rho_delta, in_axes=(0, 1, None))(lna, modes, (k, BG, params))
-                sum_rho_delta        += rho_delta
-                sum_rho_plus_P_theta += vmap(s.rho_plus_P_theta, in_axes=(0, 1, None))(lna, modes, (k, BG, params))
+                sum_rho_plus_P_theta += vmap(s.rho_plus_P_theta, in_axes=(0, 0, 1, None))(lna, metric_h_prime, modes, (k, BG, params))
                 sum_rho_plus_P_sigma += vmap(s.rho_plus_P_sigma, in_axes=(0, 1, None))(lna, modes, (k, BG, params))
 
-                if s.is_matter:
-                    sum_rho_delta_m += rho_delta
-                    sum_rho_m       += s.rho(lna, params)
-
-        delta_m = sum_rho_delta_m / sum_rho_m[:, None]
-
-        metric_h_prime     = 2./aH**2 * (karr**2*metric_eta + 4.*jnp.pi*cnst.G*a**2/cnst.c_Mpc_over_s**2 * sum_rho_delta)
         metric_eta_prime   = 4.*jnp.pi*cnst.G*a**2/aH * sum_rho_plus_P_theta / cnst.c_Mpc_over_s**2 / karr**2
         metric_alpha       = aH*(metric_h_prime + 6.*metric_eta_prime)/2./karr**2
         metric_alpha_prime = metric_eta/aH - 2.*metric_alpha \

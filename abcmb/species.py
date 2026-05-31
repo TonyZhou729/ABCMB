@@ -184,7 +184,7 @@ class Fluid(eqx.Module):
         """
         raise NotImplementedError("Fluid species must implement a perturbation derivative function.")
 
-    def rho_plus_P_theta(self, lna, y, args):
+    def rho_plus_P_theta(self, lna, metric_h_prime, y, args):
         """
         Compute velocity perturbation.
 
@@ -192,6 +192,8 @@ class Fluid(eqx.Module):
         -----------
         lna : float
             Logarithm of scale factor
+        metric_h_prime : float or array
+            Derivative of metric h (scalar in get_derivatives, shape (Nk,) in make_output_table)
         y : array
             Perturbation mode values
         args : tuple
@@ -287,7 +289,7 @@ class StandardFluid(Fluid):
         _, _, params = args
         return self.rho(lna, params) * y[self.first_idx]
 
-    def rho_plus_P_theta(self, lna, y, args):
+    def rho_plus_P_theta(self, lna, metric_h_prime, y, args):
         """
         Compute velocity perturbation.
 
@@ -295,6 +297,8 @@ class StandardFluid(Fluid):
         -----------
         lna : float
             Logarithm of scale factor
+        metric_h_prime : float or array
+            Derivative of metric h (unused in standard fluids; available for RSA subclasses)
         y : array
             Perturbation mode values
         args : tuple
@@ -359,7 +363,7 @@ class BackgroundFluid(Fluid):
     def rho_delta(self, lna, y, args):
         return 0.
 
-    def rho_plus_P_theta(self, lna, y, args):
+    def rho_plus_P_theta(self, lna, metric_h_prime, y, args):
         return 0.
 
     def rho_plus_P_sigma(self, lna, y, args):
@@ -947,7 +951,7 @@ class MassiveNeutrino(Fluid):
             res += w*(1.+jnp.exp(-q))*epsilon/q**2 * Psi0
         return params['N_nu_massive'] * res * 4./jnp.pi**2 * T**4 / cnst.hbar**3 / cnst.c**3
 
-    def rho_plus_P_theta(self, lna, y, args):
+    def rho_plus_P_theta(self, lna, metric_h_prime, y, args):
         """
         Compute massive neutrino velocity perturbation.
 
@@ -955,6 +959,8 @@ class MassiveNeutrino(Fluid):
         -----------
         lna : float
             Logarithm of scale factor
+        metric_h_prime : float or array
+            Derivative of metric h (unused for massive neutrinos)
         y : array
             Perturbation mode values
         args : tuple
@@ -1013,12 +1019,12 @@ class MassiveNeutrino(Fluid):
         return params['N_nu_massive'] * res * 8./3./jnp.pi**2 * T**4 / cnst.hbar**3 / cnst.c**3
 
     def output_perturbations(self, lna, modes, args):
-        k, BG, params = args
+        k, BG, params, metric_h_prime = args
         rho  = vmap(self.rho, in_axes=(0, None))(lna, params)   # (Nlna,)
         rhoP = rho + vmap(self.P, in_axes=(0, None))(lna, params)
 
         rho_delta    = vmap(self.rho_delta,        in_axes=(0, 1, None))(lna, modes, (k, BG, params))  # (Nlna, Nk)
-        rho_P_theta  = vmap(self.rho_plus_P_theta, in_axes=(0, 1, None))(lna, modes, (k, BG, params))
+        rho_P_theta  = vmap(self.rho_plus_P_theta, in_axes=(0, 0, 1, None))(lna, metric_h_prime, modes, (k, BG, params))
         rho_P_sigma  = vmap(self.rho_plus_P_sigma, in_axes=(0, 1, None))(lna, modes, (k, BG, params))
 
         return {
