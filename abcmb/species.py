@@ -265,10 +265,9 @@ class StandardFluid(Fluid):
     def __init__(self, first_idx, specs):
         super().__init__(first_idx, specs)
 
-    # Called by diffrax, child classes should never override. Okay to implement here.
-    def rho_delta(self, lna, y, args):
+    def get_delta(self, lna, y, args):
         """
-        Compute density perturbation.
+        Getter method for density perturbation from perturbation equations vector
 
         Parameters:
         -----------
@@ -282,14 +281,84 @@ class StandardFluid(Fluid):
         Returns:
         --------
         float
-            Density perturbation (units: eV cm^{-3})
+            Dimensionless density perturbation (units: None)
+        """
+        return y[self.first_idx]
+    
+    def get_theta(self, lna, y, args):
+        """
+        Getter method for velocity divergence perturbation from perturbation equations vector
+
+        Parameters:
+        -----------
+        lna : float
+            Logarithm of scale factor
+        y : array
+            Perturbation mode values
+        args : dict
+            Cosmological parameters (params)
+
+        Returns:
+        --------
+        float
+            Velocity divergence perturbation (units: 1/Mpc)
+        """
+        return jnp.where(
+            self.num_equations > 1,
+            y[self.first_idx+1],
+            0
+        )
+    
+    def get_sigma(self, lna, y, args):
+        """
+        Getter method for shear perturbation from perturbation equations vector
+
+        Parameters:
+        -----------
+        lna : float
+            Logarithm of scale factor
+        y : array
+            Perturbation mode values
+        args : dict
+            Cosmological parameters (params)
+
+        Returns:
+        --------
+        float
+            Dimensionless shear perturbation (units: None)
+        """
+        return jnp.where(
+            self.num_equations > 2,
+            y[self.first_idx+2],
+            0
+        )
+
+    # Called by diffrax, child classes should never override. Okay to implement here.
+    def rho_delta(self, lna, y, args):
+        """
+        Compute energy density perturbation, contribution to metric perturbation evolution. 
+
+        Parameters:
+        -----------
+        lna : float
+            Logarithm of scale factor
+        y : array
+            Perturbation mode values
+        args : dict
+            Cosmological parameters (params)
+
+        Returns:
+        --------
+        float
+            Energy density perturbation (units: eV cm^{-3})
         """
         params = args
-        return self.rho(lna, params) * y[self.first_idx]
+        return self.rho(lna, params) * self.get_delta(lna, y, args)
 
     def rho_plus_P_theta(self, lna, y, args):
         """
-        Compute velocity perturbation.
+        Compute velocity perturbation times the sum of energy density and pressure. {0, i} component
+        of the perturbed stress energy tensor.
 
         Parameters:
         -----------
@@ -306,15 +375,12 @@ class StandardFluid(Fluid):
             Velocity perturbation (units: eV cm^{-3} Mpc^{-1})
         """
         params = args
-        return jnp.where(
-            self.num_equations > 1,
-            (self.rho(lna, params)+self.P(lna, params)) * y[self.first_idx+1],
-            0.
-        )
+        return (self.rho(lna, params)+self.P(lna, params)) * self.get_theta(lna, y, args)
+
 
     def rho_plus_P_sigma(self, lna, y, args):
         """
-        Compute shear perturbation.
+        Compute shear stress perturbation, needed for CMB
 
         Parameters:
         -----------
@@ -328,14 +394,10 @@ class StandardFluid(Fluid):
         Returns:
         --------
         float
-            Shear perturbation (units: eV cm^{-3})
+           Shear stress perturbation (units: eV cm^{-3})
         """
         params = args
-        return jnp.where(
-            self.num_equations > 2,
-            (self.rho(lna, params)+self.P(lna, params)) * y[self.first_idx+2],
-            0.
-        )
+        return (self.rho(lna, params)+self.P(lna, params)) * self.get_sigma(lna, y, args)
 
 class BackgroundFluid(Fluid):
     
@@ -1216,7 +1278,7 @@ class Baryon(StandardFluid):
 
         delta = y[self.first_idx]
         theta = y[self.first_idx+1]
-        theta_g = y[photon.first_idx+1]
+        theta_g = photon.get_theta(lna, y, args)
         delta_prime = -theta/aH-metric_h_prime/2.
         theta_prime = -theta + cs2*k**2*delta/aH + R/tau_c/aH*(theta_g-theta)
 
@@ -1365,7 +1427,7 @@ class Photon(StandardFluid):
         delta = F[0]
         theta = F[1]
         sigma = F[2]
-        theta_b = y[baryon.first_idx+1]
+        theta_b = baryon.get_theta(lna, y, args)
 
         delta_prime = -4./3./aH*theta - 2./3.*metric_h_prime
         theta_prime = k**2/aH*(delta/4.-sigma) + (theta_b-theta)/aH/tau_c
