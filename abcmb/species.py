@@ -3,7 +3,7 @@ from jax import config, lax, vmap
 import jax.numpy as jnp
 import equinox as eqx
 from . import constants as cnst
-from .ABCMBTools import cot_K
+from .ABCMBTools import _curv_g
 
 config.update("jax_enable_x64", True)
 
@@ -836,11 +836,12 @@ class MasslessNeutrino(StandardFluid):
         theta = F[1]
         sigma = F[2]
 
-        # Curved-space free-streaming coefficients and l_max truncation,
-        # CLASS perturbations.c ur hierarchy a la arXiv:1305.3261.
+        # Curved-space free-streaming coefficients and l_max truncation
+        # (g = tau*cot_K(tau), = 1 at K = 0), CLASS perturbations.c ur
+        # hierarchy a la arXiv:1305.3261.
         K = params['K']
         s = curvature_s_l(jnp.arange(self.num_equations), k, K)
-        cotK_tau = cot_K(tau, K)
+        gcurv = _curv_g(K*tau**2)
 
         # density, velocity, shear perturbations
         delta_prime = -4./3./aH*theta - 2./3.*metric_h_prime
@@ -852,7 +853,7 @@ class MasslessNeutrino(StandardFluid):
         lmax = self.num_equations-1
         L = jnp.arange(4, lmax)
         Fl_prime    = 1./(2.*L+1.)*k/aH * (L*s[L]*F[L-1]-(L+1)*s[L+1]*F[L+1])
-        Flmax_prime = k/aH*s[lmax]*F[lmax-1] - (lmax+1)*cotK_tau/aH*F[lmax]
+        Flmax_prime = k/aH*s[lmax]*F[lmax-1] - (lmax+1)/aH/tau*gcurv*F[lmax]
 
         return jnp.concatenate((jnp.array([delta_prime, theta_prime, sigma_prime, F3_prime]), Fl_prime, jnp.array([Flmax_prime])))
 
@@ -1053,11 +1054,12 @@ class MassiveNeutrino(Fluid):
         aH  = BG.aH(lna, params)
         tau = BG.tau(lna)
 
-        # Curved-space free-streaming coefficients and l_max truncation,
-        # CLASS perturbations.c ncdm hierarchy a la arXiv:1305.3261.
+        # Curved-space free-streaming coefficients and l_max truncation
+        # (g = tau*cot_K(tau), = 1 at K = 0), CLASS perturbations.c ncdm
+        # hierarchy a la arXiv:1305.3261.
         K = params['K']
         s = curvature_s_l(jnp.arange(self.num_ells_per_bin), k, K)
-        cotK_tau = cot_K(tau, K)
+        gcurv = _curv_g(K*tau**2)
 
         # Iterate through momentum bins
         bins = []
@@ -1080,7 +1082,7 @@ class MassiveNeutrino(Fluid):
             Psi_inter_prime = q*k/epsilon/aH/(2*L_inter+1) * (L_inter*s[L_inter]*Psi[L_inter-1] - (L_inter+1)*s[L_inter+1]*Psi[L_inter+1])
 
             # lmax mode (no s_lmax on the upstream term, as in CLASS)
-            Psi_lmax_prime = q*k/aH/epsilon*Psi[lmax-1] - (lmax+1)*cotK_tau/aH*Psi[lmax]
+            Psi_lmax_prime = q*k/aH/epsilon*Psi[lmax-1] - (lmax+1)/aH/tau*gcurv*Psi[lmax]
 
             # Putting it all together
             bins.append(jnp.concatenate((jnp.array([Psi0_prime, kPsi1_prime, Psi2_prime]), Psi_inter_prime, jnp.array([Psi_lmax_prime]))))
@@ -1543,11 +1545,12 @@ class Photon(StandardFluid):
         theta_b = baryon.get_theta(lna, y, args)
 
         # Curved-space free-streaming coefficients (all 1 in the flat limit)
-        # and generalized cotangent for the l_max truncation; CLASS
-        # perturbations.c photon hierarchy a la arXiv:1305.3261.
+        # and generalized-cotangent factor g = tau*cot_K(tau) for the l_max
+        # truncation; CLASS perturbations.c photon hierarchy a la
+        # arXiv:1305.3261. g = 1 exactly at K = 0.
         K = params['K']
         s = curvature_s_l(jnp.arange(max(self.num_F_ell_modes, self.num_G_ell_modes) + 1), k, K)
-        cotK_tau = cot_K(tau, K)
+        gcurv = _curv_g(K*tau**2)
 
         delta_prime = -4./3./aH*theta - 2./3.*metric_h_prime
         theta_prime = k**2/aH*(delta/4.-s[2]**2*sigma) + (theta_b-theta)/aH/tau_c
@@ -1557,14 +1560,14 @@ class Photon(StandardFluid):
         # Temperature Boltzmann Hierarchy
         L = jnp.arange(4, Flmax) # Excludes the lmax mode
         Fl_prime    = 1./(2.*L+1.)*k/aH * (L*s[L]*F[L-1]-(L+1)*s[L+1]*F[L+1]) - F[L]/aH/tau_c
-        Flmax_prime = k/aH*s[Flmax]*F[Flmax-1] - (Flmax+1)*cotK_tau/aH*F[Flmax] - F[Flmax]/aH/tau_c
+        Flmax_prime = k/aH*s[Flmax]*F[Flmax-1] - (Flmax+1)/aH/tau*gcurv*F[Flmax] - F[Flmax]/aH/tau_c
 
         # Polarization Boltzmann Hierarchy
         L = jnp.arange(0, Glmax) # Excludes the lmax mode
         Gl_prime    = 1./(2.*L+1.)*k/aH * (L*s[L]*G[L-1]-(L+1)*s[L+1]*G[L+1]) - G[L]/aH/tau_c \
                     + (2.*s[2]*sigma+G[0]+G[2])/2./aH/tau_c * jnp.concatenate((jnp.array([1., 0., 0.2]), jnp.zeros(Glmax-3)))
 
-        Glmax_prime = k/aH*s[Glmax]*G[Glmax-1] - (Glmax+1)*cotK_tau/aH*G[Glmax] - G[Glmax]/aH/tau_c
+        Glmax_prime = k/aH*s[Glmax]*G[Glmax-1] - (Glmax+1)/aH/tau*gcurv*G[Glmax] - G[Glmax]/aH/tau_c
         return jnp.concatenate((jnp.array([delta_prime, theta_prime, sigma_prime, F3_prime]), Fl_prime, jnp.array([Flmax_prime]), Gl_prime, jnp.array([Glmax_prime])))
 
     def output_perturbations(self, lna, modes, args):

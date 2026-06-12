@@ -131,6 +131,14 @@ class SpectrumSolver(eqx.Module):
         Used for lensing, the Gauss-Legendre quadrature weights for the correlation function -> Cl integral.
     lensing : bool
         Whether to include gravitational lensing effects
+    curvature : bool
+        Whether to use the curved-geometry (hyperspherical Bessel) line-of-sight
+        path; required whenever omega_k != 0 (static, see _Cl_all_ells_curved)
+    curv_ells : jnp.array
+        Integer multipoles 2..lensing_ells[-1] emitted by the curved path
+    curv_xmin : jnp.array
+        Per-ell evanescent cutoff in the variable q*S_K(chi), interpolated from
+        the flat Bessel tables' lower edges
     k_axis_transfer : jnp.array
         Wavenumber grid for transfer function integration (units: Mpc^{-1})
     k_axis_Pk_output : jnp.array
@@ -167,9 +175,13 @@ class SpectrumSolver(eqx.Module):
     lensing_ws   : jnp.array
 
     lensing : bool
+    curvature : bool = eqx.field(static=True)
 
     k_axis_transfer  : jnp.array
     k_axis_Pk_output : jnp.array
+
+    curv_ells : jnp.array
+    curv_xmin : jnp.array
 
     k_pivot    : float = 0.05 # In 1/Mpc
     scale_sw  : float = 1.
@@ -187,7 +199,8 @@ class SpectrumSolver(eqx.Module):
                  scale_sw=1,
                  scale_isw=1,
                  scale_dop=1,
-                 scale_pol=1):
+                 scale_pol=1,
+                 curvature=False):
         """
         Initialize CMB spectrum solver.
 
@@ -246,6 +259,22 @@ class SpectrumSolver(eqx.Module):
         self.scale_isw = scale_isw
         self.scale_dop = scale_dop
         self.scale_pol = scale_pol
+
+        # Curved-geometry path: the hyperspherical-Bessel recurrence in
+        # _Cl_all_ells_curved computes Cl at EVERY integer ell from 2 up to the
+        # largest ell needed (no sparse-l spline). curv_xmin is the per-ell
+        # evanescent cutoff below which the radial function is negligible
+        # (|Phi| < ~1e-10), interpolated in l from the flat Bessel tables'
+        # lower edges — the turning-point variable q*S_K(chi) reduces to the
+        # flat argument at K=0, so the flat thresholds apply verbatim.
+        self.curvature = bool(curvature)
+        l_top = int(self.lensing_ells[-1])
+        self.curv_ells = jnp.arange(2, l_top+1)
+        self.curv_xmin = jnp.interp(
+            jnp.arange(2, l_top+1, dtype=xphi0_tab.dtype),
+            bessel_l_tab.astype(xphi0_tab.dtype),
+            xphi0_tab[0, :]
+        )
 
     def primordial_spectrum(self, k, params):
         """
@@ -374,14 +403,18 @@ class SpectrumSolver(eqx.Module):
         aH = BG.aH(lna, params)
 
         Omega_m = params["omega_m"]/params["h"]**2
+        Omega_k = params["omega_k"]/params["h"]**2
         Omega_L = params["omega_Lambda"]/params["h"]**2
 
-        # Matter fraction over time after equality. 1 at early times and becomes Om0 today. 
-        Om = (Omega_m * (1.+z)**3)/ ((Omega_m * (1.+z)**3) + Omega_L)
+        # Matter fraction over time after equality. 1 at early times and becomes Om0 today.
+        Om = (Omega_m * (1.+z)**3)/ ((Omega_m * (1.+z)**3) + Omega_k * (1.+z)**2 + Omega_L)
 
         Pk = self.Pk_lin(k, z, PT, params) # Mpc^3
 
-        return 9./8./jnp.pi**2 * Om**2 * aH**4 * Pk / k
+        # Curved Poisson equation: (k^2 - 3K) Psi = -4 pi G a^2 rho delta,
+        # so the flat 1/k becomes k^3/(k^2-3K)^2.
+        K = params['K']
+        return 9./8./jnp.pi**2 * Om**2 * aH**4 * Pk * k**3 / (k**2 - 3.*K)**2
 
     def lensing_Cl(self, ells, PT, BG, params):
         """
@@ -408,7 +441,14 @@ class SpectrumSolver(eqx.Module):
             Angular lensing matter power spectrum Cl^phiphi, dimensionless.
         """
 
-        coeff = 8.*jnp.pi**2/(ells+0.5)**3
+        # Curved-sky Limber: C_l = 4 int dchi W^2/S_K(chi)^2 P_Psi,3D(k(chi))
+        # with q = (l+1/2)/S_K(chi), k = sqrt(q^2 - K), the curved lensing
+        # kernel W = S_K(chi*-chi)/(S_K(chi*) S_K(chi)), and the hyperspherical
+        # WKB amplitude correction (1 - K l^2/q^2)^(-1/2) (CLASS
+        # transfer_limber). Reduces exactly to the flat
+        # 8 pi^2/(l+1/2)^3 int dchi chi W^2 P_Psi form at K = 0.
+        K = params['K']
+        coeff = 8.*jnp.pi**2
         chi = lambda lna : BG.tau0 - BG.tau(lna)
 
         # The previous jnp.nan_to_num(integrand, nan=0.) here masked the
@@ -422,11 +462,17 @@ class SpectrumSolver(eqx.Module):
         def integrand_func(lna):
             lna_safe = jnp.where(lna < 0., lna, lna_floor)
             chi_safe = chi(lna_safe)
-            k = (ells+0.5)/chi_safe
-            window = (chi(BG.lna_rec) - chi_safe)/chi(BG.lna_rec)/chi_safe
+            chi_star = chi(BG.lna_rec)
+            sK      = tools.sin_K(chi_safe, K)
+            sK_star = tools.sin_K(chi_star, K)
+            q = (ells+0.5)/sK
+            k = jnp.sqrt(jnp.clip(q**2 - K, 1.e-30, None))
+            window = tools.sin_K(chi_star - chi_safe, K)/sK_star/sK
+            wkb_amp = 1./jnp.sqrt(jnp.clip(1. - K*ells**2/q**2, 1.e-30, None))
             res = (
-                chi_safe / BG.aH(lna_safe, params)
-                * window**2
+                1. / BG.aH(lna_safe, params)
+                * window**2 / (sK**2 * k**3)
+                * wkb_amp
                 * self.lensing_power_spectrum(k, lna_safe, PT, BG, params)
             )
             return jnp.where(lna < 0., res, 0.)
@@ -571,6 +617,103 @@ class SpectrumSolver(eqx.Module):
 
         return (ClTT, ClTE, ClEE)
 
+    def _transfer_sources(self, PT, BG, params):
+        """
+        Assemble the line-of-sight source functions on the (lna, k_transfer) grid.
+
+        Shared by the flat path (Cl_one_ell) and the curved path
+        (_Cl_all_ells_curved): the efficient integrated-by-parts sources are
+        structurally identical in curved space — curvature enters only through
+        the metric quantities already in the PerturbationTable and through the
+        s_2 = sqrt(1-3K/k^2) factor inside the polarization weight
+        Pi = (2 s_2 sigma_g + G0 + G2) (CLASS perturbations_sources); s_2 = 1
+        exactly in the flat limit.
+
+        Parameters:
+        -----------
+        PT : perturbations.PerturbationTable
+            Perturbation evolution table
+        BG : background.Background
+            Background cosmology module
+        params : dict
+            Dictionary of input and derived parameters
+
+        Returns:
+        --------
+        tuple
+            (sourceT0, sourceT1, sourceT2, sourceE) of shape (Nlna, Nk),
+            aH_1d, tau, weights of shape (Nlna,), and tau0.
+        """
+        k_axis = self.k_axis_transfer
+        lna_axis = PT.lna[:-1]
+        delta_lna = PT.lna[-1] - PT.lna[-2]
+
+        # Background quantities, all Nlna 1D vectors
+        tau0 = BG.tau0
+        tau = BG.tau(lna_axis)
+        g   = vmap(BG.visibility,in_axes=[0,None])(lna_axis, params)
+        g_prime = vmap(grad(BG.visibility,argnums=0),in_axes=[0,None])(lna_axis, params) # Derivative of g w.r.t. lna
+        aH  = BG.aH(lna_axis, params)
+        expmkappa = vmap(BG.expmkappa)(lna_axis)
+        aH_dot = BG.aH_prime(lna_axis, params) * aH # Derivative of aH w.r.t. conformal time tau.
+
+        # Keep a 1D alias of aH for the rolling-accumulator scan downstream.
+        aH_1d = aH
+
+        g         = g[:, None]
+        g_prime   = g_prime[:, None]
+        aH        = aH[:, None]
+        expmkappa = expmkappa[:, None]
+        aH_dot    = aH_dot[:, None]
+
+        # Perturbations, all (Nlna, Nk) 2D vectors
+        # Cubic Spline is necessary here for accuracy.
+        interp_column = lambda col : CubicSpline(jnp.log10(PT.k), col, check=False)(jnp.log10(k_axis))
+
+        # Found that this is much much faster than RegularGridInterpolator
+        photon_sp = PT.species_perturbations["Photon"]
+        baryon_sp = PT.species_perturbations["Baryon"]
+        delta_g       = vmap(interp_column, in_axes=0, out_axes=0)(photon_sp["delta"][:-1, :])
+        theta_b       = vmap(interp_column, in_axes=0, out_axes=0)(baryon_sp["theta"][:-1, :])
+        theta_b_prime = vmap(interp_column, in_axes=0, out_axes=0)(PT.theta_b_prime[:-1, :])
+        sigma_g       = vmap(interp_column, in_axes=0, out_axes=0)(photon_sp["sigma"][:-1, :])
+        Gg0           = vmap(interp_column, in_axes=0, out_axes=0)(photon_sp["G0"][:-1, :])
+        Gg2           = vmap(interp_column, in_axes=0, out_axes=0)(photon_sp["G2"][:-1, :])
+        eta           = vmap(interp_column, in_axes=0, out_axes=0)(PT.metric_eta[:-1, :])
+        eta_prime     = vmap(interp_column, in_axes=0, out_axes=0)(PT.metric_eta_prime[:-1, :])
+        alpha         = vmap(interp_column, in_axes=0, out_axes=0)(PT.metric_alpha[:-1, :])
+        alpha_prime   = vmap(interp_column, in_axes=0, out_axes=0)(PT.metric_alpha_prime[:-1, :])
+
+        # Curved polarization weight: s_2 dresses sigma_g inside Pi (=1 at K=0).
+        s2 = jnp.sqrt(jnp.clip(1. - 3.*params['K']/k_axis**2, 1.e-30, None))
+
+        # Source terms
+        sourceT0 = self.scale_sw * g * (delta_g/4. + aH*alpha_prime) \
+                + self.scale_isw * (
+                    g * (eta - aH*alpha_prime - 2.*aH*alpha) \
+                    + 2.*expmkappa * (aH*eta_prime - aH_dot*alpha - aH**2*alpha_prime)
+                ) \
+                + self.scale_dop * (
+                    aH * (g*((theta_b_prime / k_axis**2) + alpha_prime) \
+                    + g_prime*((theta_b / k_axis**2) + alpha))
+                )
+
+        sourceT1 = self.scale_isw * expmkappa * \
+                ((aH*alpha_prime + 2.*aH*alpha - eta) * k_axis)
+
+        sourceT2 = self.scale_pol * g * (2*s2*sigma_g + Gg0 + Gg2) / 8.
+
+        sourceE  = jnp.sqrt(6) * g * (2*s2*sigma_g + Gg0 + Gg2) / 8.
+
+        # Trapezoid weights over the (uniform) lna grid; the first point gets
+        # the half weight, the last grid point (lna = 0, chi = 0) is excluded
+        # from lna_axis and its triangle correction is carried by delta_lna.
+        Nlna = lna_axis.shape[0]
+        weights = jnp.full((Nlna,), delta_lna, dtype=sourceT0.dtype)
+        weights = weights.at[0].set(0.5 * delta_lna)
+
+        return (sourceT0, sourceT1, sourceT2, sourceE), aH_1d, tau, weights, tau0
+
     def get_Cl(self, PT, BG, params):
         """
         Compute angular power spectra for multiple multipoles.
@@ -590,15 +733,27 @@ class SpectrumSolver(eqx.Module):
             (ClTT, ClTE, ClEE) angular power spectra
         """
 
-            
-        tt_raw, te_raw, ee_raw = vmap(self.Cl_one_ell, in_axes=(0, None, None, None))(self.lensing_ells_indices, PT, BG, params)
+        sources = self._transfer_sources(PT, BG, params)
 
+        if self.curvature:
+            # Exact hyperspherical-Bessel path: Cl at every integer ell from 2
+            # to lensing_ells[-1]; no sparse-l spline reconstruction needed.
+            # Static shape arithmetic: curv_ells = arange(2, l_top+1) and
+            # lensing_ells = arange(ellmin, l_top+1), so the offset of ellmin
+            # into curv_ells is the length difference.
+            tt_all, te_all, ee_all = self._Cl_all_ells_curved(sources, params)
+            off = self.curv_ells.shape[0] - self.lensing_ells.shape[0]
+            tt_unlensed = tt_all[off:]
+            te_unlensed = te_all[off:]
+            ee_unlensed = ee_all[off:]
+        else:
+            tt_raw, te_raw, ee_raw = vmap(self.Cl_one_ell, in_axes=(0, None, None))(self.lensing_ells_indices, sources, params)
 
-        # Cubic spline for smooth Cl over user requested ells
-        lensing_ells = bessel_l_tab[self.lensing_ells_indices]
-        tt_unlensed = CubicSpline(lensing_ells, tt_raw, check=False)(self.lensing_ells)
-        te_unlensed = CubicSpline(lensing_ells, te_raw, check=False)(self.lensing_ells)
-        ee_unlensed = CubicSpline(lensing_ells, ee_raw, check=False)(self.lensing_ells)
+            # Cubic spline for smooth Cl over user requested ells
+            lensing_ells = bessel_l_tab[self.lensing_ells_indices]
+            tt_unlensed = CubicSpline(lensing_ells, tt_raw, check=False)(self.lensing_ells)
+            te_unlensed = CubicSpline(lensing_ells, te_raw, check=False)(self.lensing_ells)
+            ee_unlensed = CubicSpline(lensing_ells, ee_raw, check=False)(self.lensing_ells)
 
         def get_lensed_Cls():
             tt_lensed, te_lensed, ee_lensed = self.lensed_Cls(self.lensing_ells, tt_unlensed, te_unlensed, ee_unlensed, PT, BG, params)
@@ -613,20 +768,20 @@ class SpectrumSolver(eqx.Module):
             get_unlensed_Cls
         )
 
-    def Cl_one_ell(self, idx, PT, BG, params):
+    def Cl_one_ell(self, idx, sources, params):
         """
         Computes angular power spectrum for single multipole.
 
-        Integrates transfer functions over wavenumber.
+        Integrates transfer functions over wavenumber. Flat geometry only —
+        the curved analogue (all ells at once) is _Cl_all_ells_curved.
 
         Parameters:
         -----------
         idx : int
             Index into bessel_l_tab for multipole ℓ
-        PT : perturbations.PerturbationTable
-            Perturbation evolution table
-        BG : background.Background
-            Background cosmology module
+        sources : tuple
+            Output of _transfer_sources: source functions on the
+            (lna, k_transfer) grid plus background vectors
         params : dict
             Dictionary of input and derived parameters
 
@@ -637,64 +792,9 @@ class SpectrumSolver(eqx.Module):
         """
         l = bessel_l_tab[idx]
         k_axis = self.k_axis_transfer
-        lna_axis = PT.lna[:-1]
-        delta_lna = PT.lna[-1] - PT.lna[-2]
 
         ### TRANSFER FUNCTION ###
-        # Background quantities, all Nlna 1D vectors
-        tau0 = BG.tau0
-        tau = BG.tau(lna_axis)
-        g   = vmap(BG.visibility,in_axes=[0,None])(lna_axis, params)
-        g_prime = vmap(grad(BG.visibility,argnums=0),in_axes=[0,None])(lna_axis, params) # Derivative of g w.r.t. lna
-        aH  = BG.aH(lna_axis, params)
-        expmkappa = vmap(BG.expmkappa)(lna_axis)
-        aH_dot = BG.aH_prime(lna_axis, params) * aH # Derivative of aH w.r.t. conformal time tau.
-
-        # Keep a 1D alias of aH for the rolling-accumulator scan below.
-        aH_1d = aH
-
-        g         = g[:, None]
-        g_prime   = g_prime[:, None]
-        aH        = aH[:, None]
-        expmkappa = expmkappa[:, None]
-        aH_dot    = aH_dot[:, None]
-
-        # Perturbations, all (Nlna, Nk) 2D vectors
-        # Cubic Spline is necessary here for accuracy. 
-        interp_column = lambda col : CubicSpline(jnp.log10(PT.k), col, check=False)(jnp.log10(k_axis))
-
-        # Found that this is much much faster than RegularGridInterpolator
-        photon_sp = PT.species_perturbations["Photon"]
-        baryon_sp = PT.species_perturbations["Baryon"]
-        delta_g       = vmap(interp_column, in_axes=0, out_axes=0)(photon_sp["delta"][:-1, :])
-        theta_b       = vmap(interp_column, in_axes=0, out_axes=0)(baryon_sp["theta"][:-1, :])
-        theta_b_prime = vmap(interp_column, in_axes=0, out_axes=0)(PT.theta_b_prime[:-1, :])
-        sigma_g       = vmap(interp_column, in_axes=0, out_axes=0)(photon_sp["sigma"][:-1, :])
-        Gg0           = vmap(interp_column, in_axes=0, out_axes=0)(photon_sp["G0"][:-1, :])
-        Gg2           = vmap(interp_column, in_axes=0, out_axes=0)(photon_sp["G2"][:-1, :])
-        eta           = vmap(interp_column, in_axes=0, out_axes=0)(PT.metric_eta[:-1, :])
-        eta_prime     = vmap(interp_column, in_axes=0, out_axes=0)(PT.metric_eta_prime[:-1, :])
-        alpha         = vmap(interp_column, in_axes=0, out_axes=0)(PT.metric_alpha[:-1, :])
-        alpha_prime   = vmap(interp_column, in_axes=0, out_axes=0)(PT.metric_alpha_prime[:-1, :])
-
-        # Source terms
-        sourceT0 = self.scale_sw * g * (delta_g/4. + aH*alpha_prime) \
-                + self.scale_isw * (
-                    g * (eta - aH*alpha_prime - 2.*aH*alpha) \
-                    + 2.*expmkappa * (aH*eta_prime - aH_dot*alpha - aH**2*alpha_prime)
-                ) \
-                + self.scale_dop * (
-                    aH * (g*((theta_b_prime / k_axis**2) + alpha_prime) \
-                    + g_prime*((theta_b / k_axis**2) + alpha))
-                )
-
-        sourceT1 = self.scale_isw * expmkappa * \
-                ((aH*alpha_prime + 2.*aH*alpha - eta) * k_axis)
-
-        sourceT2 = self.scale_pol * g * (2*sigma_g + Gg0 + Gg2) / 8.
-
-        sourceE  = jnp.sqrt(6) * g * (2*sigma_g + Gg0 + Gg2) / 8.
-
+        (sourceT0, sourceT1, sourceT2, sourceE), aH_1d, tau, weights, tau0 = sources
 
         # Here we perform the time integral to get transfer functions from source functions.
         # previously, this block explicitly built a 2D (Nlna, Nk) tensor for each ell and summed it down to (Nk).
@@ -752,9 +852,6 @@ class SpectrumSolver(eqx.Module):
                 )
             )
 
-        Nlna = lna_axis.shape[0]
-        weights = jnp.full((Nlna,), delta_lna, dtype=sourceT0.dtype)
-        weights = weights.at[0].set(0.5 * delta_lna)
         zero_k = jnp.zeros(k_axis.shape, dtype=sourceT0.dtype)
 
         def scan_step(carry, xs_l):
@@ -785,13 +882,157 @@ class SpectrumSolver(eqx.Module):
         transferT = transferT0 + transferT1 + transferT2
         ### END OF TRANSFER FUNCTION ###
 
-        # Now we integrate the transfer functions along the line of sight, and return. 
+        # Now we integrate the transfer functions along the line of sight, and return.
         integrandTT = 4.*jnp.pi * params['A_s'] * (k_axis/self.k_pivot)**(params['n_s']-1.) * transferT**2 / k_axis
         integrandTE = 4.*jnp.pi * params['A_s'] * (k_axis/self.k_pivot)**(params['n_s']-1.) * transferT*transferE / k_axis
         integrandEE = 4.*jnp.pi * params['A_s'] * (k_axis/self.k_pivot)**(params['n_s']-1.) * transferE**2 / k_axis
-        
+
         return (
             jnp.trapezoid(integrandTT, k_axis),
             jnp.trapezoid(integrandTE, k_axis),
             jnp.trapezoid(integrandEE, k_axis)
         )
+
+    def _Cl_all_ells_curved(self, sources, params):
+        """
+        Angular power spectra in curved (open/closed) geometry, all ells at once.
+
+        Replaces the flat Bessel tables with the exact hyperspherical Bessel
+        functions Phi_l^nu(chi), generated by the dimensionful three-term
+        recurrence (Lesgourgues & Tram arXiv:1305.3261; Tram arXiv:1311.0839)
+
+            sqrt(q^2 - K l^2) Phi_l = (2l-1) cot_K(chi) Phi_{l-1}
+                                      - sqrt(q^2 - K (l-1)^2) Phi_{l-2},
+
+        seeded by the closed forms Phi_0 = sin(q chi)/(q S_K(chi)) and
+        Phi_1 = Phi_0 (cot_K(chi) - q cot(q chi))/k, with q^2 = k^2 + K.
+        Everything is smooth through K = 0, where the recurrence generates
+        exactly j_l(k chi). One lax.scan walks l upward over ALL integer ells,
+        carrying (Phi_{l-1}, Phi_l) on the (Nlna, Nk) grid and contracting
+        against the line-of-sight sources at every l — so the output is exact
+        per ell (no sparse-l spline). The scan is chunked, with jax.checkpoint
+        on each chunk for reverse-AD memory.
+
+        Numerical scheme: the forward recurrence is exact (exactly seeded) in
+        the oscillatory region; in the evanescent region (below the turning
+        point q S_K(chi) = sqrt(l(l+1))) it accumulates relative error, so
+        values there are clamped and masked to zero below the same
+        |Phi| ~ 1e-10 threshold the flat tables use (CLASS cuts its LOS
+        integral identically via chi_at_phimin). For closed universes the
+        sqrt arguments q^2 - K l^2 turn negative at l >= nu = q/sqrt(K), where
+        the mode physically terminates: Phi is masked to zero there. Modes
+        with q^2 <= 0 (open supercurvature grid points) carry zero weight in
+        the k integral.
+
+        Parameters:
+        -----------
+        sources : tuple
+            Output of _transfer_sources.
+        params : dict
+            Dictionary of input and derived parameters.
+
+        Returns:
+        --------
+        tuple
+            (ClTT, ClTE, ClEE), each of shape (len(curv_ells),) on the integer
+            ell grid arange(2, lensing_ells[-1]+1).
+        """
+        (sourceT0, sourceT1, sourceT2, sourceE), aH_1d, tau, weights, tau0 = sources
+        k_axis = self.k_axis_transfer                       # (Nk,)
+        K = params['K']
+
+        chi  = (tau0 - tau)[:, None]                        # (Nlna, 1)
+        q2 = k_axis**2 + K                                  # (Nk,)
+        qmask = (q2 > 0.)
+        q  = jnp.sqrt(jnp.clip(q2, 1.e-30, None))
+        s2 = jnp.sqrt(jnp.clip(1. - 3.*K/k_axis**2, 1.e-30, None))
+
+        sinK = tools.sin_K(chi, K)                          # (Nlna, 1)
+        cotK = tools.cot_K(chi, K)                          # (Nlna, 1)
+        uK   = K*chi**2
+        qchi = q*chi                                        # (Nlna, Nk)
+
+        # Seeds. sqrt(q^2 - K) = k exactly, hence the bare k_axis in Phi1;
+        # _curv_g_diff is the cancellation-safe cot_K(chi) - q cot(q chi).
+        Phi0 = jnp.sinc(qchi/jnp.pi) / tools._curv_f(uK)
+        Phi1 = Phi0 * tools._curv_g_diff(uK, qchi**2) / (chi*k_axis)
+        s1d  = k_axis
+        s2d_arg = q2 - 4.*K
+        s2d  = jnp.sqrt(jnp.clip(s2d_arg, 1.e-30, None))
+        Phi2 = jnp.where(s2d_arg > 0.,
+                         jnp.clip((3.*cotK*Phi1 - s1d*Phi0)/s2d, -1.e10, 1.e10),
+                         0.)
+
+        # Pre-multiplied sources (trapezoid weights / aH folded in) and the
+        # primordial-spectrum k-integral weights (dk/k measure, as in the flat
+        # path; CLASS keeps calP(k) a pure power law in curved space, the
+        # (k^2-3K) normalization lives in the initial conditions).
+        wa  = (weights/aH_1d)[:, None]
+        SW0 = sourceT0*wa
+        SW1 = sourceT1*wa
+        SW2 = sourceT2*wa
+        SWE = sourceE*wa
+
+        dk = jnp.diff(k_axis)
+        wk = jnp.concatenate((dk[:1]/2., (dk[1:]+dk[:-1])/2., dk[-1:]/2.))
+        wk_prim = wk * 4.*jnp.pi * params['A_s'] * (k_axis/self.k_pivot)**(params['n_s']-1.) / k_axis \
+                  * qmask
+
+        # Evanescent cutoff variable: q S_K(chi) generalizes the flat Bessel
+        # argument k chi (same turning point sqrt(l(l+1)) in both), so the
+        # flat tables' per-ell lower edges apply directly.
+        x_eff = q*sinK                                      # (Nlna, Nk)
+
+        def step(carry, xs_l):
+            Phi_lm1, Phi_l = carry
+            lf, xmin_l = xs_l
+
+            # Radial functions at this l (CLASS transfer_radial_function,
+            # dimensionful): T0 = Phi, T1 = dPhi/dchi / k,
+            # T2 = (3 d2Phi/dchi^2 / k^2 + Phi)/(2 s2),
+            # E  = sqrt(3/8 (l+2)!/(l-2)!) Phi / (k S_K(chi))^2 / s2.
+            sld   = jnp.sqrt(jnp.clip(q2 - K*lf**2, 1.e-30, None))
+            dPhi  = sld*Phi_lm1 - (lf+1.)*cotK*Phi_l
+            d2Phi = -2.*cotK*dPhi + (lf*(lf+1.)/sinK**2 - q2 + K)*Phi_l
+            mask  = x_eff >= xmin_l
+
+            r0 = jnp.where(mask, Phi_l, 0.)
+            r1 = jnp.where(mask, dPhi, 0.)/k_axis
+            r2 = jnp.where(mask, 3.*d2Phi/k_axis**2 + Phi_l, 0.)/(2.*s2)
+            eps_factor = jnp.sqrt(3./8.*(lf+2.)*(lf+1.)*lf*(lf-1.))
+            rE = eps_factor/s2 * jnp.where(mask, Phi_l/(k_axis*sinK)**2, 0.)
+
+            transferT = jnp.sum(SW0*r0 + SW1*r1 + SW2*r2, axis=0)   # (Nk,)
+            transferE = jnp.sum(SWE*rE, axis=0)
+
+            clTT = jnp.sum(wk_prim*transferT**2)
+            clTE = jnp.sum(wk_prim*transferT*transferE)
+            clEE = jnp.sum(wk_prim*transferE**2)
+
+            # Advance l -> l+1; clamp the evanescent-region growth (those
+            # values are masked at emission) and terminate closed-universe
+            # modes at l >= nu.
+            slp_arg = q2 - K*(lf+1.)**2
+            slpd = jnp.sqrt(jnp.clip(slp_arg, 1.e-30, None))
+            Phi_next = jnp.where(slp_arg > 0.,
+                                 jnp.clip(((2.*lf+1.)*cotK*Phi_l - sld*Phi_lm1)/slpd, -1.e10, 1.e10),
+                                 0.)
+            return (Phi_l, Phi_next), jnp.stack((clTT, clTE, clEE))
+
+        # Chunked scan over l = 2 .. l_top: jax.checkpoint on each chunk keeps
+        # the reverse-AD residency at (n_chunks x carry) instead of
+        # (n_ells x carry).
+        CHUNK = 64
+        n = self.curv_ells.shape[0]
+        npad = (-n) % CHUNK
+        lf_all = jnp.concatenate((self.curv_ells.astype(jnp.float64),
+                                  self.curv_ells[-1] + 1. + jnp.arange(npad, dtype=jnp.float64)))
+        xmin_all = jnp.concatenate((self.curv_xmin, jnp.full((npad,), self.curv_xmin[-1])))
+        xs = (lf_all.reshape(-1, CHUNK), xmin_all.reshape(-1, CHUNK))
+
+        def chunk_body(carry, xs_chunk):
+            return lax.scan(step, carry, xs_chunk)
+
+        _, outs = lax.scan(jax.checkpoint(chunk_body), (Phi1, Phi2), xs)
+        cls = outs.reshape(-1, 3)[:n]
+        return cls[:, 0], cls[:, 1], cls[:, 2]
