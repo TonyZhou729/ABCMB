@@ -97,3 +97,17 @@ recurrence shared by all ells (loop inversion):
 3. CLASS (classy) comparison at Omega_k = +/-0.01, +/-0.05: TT/TE/EE/PP + P(k), thresholds
    matching pytests/accuracy_test.py.
 4. GPU timing: flat-path no-regression + curved-path cost (short salloc, released promptly).
+
+## Implementation status (2026-06-12)
+- All sections above implemented on branch worktree-curvature (3 commits:
+  notes, background+perturbations, spectrum+lensing).
+- Validation scripts: test_hyper_unit.py (CPU; helpers + recurrence vs
+  mpmath/scipy), smoke_trace.py (CPU; full pipeline trace at l_max=250 for
+  flat/curved x open/closed), test_flat_vs_curved_path.py (GPU; K=0 path
+  consistency + timings), test_curved_vs_class.py <Omega_k> (classy
+  comparison; target 2e-3, ell=2 exempt).
+- Flat-path regression guarantee: with curvature=False and omega_k=0 every
+  new factor is exactly 1.0 or +0.0 in the same evaluation order (the
+  truncation uses a multiplicative g factor for this reason); the spectrum
+  source block was refactored (built once in get_Cl instead of per-ell) which
+  is mathematically identical.
