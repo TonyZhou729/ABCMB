@@ -264,17 +264,19 @@ class SpectrumSolver(eqx.Module):
         # _Cl_all_ells_curved computes Cl at EVERY integer ell from 2 up to the
         # largest ell needed (no sparse-l spline). curv_xmin is the per-ell
         # evanescent cutoff below which the radial function is negligible
-        # (|Phi| < ~1e-10), interpolated in l from the flat Bessel tables'
-        # lower edges — the turning-point variable q*S_K(chi) reduces to the
-        # flat argument at K=0, so the flat thresholds apply verbatim.
+        # (|Phi| < phiminabs = 1e-10), via CLASS's closed-form estimate
+        # (hyperspherical_get_xmin_from_approx); it reproduces the flat
+        # tables' lower edges where those exist (l >= 19 — below that the
+        # tables start at x = 0, so they cannot be used as thresholds). The
+        # cutoff variable q*S_K(chi) reduces to the flat argument at K = 0,
+        # so the flat-space threshold applies for all K.
         self.curvature = bool(curvature)
         l_top = int(self.lensing_ells[-1])
         self.curv_ells = jnp.arange(2, l_top+1)
-        self.curv_xmin = jnp.interp(
-            jnp.arange(2, l_top+1, dtype=xphi0_tab.dtype),
-            bessel_l_tab.astype(xphi0_tab.dtype),
-            xphi0_tab[0, :]
-        )
+        lph = np.arange(2, l_top+1, dtype=np.float64) + 0.5
+        lhs = np.log(2.e-10*lph)/lph
+        alpha = -2.*lhs/5.*(1. + 2.*np.cosh(np.arccosh(1. + 375./(16.*lhs*lhs))/3.))
+        self.curv_xmin = jnp.array(lph/np.cosh(alpha))
 
     def primordial_spectrum(self, k, params):
         """
