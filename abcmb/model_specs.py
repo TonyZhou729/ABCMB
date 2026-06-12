@@ -3,12 +3,25 @@ import jax.numpy as jnp
 import equinox as eqx
 
 from . import species
+from . import constants as cnst
 
 def load_specs(input_specs):
 
     specs = {}
 
     specs["use_LCDM_species"] = input_specs.get("use_LCDM_species", True)
+
+    ### CURVATURE ###
+    # "curvature" switches the spectrum solver from the flat Bessel tables to
+    # the exact hyperspherical-Bessel recurrence (needed whenever omega_k != 0).
+    # "omega_k_ref" is a STATIC reference Omega_k h^2 used only to build the
+    # k-grids (shape-static): closed universes (omega_k_ref < 0) REQUIRE it so
+    # that the grid starts at the first physical mode k = sqrt(8K) (nu = 3);
+    # set it to the most-closed value the run will explore. Open universes work
+    # with the default, but setting it matches CLASS's k_min and improves
+    # low-q sampling. The traced params['omega_k'] carries the actual value.
+    specs["curvature"]   = input_specs.get("curvature", False)
+    specs["omega_k_ref"] = input_specs.get("omega_k_ref", 0.)
 
     ### INPUT RELATED specs PARAMS ###
     # For reionization, input tau_reion the optical depth, or z_reion the hydrogen redshift?
@@ -90,7 +103,8 @@ def populate_species(user_species, specs):
         species.ColdDarkMatter,
         species.Baryon,
         species.Photon,
-        species.MasslessNeutrino
+        species.MasslessNeutrino,
+        species.Curvature
     )
 
     i = 0
@@ -128,7 +142,17 @@ def get_k_axis_perturbations(specs):
     k_min = specs["k_min_tau0"] / tau0_fid
     k_max = specs["k_max_tau0_over_l_max"] / tau0_fid * specs["l_max"]
 
-    k = k_min   
+    # Static curvature reference for the grid (CLASS perturb_get_k_list):
+    # closed -> first physical scalar mode is nu=3, k = sqrt(8K) (epsilon
+    # below, so the traced omega_k can sit exactly at the reference); open ->
+    # k_min just above sqrt(|K|) (q -> 0 limit).
+    K_ref = -specs["omega_k_ref"] * (cnst.H0_over_h/cnst.c_Mpc_over_s)**2
+    if K_ref > 0.:
+        k_min = np.sqrt((8.-1.e-4)*K_ref)
+    elif K_ref < 0.:
+        k_min = np.sqrt(-K_ref + k_min**2)
+
+    k = k_min
     ks[0] = k
     i = 0
     while k < k_max:
@@ -136,7 +160,8 @@ def get_k_axis_perturbations(specs):
                 + 0.5 * (jnp.tanh((k-k_rec_fid)/k_rec_fid/specs["k_step_transition"])+1.)
                 * (specs["k_step_sub"]-specs["k_step_super"])) * k_rec_fid
 
-        scale2 = H0_fid**2
+        # CLASS adds |K| to the super-Hubble densification scale in curved space.
+        scale2 = H0_fid**2 + abs(K_ref)
 
         step *= (k**2/scale2+1.)/(k**2/scale2+1./specs["k_step_super_reduction"])
 

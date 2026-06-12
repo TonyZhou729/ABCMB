@@ -360,3 +360,135 @@ def bilinear_interp(x, y, z, xq, yq):
     return (1 - tx) * (1 - ty) * z00 + tx * (1 - ty) * z01 + (1 - tx) * ty * z10 + tx * ty * z11
 
 
+
+
+### CURVED-GEOMETRY HELPERS ###
+
+# Generalized trigonometric functions for curved FLRW geometries, written as
+# entire functions of u = K*chi^2 so that they are smooth through K = 0 (exact
+# flat limit, correct d/dK at the flat point) and need no sign branching at the
+# call sites. Sign convention: K > 0 closed, K < 0 open (K = -Omega_k H0^2).
+# Validity domain: |u| < (pi/2)^2 for the closed branch (sqrt(|K|) chi < pi/2),
+# which covers Planck-like models with |Omega_k| up to ~0.1.
+
+_CURV_U0 = 1.e-2  # series/branch switch point for the helpers below
+
+
+def _curv_f(u):
+    """
+    f(u) = sin(sqrt(u))/sqrt(u), analytically continued through u = 0.
+
+    Equals sinh(sqrt(-u))/sqrt(-u) for u < 0 and 1 at u = 0; sin_K(chi) =
+    chi * f(K chi^2). A Taylor series is used for |u| < 1e-2 (truncation error
+    ~2e-18) and the trig/hyperbolic branches outside, with clipped arguments so
+    the unused branch stays finite under reverse-mode AD.
+
+    Parameters
+    ----------
+    u : array
+        K * chi^2 (dimensionless).
+
+    Returns
+    -------
+    array
+        f(u).
+    """
+    series = 1. - u/6. + u**2/120. - u**3/5040. + u**4/362880.
+    sp = jnp.sqrt(jnp.clip(u, _CURV_U0, None))    # used only where u >  U0
+    sm = jnp.sqrt(jnp.clip(-u, _CURV_U0, None))   # used only where u < -U0
+    return jnp.where(u > _CURV_U0, jnp.sin(sp)/sp,
+                     jnp.where(u < -_CURV_U0, jnp.sinh(sm)/sm, series))
+
+
+def _curv_g(u):
+    """
+    g(u) = sqrt(u)*cot(sqrt(u)), analytically continued through u = 0.
+
+    Equals sqrt(-u)*coth(sqrt(-u)) for u < 0 and 1 at u = 0; cot_K(chi) =
+    g(K chi^2)/chi. Same series/branch structure as _curv_f.
+
+    Parameters
+    ----------
+    u : array
+        K * chi^2 (dimensionless).
+
+    Returns
+    -------
+    array
+        g(u).
+    """
+    series = 1. - u/3. - u**2/45. - 2.*u**3/945. - u**4/4725.
+    sp = jnp.sqrt(jnp.clip(u, _CURV_U0, None))
+    sm = jnp.sqrt(jnp.clip(-u, _CURV_U0, None))
+    return jnp.where(u > _CURV_U0, sp/jnp.tan(sp),
+                     jnp.where(u < -_CURV_U0, sm/jnp.tanh(sm), series))
+
+
+def _curv_g_diff(a, b):
+    """
+    Cancellation-safe g(a) - g(b).
+
+    Needed for the hyperspherical Bessel seed Phi_1 ~ (cot_K(chi) - q cot(q chi)),
+    where both arguments are small and the direct difference loses all precision.
+    Uses the factored series (a-b)*[-1/3 - (a+b)/45 - ...] when both |a|, |b|
+    are below the switch point, the direct difference otherwise.
+
+    Parameters
+    ----------
+    a, b : array
+        Arguments of g (a = K chi^2, b = q^2 chi^2 at the call site).
+
+    Returns
+    -------
+    array
+        g(a) - g(b).
+    """
+    both_small = jnp.maximum(jnp.abs(a), jnp.abs(b)) < _CURV_U0
+    series = (a - b) * (-1./3. - (a + b)/45. - 2.*(a**2 + a*b + b**2)/945.
+                        - (a**3 + a**2*b + a*b**2 + b**3)/4725.)
+    return jnp.where(both_small, series, _curv_g(a) - _curv_g(b))
+
+
+def sin_K(chi, K):
+    """
+    Curved-space comoving angular diameter distance S_K(chi).
+
+    sin(sqrt(K) chi)/sqrt(K) for K > 0, sinh(sqrt(-K) chi)/sqrt(-K) for K < 0,
+    chi for K = 0 — evaluated branch-free as chi * f(K chi^2).
+
+    Parameters
+    ----------
+    chi : array
+        Comoving radial distance, Mpc.
+    K : array
+        Curvature constant, Mpc^-2.
+
+    Returns
+    -------
+    array
+        S_K(chi), Mpc.
+    """
+    return chi * _curv_f(K * chi**2)
+
+
+def cot_K(chi, K):
+    """
+    Generalized cotangent cot_K(chi) = sqrt(K) cot(sqrt(K) chi) (K > 0),
+    sqrt(-K) coth(sqrt(-K) chi) (K < 0), 1/chi (K = 0).
+
+    Evaluated branch-free as g(K chi^2)/chi; diverges as 1/chi at chi -> 0
+    (correct limit — callers must keep chi > 0).
+
+    Parameters
+    ----------
+    chi : array
+        Comoving radial distance, Mpc.
+    K : array
+        Curvature constant, Mpc^-2.
+
+    Returns
+    -------
+    array
+        cot_K(chi), Mpc^-1.
+    """
+    return _curv_g(K * chi**2) / chi
