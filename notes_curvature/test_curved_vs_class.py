@@ -106,6 +106,17 @@ for nm in ("TT", "EE", "TE"):
         if lo > 2:
             worst = max(worst, mx)
 
+# Clpp (Limber) vs CLASS, where lensing is on
+if lensing and "pp" in cl:
+    import jax.numpy as jnp
+    clpp_abc = np.asarray(model.SS.lensing_Cl(jnp.asarray(ells, dtype=jnp.float64),
+                                              output.PT, output.BG, full_params))
+    clpp_cla = cl["pp"][ellmin:]
+    relpp = np.abs(clpp_abc - clpp_cla)/np.abs(clpp_cla)
+    for lo, hi in ((2, 29), (30, 800), (801, 2500)):
+        band = (ells >= lo) & (ells <= hi)
+        print(f"  PP rel diff, ell {lo:4d}-{hi:4d}: max {relpp[band].max():.3e} (at l={ells[band][relpp[band].argmax()]})")
+
 # P(k) — compare only at k physical for this geometry (k > sqrt(|K|) open)
 ABC_Pk = np.asarray(output.Pk)
 ABC_k = np.asarray(output.k)

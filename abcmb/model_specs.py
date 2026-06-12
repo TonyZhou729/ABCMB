@@ -145,10 +145,24 @@ def get_k_axis_perturbations(specs):
     # Static curvature reference for the grid (CLASS perturb_get_k_list):
     # closed -> first physical scalar mode is nu=3, k = sqrt(8K) (epsilon
     # below, so the traced omega_k can sit exactly at the reference); open ->
-    # k_min just above sqrt(|K|) (q -> 0 limit).
+    # k_min just above sqrt(|K|) (q -> 0 limit). For closed universes the
+    # angular diameter distance shrinks (angular_rescaling = S_K(chi*)/chi*
+    # < 1), so reaching the same l_max needs k_max larger by 1/rescaling
+    # (CLASS divides k_max by angular_rescaling).
     K_ref = -specs["omega_k_ref"] * (cnst.H0_over_h/cnst.c_Mpc_over_s)**2
+    specs["K_ref"] = K_ref
+    chi_star_fid = tau0_fid - specs["tau_rec_fid"]
+    u = K_ref * chi_star_fid**2
+    if u > 0.:
+        rescaling_ref = np.sin(np.sqrt(u))/np.sqrt(u)
+    elif u < 0.:
+        rescaling_ref = np.sinh(np.sqrt(-u))/np.sqrt(-u)
+    else:
+        rescaling_ref = 1.
+    specs["angular_rescaling_ref"] = rescaling_ref
     if K_ref > 0.:
         k_min = np.sqrt((8.-1.e-4)*K_ref)
+        k_max = k_max / rescaling_ref
     elif K_ref < 0.:
         k_min = np.sqrt(-K_ref + k_min**2)
 
@@ -214,5 +228,28 @@ def get_k_axis_transfer(specs):
         i += 1
         ks[i] = k
 
-    ks = jnp.array(ks[np.where(ks>0)])
-    return ks
+    ks = ks[np.where(ks>0)]
+
+    # Closed universes have a discrete mode spectrum nu = sqrt(k^2+K)/sqrt(K)
+    # = 3, 4, 5, ... For the reference geometry, resample the low end of the
+    # grid to the integer-nu lattice (Delta nu = 1) up to where the flat-built
+    # step exceeds sqrt(K_ref), then snap the remaining points to integers
+    # (CLASS transfer_get_q_list). This both samples the sharp ell ~ nu onset
+    # of each C_l and makes the k-trapezoid the exact discrete-nu sum at low
+    # nu, where continuum integration is least accurate.
+    K_ref = specs.get("K_ref", 0.)
+    if K_ref > 0.:
+        sqrtK = np.sqrt(K_ref)
+        nu = np.sqrt(ks**2 + K_ref)/sqrtK
+        # Delta nu = 1 lattice up to nu_dense_top (covers the sharp ell ~ nu
+        # onset of every C_l with ell <~ nu_dense_top and makes the
+        # k-trapezoid the exact discrete-nu sum there; CLASS's
+        # q_logstep_trapzd regime keeps Delta nu = 1 to nu ~ 150), then the
+        # flat-built grid snapped to distinct integers.
+        nu_dense_top = 512.
+        dense = np.arange(3., nu_dense_top + 1.)
+        tail = np.unique(np.floor(nu[nu > nu_dense_top + 1.]))
+        nu_grid = np.concatenate((dense, tail))
+        ks = np.sqrt(nu_grid**2*K_ref - K_ref)
+
+    return jnp.array(ks)
