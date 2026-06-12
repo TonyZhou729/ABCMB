@@ -16,6 +16,7 @@ sys.path.insert(0, file_dir + "/..")
 
 Omega_k = float(sys.argv[1]) if len(sys.argv) > 1 else 0.01
 lensing = "nolensing" not in sys.argv[2:]
+flat_path = "flat" in sys.argv[2:]   # control: use the table path (requires Omega_k = 0)
 
 from classy import Class
 import jax
@@ -36,12 +37,12 @@ params = {
     'omega_k': omega_k,
 }
 
-print(f"=== Omega_k = {Omega_k:+.4f} (omega_k = {omega_k:+.6f}), lensing={lensing} ===")
+print(f"=== Omega_k = {Omega_k:+.4f} (omega_k = {omega_k:+.6f}), lensing={lensing}, path={'flat' if flat_path else 'curved'} ===")
 
 model = Model(
     l_max=ellmax,
     lensing=lensing,
-    curvature=True,
+    curvature=not flat_path,
     omega_k_ref=omega_k,
     l_max_g=12, l_max_pol_g=10,
 )
