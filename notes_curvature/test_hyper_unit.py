@@ -29,6 +29,15 @@ import mpmath as mp
 from abcmb import ABCMBTools as tools
 import abcmb.spectrum as spectrum
 
+
+def xmin_closed_form(ls):
+    """Production evanescent threshold (CLASS get_xmin_from_approx), in the
+    flat-argument variable; mirrors SpectrumSolver.__init__."""
+    lph = np.asarray(ls, dtype=np.float64) + 0.5
+    lhs = np.log(2.e-10*lph)/lph
+    alpha = -2.*lhs/5.*(1. + 2.*np.cosh(np.arccosh(1. + 375./(16.*lhs*lhs))/3.))
+    return lph/np.cosh(alpha)
+
 mp.mp.dps = 60
 FAILED = []
 
@@ -167,8 +176,7 @@ for q, chi, lmax in [(0.01, 5000., 80), (0.1, 13000., 1600), (0.25, 13800., 2999
     x = q*chi
     ls = np.arange(lmax+1)
     ref = spherical_jn(ls, x)
-    ltab = np.asarray(spectrum.bessel_l_tab)
-    xmin = np.interp(ls, ltab, np.asarray(spectrum.xphi0_tab[0, :]))
+    xmin = xmin_closed_form(ls)
     scale = np.abs(ref).max()
     relerr = np.abs(got - ref)/scale
     osc = x >= 1.02*np.sqrt(ls*(ls+1.)) + 2.
@@ -191,8 +199,7 @@ for name, omega_k in [("open Ok=+0.05", 0.05*0.6762**2), ("closed Ok=-0.05", -0.
         ref = phi_ref(K, q, chi, lmax)
         x_eff = q*float(sinK_ref(chi, K))
         ls = np.arange(lmax+1)
-        ltab = np.asarray(spectrum.bessel_l_tab)
-        xmin = np.interp(ls, ltab, np.asarray(spectrum.xphi0_tab[0, :]))
+        xmin = xmin_closed_form(ls)
         reff = np.array([float(r) for r in ref])
         scale = np.abs(reff).max()
         relerr = np.abs(got - reff)/scale
