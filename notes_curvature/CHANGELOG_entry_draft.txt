@@ -71,3 +71,18 @@ Validation findings (running log):
   (c) closed transfer grid: k_max/angular_rescaling + integer-nu lattice
       (nu<=512 at Delta nu=1);
   (d) open transfer grid walked in q (low-q sampling, EE l~3).
+
+Round-3 results (junction-ramp fix in place; lensed unless noted; l=2 excluded):
+- Omega_k=+0.01: TT 2.0e-3, EE 2.9e-3, TE 1.7e-3
+- Omega_k=-0.01: TT 3.3e-3, EE 3.4e-3, TE 2.1e-3
+- Omega_k=+0.05 (unlensed): TT 3.3e-3, EE 3.5e-3 (l=3), TE 2.3e-3
+- Omega_k=-0.05 (unlensed): TT 5.2e-3, EE 5.8e-3, TE 4.3e-3
+- Pk: <= 1.9e-3 everywhere.
+- K=0 flat-vs-curved path (GPU, lensed): TT <= 5.7e-4, TE <= 7.8e-4,
+  EE <= 2.3e-3 (sparse-ell spline of the flat path vs exact-every-ell).
+  Curved timings 1xA100 lensed: warm 10.58 s vs flat 10.35 s.
+- Closed-grid saga: integer-nu lattice (Delta nu = 1 to nu=512) fixed the
+  l~75 discreteness bump but its abrupt step-jump at nu=512 put a trapezoid
+  boundary artifact at l~140-470 (up to 2.4e-2); fixed by ramping the step
+  over 250 points (CLASS q_numstep_transition). closed_integer_nu spec
+  (default True) keeps the lattice switchable.
