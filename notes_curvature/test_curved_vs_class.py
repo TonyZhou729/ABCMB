@@ -84,7 +84,8 @@ if hiprec:
         "hyper_sampling_curved_low_nu": 14.,
         "hyper_sampling_curved_high_nu": 6.,
         "hyper_phi_min_abs": 1.e-12,
-        "hyper_flat_approximation_nu": 8000.,
+        # (hyper_flat_approximation_nu left at default: raising it breaks
+        # CLASS's closed-universe harmonic spline indexing)
         "tol_perturbations_integration": 1.e-6,
         "perturbations_sampling_stepsize": 0.05,
     })
