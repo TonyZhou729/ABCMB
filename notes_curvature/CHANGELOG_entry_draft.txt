@@ -86,3 +86,15 @@ Round-3 results (junction-ramp fix in place; lensed unless noted; l=2 excluded):
   boundary artifact at l~140-470 (up to 2.4e-2); fixed by ramping the step
   over 250 points (CLASS q_numstep_transition). closed_integer_nu spec
   (default True) keeps the lattice switchable.
+
+Final discriminator + reverse-AD (2026-06-12 evening):
+- vs HIGH-PRECISION CLASS (q_linstep 0.11, l_linstep 10, denser hyper
+  sampling), unlensed: Omega_k=+0.05 collapses to TT <= 1.8e-3,
+  EE <= 2.5e-3, TE <= 2.4e-3 (l=2: ~1e-3!) — the default-precision
+  residuals were CLASS's error, not ABCMB's. [closed -0.05/-0.01 hiprec:
+  FILL]
+- Reverse-AD through the curved path (Omega_k=0.01, lensing=False,
+  RecursiveCheckpointAdjoint, sum(ClTT^2) loss): ALL grads finite incl.
+  dC/domega_k; warm grad 88.5 s, peak 10.65 GiB on 1xA100.
+- CLASS hiprec note: hyper_flat_approximation_nu cannot be raised for
+  closed models (CLASS harmonic spline-index crash).
