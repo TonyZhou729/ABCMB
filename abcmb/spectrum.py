@@ -434,12 +434,16 @@ class SpectrumSolver(eqx.Module):
         integrand = vmap(integrand_func)(lna_axis)
         return coeff*jnp.trapezoid(integrand, lna_axis, axis=0)
 
-    def lensed_Cls(self, ells, ClTT_unlensed, ClTE_unlensed, ClEE_unlensed, PT, BG, params):
+    def lensed_Cls(self, ells, ClTT_unlensed, ClTE_unlensed, ClEE_unlensed, ClBB_unlensed, PT, BG, params):
         """
         Compute lensed CMB power spectra.
 
         Applies gravitational lensing corrections to unlensed temperature
         and polarization power spectra using Wigner rotation matrices.
+        Lensing mixes E and B: the xi_+ correlation function is built from
+        (EE+BB) and xi_- from (EE-BB), and the lensed EE/BB are recovered
+        as the sum/difference of their quadratures (CLASS lensing.c,
+        accurate_lensing=1 path).
 
         Parameters:
         -----------
@@ -451,6 +455,9 @@ class SpectrumSolver(eqx.Module):
             Unlensed temperature-E-mode cross spectrum
         ClEE_unlensed : array
             Unlensed E-mode polarization power spectrum
+        ClBB_unlensed : array
+            Unlensed B-mode polarization power spectrum (tensor
+            contribution; zeros for a scalar-only run)
         PT : perturbations.PerturbationTable
             Perturbation evolution table
         BG : background.Background
@@ -461,7 +468,7 @@ class SpectrumSolver(eqx.Module):
         Returns:
         --------
         tuple
-            (ClTT, ClTE, ClEE) lensed power spectra
+            (ClTT, ClTE, ClEE, ClBB) lensed power spectra
         """
         # CLASS samples angle uniformly
         # 500 points is enough for lmax < 4000
@@ -529,22 +536,22 @@ class SpectrumSolver(eqx.Module):
         )
 
         ksip = 1./4./jnp.pi * jnp.sum(
-            (2.*ells+1)*ClEE_unlensed * (
+            (2.*ells+1)*(ClEE_unlensed+ClBB_unlensed) * (
                 X022**2 * d22 \
                 + 2*Cgl2*X132*X121*d31 \
                 + Cgl2**2 * (X022_prime**2*d22 + X242*X220*d40) \
                 #- d22
-            ), 
+            ),
             axis=1
         )
 
         ksim = 1./4./jnp.pi * jnp.sum(
-            (2.*ells+1)*ClEE_unlensed * (
+            (2.*ells+1)*(ClEE_unlensed-ClBB_unlensed) * (
                 X022**2 * d2m2 \
                 + Cgl2*(X121**2*d1m1 + X132**2*d3m3) \
                 + 1./2.*Cgl2**2 * (2*X022_prime**2*d2m2 + X220**2*d00 + X242**2*d4m4) \
                 #- d2m2
-            ), 
+            ),
             axis=1
         )
 
@@ -568,10 +575,14 @@ class SpectrumSolver(eqx.Module):
             (ksip[:, None]*d22 + ksim[:, None]*d2m2)*w,
             axis=0
         )
+        ClBB = 1./2. * 2*jnp.pi * jnp.sum(
+            (ksip[:, None]*d22 - ksim[:, None]*d2m2)*w,
+            axis=0
+        )
 
-        return (ClTT, ClTE, ClEE)
+        return (ClTT, ClTE, ClEE, ClBB)
 
-    def get_Cl(self, PT, BG, params):
+    def get_Cl(self, PT, BG, params, tensor_cls=None):
         """
         Compute angular power spectra for multiple multipoles.
 
@@ -583,14 +594,19 @@ class SpectrumSolver(eqx.Module):
             Background cosmology module
         params : dict
             Dictionary of input and derived parameters
+        tensor_cls : tuple, optional
+            Unlensed tensor (ClTT, ClTE, ClEE, ClBB) on the lensing_ells
+            grid (from tensors.TensorSpectrumSolver.get_Cl). Added to the
+            scalar unlensed spectra before lensing, as in CLASS.
 
         Returns:
         --------
         tuple
-            (ClTT, ClTE, ClEE) angular power spectra
+            (ClTT, ClTE, ClEE, ClBB) angular power spectra. ClBB is zero
+            unless tensors and/or lensing are enabled.
         """
 
-            
+
         tt_raw, te_raw, ee_raw = vmap(self.Cl_one_ell, in_axes=(0, None, None, None))(self.lensing_ells_indices, PT, BG, params)
 
 
@@ -600,12 +616,22 @@ class SpectrumSolver(eqx.Module):
         te_unlensed = CubicSpline(lensing_ells, te_raw, check=False)(self.lensing_ells)
         ee_unlensed = CubicSpline(lensing_ells, ee_raw, check=False)(self.lensing_ells)
 
+        # Tensor contributions enter the unlensed totals (static branch,
+        # fixed at Model construction).
+        if tensor_cls is not None:
+            tt_unlensed = tt_unlensed + tensor_cls[0]
+            te_unlensed = te_unlensed + tensor_cls[1]
+            ee_unlensed = ee_unlensed + tensor_cls[2]
+            bb_unlensed = tensor_cls[3]
+        else:
+            bb_unlensed = jnp.zeros_like(ee_unlensed)
+
         def get_lensed_Cls():
-            tt_lensed, te_lensed, ee_lensed = self.lensed_Cls(self.lensing_ells, tt_unlensed, te_unlensed, ee_unlensed, PT, BG, params)
-            return (tt_lensed[self.ells-2], te_lensed[self.ells-2], ee_lensed[self.ells-2])
+            tt_lensed, te_lensed, ee_lensed, bb_lensed = self.lensed_Cls(self.lensing_ells, tt_unlensed, te_unlensed, ee_unlensed, bb_unlensed, PT, BG, params)
+            return (tt_lensed[self.ells-2], te_lensed[self.ells-2], ee_lensed[self.ells-2], bb_lensed[self.ells-2])
 
         def get_unlensed_Cls():
-            return (tt_unlensed[self.ells-2], te_unlensed[self.ells-2], ee_unlensed[self.ells-2])
+            return (tt_unlensed[self.ells-2], te_unlensed[self.ells-2], ee_unlensed[self.ells-2], bb_unlensed[self.ells-2])
 
         return lax.cond(
             self.lensing,

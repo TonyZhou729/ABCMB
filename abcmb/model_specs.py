@@ -33,6 +33,24 @@ def load_specs(input_specs):
     specs["l_max_massless_nu"]    = input_specs.get("l_max_massless_nu", 17)
     specs["l_max_massive_nu"]  = input_specs.get("l_max_massive_nu", 17)
 
+    ### Tensor modes (primordial gravitational waves -> BB) ###
+    # Defaults match CLASS: l_tensor_max, l_max_g_ten, l_max_pol_g_ten, and
+    # the tensor neutrino hierarchy cutoff (CLASS's l_max_ur).
+    specs["tensors"]         = input_specs.get("tensors", False)
+    specs["l_tensor_max"]    = input_specs.get("l_tensor_max", 500)
+    specs["l_max_g_ten"]     = input_specs.get("l_max_g_ten", 5)
+    specs["l_max_pol_g_ten"] = input_specs.get("l_max_pol_g_ten", 5)
+    specs["l_max_ur_ten"]    = input_specs.get("l_max_ur_ten", 17)
+    # Tensor solver settings. Tolerances are tighter than the scalar PE
+    # large-k defaults: rtol 1e-4 biases tensor BB low by ~0.7% at l~450
+    # (solver amplitude error accumulating with k). rtol 1e-5 / atol 1e-9
+    # reproduces the fully converged answer to ~1e-4 at all ell for ~6 s
+    # on A100; tightening to 1e-6/1e-10 buys 6e-7 for ~4 s more.
+    specs["Nlna_ten"]     = input_specs.get("Nlna_ten", 500)
+    specs["rtol_ten"]     = input_specs.get("rtol_ten", 1.e-5)
+    specs["atol_ten"]     = input_specs.get("atol_ten", 1.e-9)
+    specs["max_steps_ten"] = input_specs.get("max_steps_ten", 4096)
+
     ### Perturbation k-grid resolution ###
     specs["k_step_sub"]             = input_specs.get("k_step_sub", 5.e-2)
     specs["k_step_super"]           = input_specs.get("k_step_super", 2.e-3)

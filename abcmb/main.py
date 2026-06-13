@@ -12,7 +12,7 @@ import os
 file_dir = os.path.dirname(__file__)
 
 from .hyrex import hyrex
-from . import background, perturbations, spectrum, model_specs
+from . import background, perturbations, spectrum, model_specs, tensors
 from . import constants as cnst
 from .ABCMBTools import bilinear_interp
 from .background import BackgroundPreRecomb, Background, ReionizationModelFromZ, ReionizationModelFromTau
@@ -71,6 +71,8 @@ class Model(eqx.Module):
 
     PE : perturbations.PerturbationEvolver
     SS : spectrum.SpectrumSolver
+    TPE : tensors.TensorPerturbationEvolver
+    TSS : tensors.TensorSpectrumSolver
     RecModel : hyrex.recomb_model
     specs : dict
 
@@ -144,6 +146,30 @@ class Model(eqx.Module):
             scale_dop=specs["scale_dop"],
             scale_pol=specs["scale_pol"]
         )
+
+        # Initialize tensor (primordial GW -> BB) solvers. The tensor k
+        # grids are the scalar grids truncated at the tensor k_max, as in
+        # CLASS (same stepping formula, smaller cutoff).
+        if specs["tensors"]:
+            k_axis_tensor_pert, k_axis_tensor_transfer = tensors.get_tensor_k_axes(
+                specs, k_axis_perturbations, k_axis_transfer)
+            self.TPE = tensors.TensorPerturbationEvolver(
+                self.species_list,
+                self.species_dict,
+                k_axis_tensor_pert,
+                specs,
+                adjoint=adjoint,
+            )
+            self.TSS = tensors.TensorSpectrumSolver(
+                specs["l_min"],
+                specs["l_tensor_max"],
+                self.SS.lensing_ells,
+                k_axis_tensor_transfer,
+                k_pivot=specs["k_pivot"],
+            )
+        else:
+            self.TPE = None
+            self.TSS = None
 
         # Initialize recombination model.
         self.RecModel = hyrex.recomb_model(adjoint=adjoint) # DO NOT CHANGE z1 FROM 0
@@ -285,8 +311,16 @@ class Model(eqx.Module):
         # Compute background and linear perturbations
         PT, BG = self.get_PTBG(params, pre_BG, recomb_output)
 
+        # Tensor modes: evolve the GW + tensor hierarchies and compute the
+        # unlensed tensor spectra (static branch, fixed at construction).
+        if self.TPE is not None:
+            TPT = self.TPE.full_evolution((BG, params))
+            tensor_cls = self.TSS.get_Cl(TPT, BG, params)
+        else:
+            tensor_cls = None
+
         # Compute CMB power spectra
-        Cls = self.SS.get_Cl(PT, BG, params)
+        Cls = self.SS.get_Cl(PT, BG, params, tensor_cls=tensor_cls)
         l = self.SS.ells
 
         # Compute linear matter power spectrum
@@ -295,7 +329,7 @@ class Model(eqx.Module):
 
         # Package
         output = Output(
-            Cls[0], Cls[1], Cls[2], Pk,
+            Cls[0], Cls[1], Cls[2], Cls[3], Pk,
             l, k, BG, PT, params
         )
 
@@ -378,6 +412,17 @@ class Model(eqx.Module):
         params['A_s']           = jnp.array(params.get('A_s', 2.1e-9))
         params['n_s']           = jnp.array(params.get('n_s', 0.9649))
         params['TCMB0']         = jnp.array(params.get('TCMB0', 2.34865418e-4))
+
+        # Tensor modes: tensor-to-scalar ratio r and tensor tilt n_t. The
+        # n_t default is CLASS's self-consistency condition ("scc"). Only
+        # set when tensors are enabled so default runs keep an unchanged
+        # parameter dict.
+        if self.specs["tensors"]:
+            params['r'] = jnp.array(params.get('r', 1.))
+            if params.get('n_t') is None:
+                params['n_t'] = -params['r']/8.*(2.-params['r']/8.-params['n_s'])
+            else:
+                params['n_t'] = jnp.array(params['n_t'])
 
         # Reionization
         if self.specs["input_tau_reion"]:
@@ -602,7 +647,8 @@ class Model(eqx.Module):
             'tau_reion', 'z_reion', 'Delta_z_reion', 'z_reion_He', 'Delta_z_reion_He', 'exp_reion',
             'omega_Lambda', 'T_nu_massive', 'N_nu_massive', 'm_nu_massive',
             'N_nu_massless', 'Neff', 'T_nu_massless', 'YHe',
-            'omega_m', 'R_b', 'omega_r', 'R_nu', 'om'
+            'omega_m', 'R_b', 'omega_r', 'R_nu', 'om',
+            'r', 'n_t'
         }
         
         for key, value in param_in.items():
@@ -622,7 +668,10 @@ class Output(eqx.Module):
     ClTE : jnp.array
         Temperature-polarization power spectrum
     ClEE : jnp.array
-        Polarization-polarization power spectrum
+        E-mode polarization power spectrum
+    ClBB : jnp.array
+        B-mode polarization power spectrum (tensor + lensing contributions;
+        zeros unless tensors and/or lensing are enabled)
     Pk : jnp.array
         Matter power spectrum
     l : jnp.array
@@ -641,6 +690,7 @@ class Output(eqx.Module):
     ClTT : jnp.array
     ClTE : jnp.array
     ClEE : jnp.array
+    ClBB : jnp.array
     Pk   : jnp.array
 
     l  : jnp.array
