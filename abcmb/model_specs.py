@@ -262,17 +262,38 @@ def get_k_axis_transfer(specs):
     # nu, where continuum integration is least accurate.
     K_ref = specs.get("K_ref", 0.)
     if K_ref > 0. and specs.get("closed_integer_nu", True):
+        # Closed universes: rebuild the grid on the integer-nu lattice.
+        # Delta nu = 1 up to nu_dense_top (samples the sharp ell ~ nu onset of
+        # every C_l with ell <~ nu_dense_top and makes the k-trapezoid the
+        # exact discrete-mode sum there), then ramp the step linearly over
+        # n_transition points to the flat-built formula step (in integer
+        # multiples of sqrt K). The ramp matters: an abrupt sampling-density
+        # jump puts a trapezoid boundary artifact (non-telescoping
+        # Euler-Maclaurin endpoint terms of the oscillatory integrand) right
+        # in the support of C_l with ell ~ nu_junction; CLASS smooths the
+        # same junction over q_numstep_transition = 250 points.
         sqrtK = np.sqrt(K_ref)
-        nu = np.sqrt(ks**2 + K_ref)/sqrtK
-        # Delta nu = 1 lattice up to nu_dense_top (covers the sharp ell ~ nu
-        # onset of every C_l with ell <~ nu_dense_top and makes the
-        # k-trapezoid the exact discrete-nu sum there; CLASS's
-        # q_logstep_trapzd regime keeps Delta nu = 1 to nu ~ 150), then the
-        # flat-built grid snapped to distinct integers.
         nu_dense_top = 512.
-        dense = np.arange(3., nu_dense_top + 1.)
-        tail = np.unique(np.floor(nu[nu > nu_dense_top + 1.]))
-        nu_grid = np.concatenate((dense, tail))
+        n_transition = 250.
+        nu = 3.
+        nus = [nu]
+        i_since = 0
+        while True:
+            k_cur = np.sqrt(max(nu**2*K_ref - K_ref, 0.))
+            if k_cur >= specs["k_max_cmb"]:
+                break
+            step_k = k_period * specs["k_transfer_linstep"] * max(k_cur, sqrtK) \
+                / (max(k_cur, sqrtK) + specs["k_transfer_linstep"]/specs["k_transfer_logstep"])
+            dnu_f = max(1., np.round(step_k/sqrtK))
+            if nu < nu_dense_top:
+                dnu = 1.
+            else:
+                t = min(1., i_since/n_transition)
+                i_since += 1
+                dnu = max(1., np.round((1.-t)*1. + t*dnu_f))
+            nu += dnu
+            nus.append(nu)
+        nu_grid = np.array(nus)
         ks = np.sqrt(nu_grid**2*K_ref - K_ref)
 
     return jnp.array(ks)
