@@ -89,10 +89,12 @@ Round-3 results (junction-ramp fix in place; lensed unless noted; l=2 excluded):
 
 Final discriminator + reverse-AD (2026-06-12 evening):
 - vs HIGH-PRECISION CLASS (q_linstep 0.11, l_linstep 10, denser hyper
-  sampling), unlensed: Omega_k=+0.05 collapses to TT <= 1.8e-3,
-  EE <= 2.5e-3, TE <= 2.4e-3 (l=2: ~1e-3!) — the default-precision
-  residuals were CLASS's error, not ABCMB's. [closed -0.05/-0.01 hiprec:
-  FILL]
+  sampling; l=2 excluded): Omega_k=+0.05 unlensed collapses to TT <= 1.8e-3,
+  EE <= 2.5e-3, TE <= 2.4e-3 (even l=2 ~1e-3) — the default-precision
+  residuals were CLASS's error, not ABCMB's. Closed: -0.01 lensed worst
+  3.2e-3 (EE l=214); -0.05 unlensed worst 5.1e-3 (TT l=84) — the l~80
+  band is the one identified residual for strongly closed models (high-l
+  all <= 2.5-3.4e-3 vs hiprec).
 - Reverse-AD through the curved path (Omega_k=0.01, lensing=False,
   RecursiveCheckpointAdjoint, sum(ClTT^2) loss): ALL grads finite incl.
   dC/domega_k; warm grad 88.5 s, peak 10.65 GiB on 1xA100.
