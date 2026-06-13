@@ -22,6 +22,9 @@ def load_specs(input_specs):
     # low-q sampling. The traced params['omega_k'] carries the actual value.
     specs["curvature"]   = input_specs.get("curvature", False)
     specs["omega_k_ref"] = input_specs.get("omega_k_ref", 0.)
+    # Closed universes: resample the transfer grid's low end onto the integer
+    # Delta nu = 1 lattice (see get_k_axis_transfer).
+    specs["closed_integer_nu"] = input_specs.get("closed_integer_nu", True)
 
     ### INPUT RELATED specs PARAMS ###
     # For reionization, input tau_reion the optical depth, or z_reion the hydrogen redshift?
@@ -258,7 +261,7 @@ def get_k_axis_transfer(specs):
     # of each C_l and makes the k-trapezoid the exact discrete-nu sum at low
     # nu, where continuum integration is least accurate.
     K_ref = specs.get("K_ref", 0.)
-    if K_ref > 0.:
+    if K_ref > 0. and specs.get("closed_integer_nu", True):
         sqrtK = np.sqrt(K_ref)
         nu = np.sqrt(ks**2 + K_ref)/sqrtK
         # Delta nu = 1 lattice up to nu_dense_top (covers the sharp ell ~ nu
