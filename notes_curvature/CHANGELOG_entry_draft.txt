@@ -49,3 +49,25 @@ Deferred / known limits:
 - Validity domain sqrt(|K|) tau0 < pi/2 (covers |Omega_k| <~ 0.1).
 - Reverse-AD through the curved path is designed-for (chunked checkpointed
   scan) but not yet timed/validated.
+
+Validation findings (running log):
+- Unit test: recurrence machine-precision in oscillatory region (<=4e-14
+  rel-to-peak, flat/open/closed); transition-region noise ~1e-7 (budget 1e-5).
+- K=0 path consistency (GPU, unlensed): TT <= 5.9e-4, TE <= 1.0e-3,
+  EE <= 2.4e-3 (the EE diff is the sparse-ell spline of the FLAT path vs
+  exact-every-ell curved; see baseline below). Timings 1xA100: flat warm
+  9.66 s, curved warm 9.86 s (curved path costs ~nothing extra).
+- BASELINE (Omega_k=0 vs CLASS, lensed): flat path worst 2.06e-3 (EE),
+  curved path worst 2.53e-3 (EE) -> ABCMB's intrinsic agreement with CLASS
+  is ~2e-3 in EE; the 2-permille target sits AT the existing floor.
+  (Clpp Limber baseline: 9.7e-2 at l=2, ~4e-3 mid-l, 1.7e-2 at l=2500 —
+  preexisting flat Limber quality, identical in both paths.)
+- Omega_k=+/-0.01 (lensed): TT <= 2.2e-3, TE <= 1.9e-3, EE <= 2.9e-3 —
+  essentially at the flat baseline.
+- Bugs found & fixed by the control loop:
+  (a) evanescent mask thresholds: flat tables start at x=0 for l<=17 ->
+      closed-form CLASS x_min for all l;
+  (b) l=nu FP-noise termination at exact integer nu (1e-6 q^2 threshold);
+  (c) closed transfer grid: k_max/angular_rescaling + integer-nu lattice
+      (nu<=512 at Delta nu=1);
+  (d) open transfer grid walked in q (low-q sampling, EE l~3).
