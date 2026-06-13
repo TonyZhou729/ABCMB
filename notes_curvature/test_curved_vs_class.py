@@ -17,6 +17,7 @@ sys.path.insert(0, file_dir + "/..")
 Omega_k = float(sys.argv[1]) if len(sys.argv) > 1 else 0.01
 lensing = "nolensing" not in sys.argv[2:]
 flat_path = "flat" in sys.argv[2:]   # control: use the table path (requires Omega_k = 0)
+hiprec = "hiprec" in sys.argv[2:]    # crank CLASS precision (discriminates whose error)
 
 from classy import Class
 import jax
@@ -73,6 +74,21 @@ CLASS_params = {
     "l_max_pol_g": 10,
     "l_max_ur": 17,
 }
+
+if hiprec:
+    CLASS_params.update({
+        "q_linstep": 0.11,
+        "l_linstep": 10,
+        "l_logstep": 1.026,
+        "hyper_sampling_flat": 12.,
+        "hyper_sampling_curved_low_nu": 14.,
+        "hyper_sampling_curved_high_nu": 6.,
+        "hyper_phi_min_abs": 1.e-12,
+        "hyper_flat_approximation_nu": 8000.,
+        "tol_perturbations_integration": 1.e-6,
+        "perturbations_sampling_stepsize": 0.05,
+    })
+    print("CLASS high-precision settings ON")
 
 t0 = time.time()
 CLASS_Model = Class()
