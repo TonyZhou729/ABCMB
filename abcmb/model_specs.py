@@ -218,6 +218,26 @@ def get_k_axis_transfer(specs):
 
     k_period = 2*jnp.pi/(specs["tau0_fid"] - specs["tau_rec_fid"])
 
+    K_ref = specs.get("K_ref", 0.)
+
+    if K_ref < 0.:
+        # Open universes: the transfer functions oscillate in q (the
+        # hyperspherical wavevector, q^2 = k^2 + K), and the physical
+        # spectrum starts at q -> 0 where k -> sqrt(|K|). Walking the grid
+        # in k under-samples the q -> 0 region (CLASS instead densifies its
+        # low-q log sampling for open models), so walk the same step formula
+        # in q and map to k = sqrt(q^2 - K).
+        q = specs["k_min_tau0"] / specs["tau0_fid"]
+        q_max = np.sqrt(specs["k_max_cmb"]**2 + K_ref)
+        qs = [q]
+        while q < q_max:
+            q = q \
+                + k_period * specs["k_transfer_linstep"] * q \
+                / (q + specs["k_transfer_linstep"]/specs["k_transfer_logstep"])
+            qs.append(q)
+        ks = np.sqrt(np.array(qs)**2 - K_ref)
+        return jnp.array(ks)
+
     k = specs["k_min"]
     ks[0] = k
     i = 0

@@ -959,9 +959,15 @@ class SpectrumSolver(eqx.Module):
         Phi0 = jnp.sinc(qchi/jnp.pi) / tools._curv_f(uK)
         Phi1 = Phi0 * tools._curv_g_diff(uK, qchi**2) / (chi*k_axis)
         s1d  = k_axis
+        # Closed-universe termination threshold: at l+1 = nu the coefficient
+        # q^2 - K(l+1)^2 is analytically zero but numerically O(eps q^2) of
+        # either sign (the integer-nu grid hits this exactly); the smallest
+        # legitimate value is ~2 q^2/nu >> 1e-6 q^2, so a relative threshold
+        # separates the physical modes from the FP noise.
+        term_tol = 1.e-6*q2
         s2d_arg = q2 - 4.*K
         s2d  = jnp.sqrt(jnp.clip(s2d_arg, 1.e-30, None))
-        Phi2 = jnp.where(s2d_arg > 0.,
+        Phi2 = jnp.where(s2d_arg > term_tol,
                          jnp.clip((3.*cotK*Phi1 - s1d*Phi0)/s2d, -1.e10, 1.e10),
                          0.)
 
@@ -1016,7 +1022,7 @@ class SpectrumSolver(eqx.Module):
             # modes at l >= nu.
             slp_arg = q2 - K*(lf+1.)**2
             slpd = jnp.sqrt(jnp.clip(slp_arg, 1.e-30, None))
-            Phi_next = jnp.where(slp_arg > 0.,
+            Phi_next = jnp.where(slp_arg > term_tol,
                                  jnp.clip(((2.*lf+1.)*cotK*Phi_l - sld*Phi_lm1)/slpd, -1.e10, 1.e10),
                                  0.)
             return (Phi_l, Phi_next), jnp.stack((clTT, clTE, clEE))
