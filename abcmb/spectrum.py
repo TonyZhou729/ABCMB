@@ -7,7 +7,6 @@ from diffrax import diffeqsolve, ODETerm, Dopri5, Kvaerno3, Kvaerno5, Tsit5, Sav
 from jax.scipy.interpolate import RegularGridInterpolator
 from functools import partial
 from interpax import CubicSpline
-from scipy.special import spherical_jn
 
 from . import ABCMBTools as tools
 from . import constants as cnst
@@ -17,96 +16,10 @@ file_dir = os.path.dirname(__file__)
 
 config.update("jax_enable_x64", True)
 
-# 2D arrays of tabulated spherical functions over l and x axes.
-bessel_l_tab = jnp.array(np.loadtxt(file_dir+"/bessel_tab/l.txt"), dtype="int")
-xphi0_tab = jnp.array(np.loadtxt(file_dir+"/bessel_tab/xphi0.txt"))
-phi0_tab = jnp.array(np.loadtxt(file_dir+"/bessel_tab/phi0.txt"))
-xphi1_tab = jnp.array(np.loadtxt(file_dir+"/bessel_tab/xphi1.txt"))
-phi1_tab = jnp.array(np.loadtxt(file_dir+"/bessel_tab/phi1.txt"))
-xphi2_tab = jnp.array(np.loadtxt(file_dir+"/bessel_tab/xphi2.txt"))
-phi2_tab = jnp.array(np.loadtxt(file_dir+"/bessel_tab/phi2.txt"))
-
-try:
-    gpus = jax.devices('gpu')
-    bessel_l_tab = jax.device_put(
-        bessel_l_tab, device=gpus[0])
-    xphi0_tab = jax.device_put(
-        xphi0_tab, device=gpus[0])
-    phi0_tab = jax.device_put(
-        phi0_tab, device=gpus[0])
-    xphi1_tab = jax.device_put(
-        xphi1_tab, device=gpus[0])
-    phi1_tab = jax.device_put(
-        phi1_tab, device=gpus[0])
-    xphi2_tab = jax.device_put(
-        xphi2_tab, device=gpus[0])
-    phi2_tab = jax.device_put(
-        phi2_tab, device=gpus[0])
-except: 
-    pass
-
-# large-x asymptotic expansion of spherical bessel functions
-Q = lambda l, x : jnp.sqrt(x**2-l**2) - l*jnp.pi/2 + l * jnp.arcsin(l/x)
-J = lambda l, x : jnp.sqrt(2/jnp.pi/jnp.sqrt(x**2-l**2)) * jnp.cos(Q(l, x) - jnp.pi/4)
-j = lambda l, x : jnp.sqrt(jnp.pi/2/x) * J(l+1/2, x)
-
-def phi0(i, x):
-    """
-    New method for computing phi0 (or just jl)
-    We tabulated the bessel function between its smallest value (~1.e-10) out to the fifth local maximum.
-    This is a different interval for each l, but we kept identical shape so it can be a large 2D array.
-    If the incoming argument is within this interval, we use fast_interp. Otherwise we use the large x expansion above. 
-    """
-    l = bessel_l_tab[i]
-    # use x_safe to avoid double-where gotcha in reverse AD
-    x_safe = jnp.where(x >= xphi0_tab[-1, i], x, xphi0_tab[-1, i])
-    return jnp.where(
-        x < xphi0_tab[0, i],
-        0.,
-        jnp.where(
-            x >= xphi0_tab[-1, i],
-            j(l, x_safe),
-            tools.fast_interp(x, xphi0_tab[:, i].min(), xphi0_tab[:, i].max(), phi0_tab[:, i])
-        )
-    )
-
-def phi1(i, x):
-    """
-    New method for computing phi1, or jl'.
-    We tabulated the bessel function between its smallest value (~1.e-10) out to the fifth local maximum.
-    This is a different interval for each l, but we kept identical shape so it can be a large 2D array.
-    If the incoming argument is within this interval, we use fast_interp. Otherwise we use the large x expansion above. 
-    """
-    l = bessel_l_tab[i]
-    x_safe = jnp.where(x >= xphi1_tab[-1, i], x, xphi1_tab[-1, i])
-    return jnp.where(
-        x < xphi1_tab[0, i],
-        0.,
-        jnp.where(
-            x >= xphi1_tab[-1, i],
-            l/x_safe*j(l, x_safe) - j(l+1, x_safe),
-            tools.fast_interp(x, xphi1_tab[:, i].min(), xphi1_tab[:, i].max(), phi1_tab[:, i])
-        )
-    )
-
-def phi2(i, x):
-    """
-    New method for computing phi2 = (3 jl'' + jl)/2
-    We tabulated the bessel function between its smallest value (~1.e-10) out to the fifth local maximum.
-    This is a different interval for each l, but we kept identical shape so it can be a large 2D array.
-    If the incoming argument is within this interval, we use fast_interp. Otherwise we use the large x expansion above. 
-    """
-    l = bessel_l_tab[i]
-    x_safe = jnp.where(x >= xphi2_tab[-1, i], x, xphi2_tab[-1, i])
-    return jnp.where(
-        x < xphi2_tab[0, i],
-        0.,
-        jnp.where(
-            x >= xphi2_tab[-1, i],
-            ((3*l*(l-1)-2*x_safe**2)*j(l, x_safe)+6*x_safe*j(l+1, x_safe))/2/x_safe**2,
-            tools.fast_interp(x, xphi2_tab[:, i].min(), xphi2_tab[:, i].max(), phi2_tab[:, i])
-        )
-    )
+# Spherical-Bessel radial functions are generated on the fly by the
+# hyperspherical recurrence in SpectrumSolver._Cl_all_ells_curved, which is
+# smooth through K=0 (there it produces exactly j_l(k chi)). There are no
+# tabulated Bessel tables, no large-x asymptotic, and no sparse-l spline.
 
 class SpectrumSolver(eqx.Module):
     """
@@ -119,12 +32,8 @@ class SpectrumSolver(eqx.Module):
     -----------
     ells : jnp.array
         Multipole values for output power spectra
-    ells_indices : jnp.array
-        Indices into bessel_l_tab corresponding to ells
     lensing_ells : jnp.array
         Extended multipole range for lensing calculations
-    lensing_ells_indices : jnp.array
-        Indices into bessel_l_tab for lensing multipoles
     lensing_mus : jnp.array
         Used for lensing, the Gauss-Legendre quadrature roots for the correlation function -> Cl integral.
     lensing_ws : jnp.array
@@ -132,13 +41,15 @@ class SpectrumSolver(eqx.Module):
     lensing : bool
         Whether to include gravitational lensing effects
     curvature : bool
-        Whether to use the curved-geometry (hyperspherical Bessel) line-of-sight
-        path; required whenever omega_k != 0 (static, see _Cl_all_ells_curved)
+        Whether to build the curved-geometry k-grid (required whenever
+        omega_k != 0). The hyperspherical-Bessel line-of-sight recurrence in
+        _Cl_all_ells_curved is used for every cosmology (it reduces to j_l at
+        K=0), so this flag no longer selects the spectrum path (static).
     curv_ells : jnp.array
-        Integer multipoles 2..lensing_ells[-1] emitted by the curved path
+        Integer multipoles 2..lensing_ells[-1] emitted by the recurrence
     curv_xmin : jnp.array
-        Per-ell evanescent cutoff in the variable q*S_K(chi), interpolated from
-        the flat Bessel tables' lower edges
+        Per-ell evanescent cutoff in the variable q*S_K(chi), from CLASS's
+        closed-form estimate (hyperspherical_get_xmin_from_approx)
     k_axis_transfer : jnp.array
         Wavenumber grid for transfer function integration (units: Mpc^{-1})
     k_axis_Pk_output : jnp.array
@@ -159,7 +70,6 @@ class SpectrumSolver(eqx.Module):
     primordial_spectrum : Compute primordial power spectrum
     Pk_lin : Compute linear matter power spectrum
     get_Cl : Compute angular power spectra for multiple ℓ
-    Cl_one_ell : Compute angular power spectrum for single ℓ
     integrand_T0 : Compute SW+ISW temperature source integrand
     integrand_T1 : Compute ISW temperature source integrand
     integrand_T2 : Compute polarization temperature source integrand
@@ -167,10 +77,8 @@ class SpectrumSolver(eqx.Module):
     """
 
     ells         : jnp.array
-    ells_indices : jnp.array
 
     lensing_ells : jnp.array
-    lensing_ells_indices : jnp.array
     lensing_mus  : jnp.array
     lensing_ws   : jnp.array
 
@@ -229,16 +137,14 @@ class SpectrumSolver(eqx.Module):
 
         self.lensing = lensing
 
+        # Every integer multipole is emitted directly by the recurrence in
+        # _Cl_all_ells_curved (see curv_ells below), so there is no sparse-ell
+        # subset to index into and no Bessel table to look ells up in.
         self.ells = jnp.arange(ellmin, ellmax+1)
-        ell_idx_min = jnp.where(bessel_l_tab<=ellmin)[0][-1]
-        ell_idx_max = jnp.where(bessel_l_tab>=ellmax)[0][0]
-        self.ells_indices = jnp.arange(ell_idx_min, ell_idx_max+1)
-        
+
         if self.lensing:
             lensing_ellmax = ellmax+500
-            lensing_ell_idx_max = jnp.where(bessel_l_tab>=lensing_ellmax)[0][0]
             self.lensing_ells = jnp.arange(ellmin, lensing_ellmax+1)
-            self.lensing_ells_indices = jnp.arange(ell_idx_min, lensing_ell_idx_max+1)
             #self.lensing_theta = jnp.linspace(0., jnp.pi/16., lensing_ellmax // 8) # Size recommended by CLASS
             num_mu = lensing_ellmax + 70
             mu, w = tools.gauss_legendre_weights(num_mu)
@@ -246,7 +152,6 @@ class SpectrumSolver(eqx.Module):
             self.lensing_ws = jnp.concatenate((w, jnp.array([0.])))
         else:
             self.lensing_ells = self.ells
-            self.lensing_ells_indices = self.ells_indices
             #self.lensing_theta = jnp.array([0.]) # Not needed
             self.lensing_mus = jnp.array([0.]) # Not needed
             self.lensing_ws  = jnp.array([0.]) # Not needed
@@ -623,7 +528,7 @@ class SpectrumSolver(eqx.Module):
         """
         Assemble the line-of-sight source functions on the (lna, k_transfer) grid.
 
-        Shared by the flat path (Cl_one_ell) and the curved path
+        Consumed by get_Cl through the hyperspherical-Bessel recurrence
         (_Cl_all_ells_curved): the efficient integrated-by-parts sources are
         structurally identical in curved space — curvature enters only through
         the metric quantities already in the PerturbationTable and through the
@@ -737,25 +642,17 @@ class SpectrumSolver(eqx.Module):
 
         sources = self._transfer_sources(PT, BG, params)
 
-        if self.curvature:
-            # Exact hyperspherical-Bessel path: Cl at every integer ell from 2
-            # to lensing_ells[-1]; no sparse-l spline reconstruction needed.
-            # Static shape arithmetic: curv_ells = arange(2, l_top+1) and
-            # lensing_ells = arange(ellmin, l_top+1), so the offset of ellmin
-            # into curv_ells is the length difference.
-            tt_all, te_all, ee_all = self._Cl_all_ells_curved(sources, params)
-            off = self.curv_ells.shape[0] - self.lensing_ells.shape[0]
-            tt_unlensed = tt_all[off:]
-            te_unlensed = te_all[off:]
-            ee_unlensed = ee_all[off:]
-        else:
-            tt_raw, te_raw, ee_raw = vmap(self.Cl_one_ell, in_axes=(0, None, None))(self.lensing_ells_indices, sources, params)
-
-            # Cubic spline for smooth Cl over user requested ells
-            lensing_ells = bessel_l_tab[self.lensing_ells_indices]
-            tt_unlensed = CubicSpline(lensing_ells, tt_raw, check=False)(self.lensing_ells)
-            te_unlensed = CubicSpline(lensing_ells, te_raw, check=False)(self.lensing_ells)
-            ee_unlensed = CubicSpline(lensing_ells, ee_raw, check=False)(self.lensing_ells)
+        # Exact hyperspherical-Bessel recurrence: Cl at every integer ell from 2
+        # to lensing_ells[-1], for every cosmology (it reduces to the flat j_l
+        # at K=0). No sparse-ell spline reconstruction. Static shape arithmetic:
+        # curv_ells = arange(2, l_top+1) and lensing_ells = arange(ellmin,
+        # l_top+1), so the offset of ellmin into curv_ells is the length
+        # difference.
+        tt_all, te_all, ee_all = self._Cl_all_ells_curved(sources, params)
+        off = self.curv_ells.shape[0] - self.lensing_ells.shape[0]
+        tt_unlensed = tt_all[off:]
+        te_unlensed = te_all[off:]
+        ee_unlensed = ee_all[off:]
 
         def get_lensed_Cls():
             tt_lensed, te_lensed, ee_lensed = self.lensed_Cls(self.lensing_ells, tt_unlensed, te_unlensed, ee_unlensed, PT, BG, params)
@@ -768,131 +665,6 @@ class SpectrumSolver(eqx.Module):
             self.lensing,
             get_lensed_Cls,
             get_unlensed_Cls
-        )
-
-    def Cl_one_ell(self, idx, sources, params):
-        """
-        Computes angular power spectrum for single multipole.
-
-        Integrates transfer functions over wavenumber. Flat geometry only —
-        the curved analogue (all ells at once) is _Cl_all_ells_curved.
-
-        Parameters:
-        -----------
-        idx : int
-            Index into bessel_l_tab for multipole ℓ
-        sources : tuple
-            Output of _transfer_sources: source functions on the
-            (lna, k_transfer) grid plus background vectors
-        params : dict
-            Dictionary of input and derived parameters
-
-        Returns:
-        --------
-        tuple
-            (C_ℓ^TT, C_ℓ^TE, C_ℓ^EE) angular power spectra
-        """
-        l = bessel_l_tab[idx]
-        k_axis = self.k_axis_transfer
-
-        ### TRANSFER FUNCTION ###
-        (sourceT0, sourceT1, sourceT2, sourceE), aH_1d, tau, weights, tau0 = sources
-
-        # Here we perform the time integral to get transfer functions from source functions.
-        # previously, this block explicitly built a 2D (Nlna, Nk) tensor for each ell and summed it down to (Nk).
-        # This newer version refactors into four accumulators of shape (Nk).  For each lna, we compute all four
-        # (Nk), multiply by a trapezoid weight, and then add to the accumulator.  The result is identical but
-        # avoids having to construct a full 2D tensor for each ell, instead just constructing the 1D (Nk) tensor
-        # and accumulating down ell.  Clever "traingle term" added by hand is now handled by the trapezoid weights.
-
-        # Pre-slice bessel-table columns so the scan body doesn't re-index
-        # ..._tab[:, idx] every iteration.
-        x0_min = xphi0_tab[0, idx]
-        x0_max = xphi0_tab[-1, idx]
-        x1_min = xphi1_tab[0, idx]
-        x1_max = xphi1_tab[-1, idx]
-        x2_min = xphi2_tab[0, idx]
-        x2_max = xphi2_tab[-1, idx]
-        col_phi0_l = phi0_tab[:, idx]
-        col_phi1_l = phi1_tab[:, idx]
-        col_phi2_l = phi2_tab[:, idx]
-        ell_eps_factor = jnp.sqrt(3./8.*(l+2)*(l+1)*l*(l-1))
-
-        def phi0_local(x):
-            x_safe = jnp.where(x >= x0_max, x, x0_max)
-            return jnp.where(
-                x < x0_min,
-                0.,
-                jnp.where(
-                    x >= x0_max,
-                    j(l, x_safe),
-                    tools.fast_interp(x, x0_min, x0_max, col_phi0_l)
-                )
-            )
-
-        def phi1_local(x):
-            x_safe = jnp.where(x >= x1_max, x, x1_max)
-            return jnp.where(
-                x < x1_min,
-                0.,
-                jnp.where(
-                    x >= x1_max,
-                    l/x_safe*j(l, x_safe) - j(l+1, x_safe),
-                    tools.fast_interp(x, x1_min, x1_max, col_phi1_l)
-                )
-            )
-
-        def phi2_local(x):
-            x_safe = jnp.where(x >= x2_max, x, x2_max)
-            return jnp.where(
-                x < x2_min,
-                0.,
-                jnp.where(
-                    x >= x2_max,
-                    ((3*l*(l-1)-2*x_safe**2)*j(l, x_safe)+6*x_safe*j(l+1, x_safe))/2/x_safe**2,
-                    tools.fast_interp(x, x2_min, x2_max, col_phi2_l)
-                )
-            )
-
-        zero_k = jnp.zeros(k_axis.shape, dtype=sourceT0.dtype)
-
-        def scan_step(carry, xs_l):
-            acc_T0, acc_T1, acc_T2, acc_E = carry
-            sT0_l, sT1_l, sT2_l, sE_l, aH_l, tau_l, w_l = xs_l
-            chi_l = (tau0 - tau_l) * k_axis
-            phi0_l = phi0_local(chi_l)
-            phi1_l = phi1_local(chi_l)
-            phi2_l = phi2_local(chi_l)
-            eps_l  = phi0_l / chi_l**2 * ell_eps_factor
-            inv_aH = 1.0 / aH_l
-            acc_T0 = acc_T0 + w_l * sT0_l * inv_aH * phi0_l
-            acc_T1 = acc_T1 + w_l * sT1_l * inv_aH * phi1_l
-            acc_T2 = acc_T2 + w_l * sT2_l * inv_aH * phi2_l
-            acc_E  = acc_E  + w_l * sE_l  * inv_aH * eps_l
-            return (acc_T0, acc_T1, acc_T2, acc_E), None
-
-        init = (zero_k, zero_k, zero_k, zero_k)
-        xs = (sourceT0, sourceT1, sourceT2, sourceE, aH_1d, tau, weights)
-        # jax.checkpoint on the scan body: during reverse AD, body intermediates
-        # are not saved — the body is re-executed on the backward pass. Kills
-        # the ~21 GiB (Nell, Nlna, Nk) integrand rematerialisation; adds ~2× on
-        # this scan's compute, a small fraction of SS wall time.
-        (transferT0, transferT1, transferT2, transferE), _ = lax.scan(
-            jax.checkpoint(scan_step), init, xs
-        )
-
-        transferT = transferT0 + transferT1 + transferT2
-        ### END OF TRANSFER FUNCTION ###
-
-        # Now we integrate the transfer functions along the line of sight, and return.
-        integrandTT = 4.*jnp.pi * params['A_s'] * (k_axis/self.k_pivot)**(params['n_s']-1.) * transferT**2 / k_axis
-        integrandTE = 4.*jnp.pi * params['A_s'] * (k_axis/self.k_pivot)**(params['n_s']-1.) * transferT*transferE / k_axis
-        integrandEE = 4.*jnp.pi * params['A_s'] * (k_axis/self.k_pivot)**(params['n_s']-1.) * transferE**2 / k_axis
-
-        return (
-            jnp.trapezoid(integrandTT, k_axis),
-            jnp.trapezoid(integrandTE, k_axis),
-            jnp.trapezoid(integrandEE, k_axis)
         )
 
     def _Cl_all_ells_curved(self, sources, params):
