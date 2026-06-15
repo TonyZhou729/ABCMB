@@ -5,12 +5,21 @@
 Tensor (primordial GW) B-modes + lensing E→B mixing are **implemented and
 working** on branch `bmodes` in worktree `/pscratch/sd/c/carag/ABCMB-bmodes`.
 Physics is validated: at shared, interpolation-free ℓ-nodes ABCMB matches a
-**converged** CLASS to **sub-permille**. The scalar regression test still
-passes. One open item remains before the new BB test asserts cleanly at 2‰
-(an ℓ-interpolation artifact in the sparse-node region; see §5).
+**converged** CLASS to **sub-permille** in the recomb tail. The scalar
+regression test still passes.
 
-This is **not committed yet** — `git status` is dirty on the branch. See §6
-for the recommended commit once §5 is resolved (or accepted).
+**UPDATE 2026-06-15:** §5 (the ℓ=477 residual) is **RESOLVED** — it was
+CubicSpline interpolation over the 40-wide node gap, not transfer physics
+(proven; see §5 and `NOTE_lowl_bb_excess.md`). Restructuring the test to
+check nodes separately surfaced a *new* item: a converged ~0.4% low-ℓ
+(ℓ≲100) raw-BB excess vs CLASS, peak 4.2e-3 at ℓ=10. Solver tol,
+interpolation, `tensor_method`, and n_t are all RULED OUT — it is a
+structural ABCMB-vs-CLASS difference in the reion-bump / large-scale tensor
+source, deferred to a follow-up session. Full writeup + remaining candidates
++ ready-made diagnostics in **`NOTE_lowl_bb_excess.md`**.
+
+The B-modes work is committed (`bmodes` @ `1774dad`, pushed). The test +
+diagnostic changes from 2026-06-15 are not yet committed.
 
 ---
 
@@ -123,7 +132,20 @@ Conclusion: ~1% disagreement with **default** CLASS in the BB tail is
 against a high-precision tensor-only CLASS reference
 (`class_tensor_hp_reference()` in the test).
 
-## 5. OPEN ITEM — the 6.9e-3 raw-BB residual at l=477
+## 5. RESOLVED (2026-06-15) — the 6.9e-3 raw-BB residual at l=477
+
+**Resolution:** it was CubicSpline interpolation error over the 40-wide node
+gap (450→490), NOT transfer physics. Proven by the CLASS-internal
+self-interpolation test (`diag_bb_dense_hp.py`, rewritten to default-precision
+CLASS + l_linstep=5 for speed): re-splining CLASS's OWN node values through
+the identical `interpax.CubicSpline` reproduces ~7e-3 at l=477 with zero error
+at the nodes, matching the observed residual. Nodes are already maximally
+dense (`bessel_l_tab`), so tightening needs new Bessel tables; the test now
+holds the interp-limited band to 1% (the scalar floor) and the nodes tight.
+A separate low-ℓ excess was found in the process — see `NOTE_lowl_bb_excess.md`.
+The original investigation notes below are retained for context.
+
+### (original notes)
 
 The remaining failure is at **l=477**, which sits *between* the tensor
 ℓ-nodes 450 and 490 (40 apart). At the nodes themselves agreement is
