@@ -12,18 +12,14 @@ def load_specs(input_specs):
     specs["use_LCDM_species"] = input_specs.get("use_LCDM_species", True)
 
     ### CURVATURE ###
-    # "curvature" switches the spectrum solver from the flat Bessel tables to
-    # the exact hyperspherical-Bessel recurrence (needed whenever omega_k != 0).
-    # "omega_k_ref" is a STATIC reference Omega_k h^2 used only to build the
-    # k-grids (shape-static): closed universes (omega_k_ref < 0) REQUIRE it so
-    # that the grid starts at the first physical mode k = sqrt(8K) (nu = 3);
-    # set it to the most-closed value the run will explore. Open universes work
-    # with the default, but setting it matches CLASS's k_min and improves
-    # low-q sampling. The traced params['omega_k'] carries the actual value.
+    # curvature: use the hyperspherical-Bessel recurrence (required for omega_k != 0).
+    # omega_k_ref: static reference Omega_k h^2 for the (shape-static) k-grids;
+    # closed runs require it (grid starts at nu=3, k=sqrt(8K)), set to the
+    # most-closed value explored. closed_integer_nu: snap the low-q transfer
+    # grid to the integer-nu lattice (see get_k_axis_transfer). params['omega_k']
+    # carries the actual traced value.
     specs["curvature"]   = input_specs.get("curvature", False)
     specs["omega_k_ref"] = input_specs.get("omega_k_ref", 0.)
-    # Closed universes: resample the transfer grid's low end onto the integer
-    # Delta nu = 1 lattice (see get_k_axis_transfer).
     specs["closed_integer_nu"] = input_specs.get("closed_integer_nu", True)
 
     ### INPUT RELATED specs PARAMS ###
@@ -145,27 +141,17 @@ def get_k_axis_perturbations(specs):
     k_min = specs["k_min_tau0"] / tau0_fid
     k_max = specs["k_max_tau0_over_l_max"] / tau0_fid * specs["l_max"]
 
-    # Static curvature reference for the grid (CLASS perturb_get_k_list):
-    # closed -> first physical scalar mode is nu=3, k = sqrt(8K) (epsilon
-    # below, so the traced omega_k can sit exactly at the reference); open ->
-    # k_min just above sqrt(|K|) (q -> 0 limit). For closed universes the
-    # angular diameter distance shrinks (angular_rescaling = S_K(chi*)/chi*
-    # < 1), so reaching the same l_max needs k_max larger by 1/rescaling
-    # (CLASS divides k_max by angular_rescaling).
+    # Static curvature reference for the grid (CLASS perturb_get_k_list): closed
+    # starts at nu=3 (k=sqrt(8K)) and needs k_max/angular_rescaling to reach the
+    # same l_max; open starts at k just above sqrt(|K|) (q -> 0).
     K_ref = -specs["omega_k_ref"] * (cnst.H0_over_h/cnst.c_Mpc_over_s)**2
     specs["K_ref"] = K_ref
-    chi_star_fid = tau0_fid - specs["tau_rec_fid"]
-    u = K_ref * chi_star_fid**2
-    if u > 0.:
-        rescaling_ref = np.sin(np.sqrt(u))/np.sqrt(u)
-    elif u < 0.:
-        rescaling_ref = np.sinh(np.sqrt(-u))/np.sqrt(-u)
-    else:
-        rescaling_ref = 1.
-    specs["angular_rescaling_ref"] = rescaling_ref
     if K_ref > 0.:
+        # closed: divide k_max by the angular rescaling sin(s)/s (s = sqrt(K_ref)
+        # chi_*) so l_max is still reached after the S_K(chi) distance shrink.
+        s = np.sqrt(K_ref) * (tau0_fid - specs["tau_rec_fid"])
         k_min = np.sqrt((8.-1.e-4)*K_ref)
-        k_max = k_max / rescaling_ref
+        k_max = k_max / (np.sin(s)/s)
     elif K_ref < 0.:
         k_min = np.sqrt(-K_ref + k_min**2)
 
@@ -224,12 +210,9 @@ def get_k_axis_transfer(specs):
     K_ref = specs.get("K_ref", 0.)
 
     if K_ref < 0.:
-        # Open universes: the transfer functions oscillate in q (the
-        # hyperspherical wavevector, q^2 = k^2 + K), and the physical
-        # spectrum starts at q -> 0 where k -> sqrt(|K|). Walking the grid
-        # in k under-samples the q -> 0 region (CLASS instead densifies its
-        # low-q log sampling for open models), so walk the same step formula
-        # in q and map to k = sqrt(q^2 - K).
+        # Open universes: transfer functions oscillate in q (q^2 = k^2 + K),
+        # so walk the step formula in q and map k = sqrt(q^2 - K) (CLASS
+        # densifies its low-q sampling the same way).
         q = specs["k_min_tau0"] / specs["tau0_fid"]
         q_max = np.sqrt(specs["k_max_cmb"]**2 + K_ref)
         qs = [q]
@@ -253,25 +236,14 @@ def get_k_axis_transfer(specs):
 
     ks = ks[np.where(ks>0)]
 
-    # Closed universes have a discrete mode spectrum nu = sqrt(k^2+K)/sqrt(K)
-    # = 3, 4, 5, ... For the reference geometry, resample the low end of the
-    # grid to the integer-nu lattice (Delta nu = 1) up to where the flat-built
-    # step exceeds sqrt(K_ref), then snap the remaining points to integers
-    # (CLASS transfer_get_q_list). This both samples the sharp ell ~ nu onset
-    # of each C_l and makes the k-trapezoid the exact discrete-nu sum at low
-    # nu, where continuum integration is least accurate.
+    # Closed universes have discrete modes nu = sqrt(k^2+K)/sqrt(K) = 3,4,5,...
+    # Resample the grid's low end onto the integer-nu lattice (CLASS
+    # transfer_get_q_list): Delta nu = 1 up to nu_dense_top, then ramp.
     K_ref = specs.get("K_ref", 0.)
     if K_ref > 0. and specs.get("closed_integer_nu", True):
-        # Closed universes: rebuild the grid on the integer-nu lattice.
-        # Delta nu = 1 up to nu_dense_top (samples the sharp ell ~ nu onset of
-        # every C_l with ell <~ nu_dense_top and makes the k-trapezoid the
-        # exact discrete-mode sum there), then ramp the step linearly over
-        # n_transition points to the flat-built formula step (in integer
-        # multiples of sqrt K). The ramp matters: an abrupt sampling-density
-        # jump puts a trapezoid boundary artifact (non-telescoping
-        # Euler-Maclaurin endpoint terms of the oscillatory integrand) right
-        # in the support of C_l with ell ~ nu_junction; CLASS smooths the
-        # same junction over q_numstep_transition = 250 points.
+        # Delta nu = 1 up to nu_dense_top (samples the sharp ell ~ nu onset and
+        # makes the k-trapezoid the exact discrete-mode sum), then ramp the step
+        # over n_transition points to avoid a sampling-density boundary artifact.
         sqrtK = np.sqrt(K_ref)
         nu_dense_top = 512.
         n_transition = 250.

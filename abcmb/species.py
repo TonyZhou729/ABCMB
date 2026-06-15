@@ -19,8 +19,8 @@ def curvature_s_l(l, k, K):
     AD-safe sqrt argument): for closed universes modes only support l <= nu-1,
     and the clip terminates the hierarchy physically.
 
-    Parameters
-    ----------
+    Parameters:
+    -----------
     l : array
         Multipole indices.
     k : float
@@ -28,8 +28,8 @@ def curvature_s_l(l, k, K):
     K : float
         Curvature constant, Mpc^-2.
 
-    Returns
-    -------
+    Returns:
+    --------
     array
         s_l, same shape as l.
     """
@@ -836,9 +836,8 @@ class MasslessNeutrino(StandardFluid):
         theta = F[1]
         sigma = F[2]
 
-        # Curved-space free-streaming coefficients and l_max truncation
-        # (g = tau*cot_K(tau), = 1 at K = 0), CLASS perturbations.c ur
-        # hierarchy a la arXiv:1305.3261.
+        # Curved free-streaming coefficients s and l_max factor g (CLASS ur
+        # hierarchy, arXiv:1305.3261; both = 1 at K = 0).
         K = params['K']
         s = curvature_s_l(jnp.arange(self.num_equations), k, K)
         gcurv = _curv_g(K*tau**2)
@@ -1054,9 +1053,8 @@ class MassiveNeutrino(Fluid):
         aH  = BG.aH(lna, params)
         tau = BG.tau(lna)
 
-        # Curved-space free-streaming coefficients and l_max truncation
-        # (g = tau*cot_K(tau), = 1 at K = 0), CLASS perturbations.c ncdm
-        # hierarchy a la arXiv:1305.3261.
+        # Curved free-streaming coefficients s and l_max factor g (CLASS ncdm
+        # hierarchy, arXiv:1305.3261; both = 1 at K = 0).
         K = params['K']
         s = curvature_s_l(jnp.arange(self.num_ells_per_bin), k, K)
         gcurv = _curv_g(K*tau**2)
@@ -1544,10 +1542,8 @@ class Photon(StandardFluid):
         sigma = F[2]
         theta_b = baryon.get_theta(lna, y, args)
 
-        # Curved-space free-streaming coefficients (all 1 in the flat limit)
-        # and generalized-cotangent factor g = tau*cot_K(tau) for the l_max
-        # truncation; CLASS perturbations.c photon hierarchy a la
-        # arXiv:1305.3261. g = 1 exactly at K = 0.
+        # Curved free-streaming coefficients s and l_max factor g (CLASS photon
+        # hierarchy, arXiv:1305.3261; both = 1 at K = 0).
         K = params['K']
         s = curvature_s_l(jnp.arange(max(self.num_F_ell_modes, self.num_G_ell_modes) + 1), k, K)
         gcurv = _curv_g(K*tau**2)
