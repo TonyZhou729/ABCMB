@@ -179,22 +179,23 @@ def test_bb_raw():
 
     # (a) Physics check at the tensor spline NODES (the bessel_l_tab ells,
     #     which ABCMB computes exactly — no interpolation). Split in two:
-    #       - recomb tail (l >= 100): sub-permille to ~1.6e-3, held to 2.5e-3.
-    #         This is the clean transfer-accuracy assertion.
-    #       - low l (3 <= l < 100): ABCMB runs ~0.4% HIGH vs converged CLASS
-    #         (peak 4.2e-3 at l=10, decaying smoothly to the recomb floor).
-    #         This is a CONVERGED structural difference in the reion-bump /
-    #         large-scale tensor source — NOT solver tol, interpolation,
-    #         tensor_method, or n_t (all four ruled out; see
-    #         NOTE_lowl_bb_excess.md). Held to 5e-3 pending a follow-up
-    #         root-cause session.
+    #       - recomb tail (l >= 100): ~0.85e-3, held to 1.5e-3. Clean
+    #         transfer-accuracy assertion.
+    #       - low l (3 <= l < 100): ~3.1e-3 (peak at l=3, decaying), held to
+    #         4e-3. The 2026-06-16 start-time fix (tensors.py:376, lna_start cap
+    #         -10 -> -14; the -10 cap let the tensor polarization quadrupole
+    #         start too late) ~halved this from the old 4.2e-3. The remaining
+    #         residual is the l<=4 reion-bump region (likely the ~0.5%
+    #         HyRex-vs-C-HYREC-2 visibility-wing diff) plus a converged
+    #         ~1e-3 inter-code Pi difference — within inter-code scatter for
+    #         raw tensor BB. See NOTE_lowl_bb_excess.md.
     nodes = np.asarray(bessel_l_tab)
     nodes_hi = nodes[(nodes >= 100) & (nodes <= 490)]
     nodes_lo = nodes[(nodes >= 3) & (nodes < 100)]
     ok_bb_hi, _ = compare("raw BB vs CLASS hp @ nodes l>=100", output.ClBB,
-                          bb_hp, lmask=np.isin(ells, nodes_hi), tol=2.5e-3)
+                          bb_hp, lmask=np.isin(ells, nodes_hi), tol=1.5e-3)
     ok_bb_lo, _ = compare("raw BB vs CLASS hp @ nodes l<100", output.ClBB,
-                          bb_hp, lmask=np.isin(ells, nodes_lo), tol=5.0e-3)
+                          bb_hp, lmask=np.isin(ells, nodes_lo), tol=4.0e-3)
 
     # (b) Interp-limited sanity over the full dense grid: between the
     #     40-wide tensor nodes the cubic spline carries ~1% error in the BB

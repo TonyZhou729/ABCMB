@@ -373,7 +373,13 @@ class TensorPerturbationEvolver(eqx.Module):
             Tensor perturbation state at the requested lna values
         """
         lna_start = self.get_starting_time(k, args)
-        lna_start = jnp.minimum(lna_start, -10.)
+        # Start no later than lna = -14 (z ~ 1.2e6). The -10 cap used by the
+        # scalar evolver is too late for the tensor photon polarization
+        # quadrupole, which has not settled before recombination if started at
+        # -10, inflating low-l BB by ~2e-3. BB is start-converged for t0 <= -13;
+        # -14 gives margin at no wall-clock cost (the adaptive solver coasts
+        # through the smooth early region).
+        lna_start = jnp.minimum(lna_start, -14.)
 
         y_ini = self.initial_conditions_one_k(k, lna_start, args)
 
