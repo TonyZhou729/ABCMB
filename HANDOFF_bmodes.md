@@ -202,3 +202,46 @@ Diagnostics (keep — §5 open): `diag_bb_profile.py` (err vs l),
 `diag_bb_dense_hp.py` (the §5 diagnostic to re-run), `diag_class_ladder.py`,
 `diag_class_ladder2.py` (CLASS precision ladders), `time_tests_bb.py`.
 Artifacts (gitignore): `diag_bb_profile.npz`, `diag_bb_bessel_inputs.npz`.
+
+## 8. Future lead — kill the ℓ=477 interp residual via the curvature-branch Bessel recurrence
+
+The ℓ=477 raw-BB residual (~7e-3, §5) is purely CubicSpline interpolation over
+the 40-wide sparse-ℓ node gap (450→490); the physics is sub-permille at the
+nodes. The clean fix is to stop interpolating over sparse ℓ-nodes and instead
+compute the transfer at every ℓ.
+
+**Branch `worktree-curvature` already did exactly this for the SCALAR path**
+(session `bessel`, 2026-06-15, NOT merged to main). There `spectrum.py:get_Cl`
+always calls `_Cl_all_ells_curved` — a hyperspherical three-term Bessel
+recurrence that is smooth through K=0 → exactly jₗ(kχ), matching
+`scipy.special.spherical_jn` to 4.4e-14. It **deleted** the 79 MB
+`bessel_tab/*.txt`, the sparse-ℓ CubicSpline, the large-x asymptotic, the
+module-level `phi0/phi1/phi2`, `Cl_one_ell`, the `ells_indices` fields, and the
+ℓ=5000 cap (~250 lines). Validated K=0 forward (both lensings, timing a wash:
+9.96/10.69 s) + reverse-AD final grads finite. Full plan:
+`notes_curvature/HANDOFF_bessel_recurrence.md` on that worktree.
+
+**TASK: scope how hard it is to bring that recurrence into the TENSOR path**
+(`TensorSpectrumSolver` in `tensors.py`), which today uses the phi-tables +
+sparse-ℓ CubicSpline — the source of the ℓ=477 residual. Integrating it should
+remove that residual entirely (every ℓ computed exactly) AND drop the tensor
+solver's table dependence. Things to weigh when scoping:
+- **Hard dependency conflict.** The tensor solver imports
+  `bessel_l_tab, xphi0_tab, phi0_tab, …, j` from `spectrum.py`; the curvature
+  branch DELETED those. So this is a port, not a drop-in: the tensor radial
+  functions (T: jₗ/x²; E: jₗ''+4jₗ'/x−(1−2/x²)jₗ; B: jₗ'+2jₗ/x) must be fed
+  from the recurrence's Φ, Φ', Φ'' (which reduce to jₗ, jₗ', jₗ'' at K=0)
+  instead of `phi0_local/phi1_local/phi2_local`.
+- **Two unmerged feature branches both rewrite `spectrum.py`** (curvature
+  rewrote `get_Cl`; bmodes added `tensor_cls` plumbing to `get_Cl`/
+  `lensed_Cls`). Expect a non-trivial merge there — assess conflict size first.
+- **Cost.** Recurrence-at-every-ℓ was a wash for scalars; the tensor sector adds
+  its own ℓ×k transfer evals, so re-check the tensors=True warm time.
+- **Reverse-AD.** The curvature recurrence is revAD-validated (K=0); folding it
+  into tensors interacts with the separate "reverse-AD through tensors=True is
+  untested" item (§ below / handoff TODO).
+
+Cheapest first cut if a full port is too big: densify only the tensor ℓ-node
+grid in `TensorSpectrumSolver.__init__` (finer subset of `bessel_l_tab` near
+ℓ~450–500) so the spline gaps shrink — partial relief without the recurrence,
+but still table-bound (the tables only have nodes at `bessel_l_tab`).
