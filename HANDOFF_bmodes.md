@@ -45,6 +45,49 @@ NOT re-validated this session: curvature's own curved (`omega_k != 0`) scalar
 configs — that code is merged verbatim from `origin/curvature` (which validated
 them) and the flat scalar path passes `accuracy_test.py`.
 
+### OPEN (B_modes_4) — default-path timing regression + agreed fix (NOT yet implemented)
+
+The curvature merge made the **every-ℓ recurrence the scalar `get_Cl` for
+everyone**, which is **+0.64 s slower than the table+spline path on the default
+(B-modes-off) forward** — measured cleanly, multi-warm, same GPU:
+
+| config | 5eabbab table | recurrence (3174b25 ≈ merged bmodes) | Δ |
+|--------|---------------|--------------------------------------|---|
+| tensors=False, lensing=False | 9.18 s | 9.82 / 9.86 s | **+0.64 s** |
+| tensors=False, lensing=True  | 9.81 s | 10.58 / 10.59 s | **+0.78 s** |
+
+**Root cause:** the recurrence walks every integer ℓ (2…~2700) as a sequential
+`lax.scan` (each ℓ depends on ℓ−1,ℓ−2); that walk is the bottleneck (sequential-
+scan-bound, not FLOP-bound). The table path did ~48 sparse nodes + CubicSpline.
+**This is intrinsic to the recurrence, NOT a bmodes bug** — confirmed by the
+pure curvature A/B above (3174b25 vs its own base 5eabbab gives the same +0.64 s).
+So **the `curvature` branch itself carries this same regression**; its handoff's
+"a wash / 0.2 s" was an optimistic baseline comparison, not a clean A/B.
+Ruled out: NOT the ClBB lensing quadrature (pre-merge bmodes already had the
+4-tuple `lensed_Cls`); NOT noise (multi-warm, ±0.05 s). A "no-tables sparse
+contraction" was considered and **rejected**: you can't store all Φ (terabytes)
+or skip steps in the sequential scan, so sparse contraction doesn't avoid the walk.
+
+**Agreed fix (user chose 2026-06-16, NOT yet implemented): dual scalar path.**
+Gate the scalar `get_Cl` on the static `self.curvature` field — flat
+(`curvature=False`, the common case: ALL B-mode runs are flat per the guard, and
+OLE training is flat) → restore the fast sparse-ℓ **table+spline** path; curved
+(`curvature=True`) → keep the recurrence. The **tensor** sector is untouched
+(always its own recurrence) so the ℓ=477 fix is preserved. Expected: flat
+`tensors=False` back to ~9.2/9.8 s; curved unchanged. Full plan + the exact
+`get_Cl` branch code + what to restore verbatim from `5eabbab` (tables, `j`/`phi*`
+helpers, `Cl_one_ell`, `ells_indices`/`lensing_ells_indices`) is in
+**`proposed_diff_dual_scalar_path.md`**. Trade-off: `spectrum.py` becomes a
+table+recurrence hybrid and re-adds the 79 MB tables. To be a follow-up commit
+on `bmodes` (after `7dcf6b2`), not a force-push. Rejected alternatives: revert
+to tensor-only recurrence (drops omega_k — user wants to keep curvature);
+accept the +0.64 s (user: ".85 s is too much").
+
+**Timing tools (committed):** `prof_default_path.py` (tensors=False, lensing
+F/T, multi-warm min/median) and `prof_scalar.py` (branch-agnostic, no `tensors`
+kwarg — runs on 5eabbab / origin/curvature / bmodes for A/Bs). Re-measure after
+implementing the dual path to confirm ~9.2/9.8 s is recovered.
+
 ---
 
 ## 1. What was built
