@@ -144,13 +144,22 @@ class Model(eqx.Module):
             scale_sw=specs["scale_sw"],
             scale_isw=specs["scale_isw"],
             scale_dop=specs["scale_dop"],
-            scale_pol=specs["scale_pol"]
+            scale_pol=specs["scale_pol"],
+            curvature=specs["curvature"]
         )
 
         # Initialize tensor (primordial GW -> BB) solvers. The tensor k
         # grids are the scalar grids truncated at the tensor k_max, as in
         # CLASS (same stepping formula, smaller cutoff).
         if specs["tensors"]:
+            # The tensor radial functions use the flat (K=0) Bessel basis;
+            # curved geometry would need the spin-2 hyperspherical radials.
+            if specs["curvature"]:
+                raise ValueError(
+                    "tensors=True is not supported with curvature=True: the "
+                    "tensor radial functions are flat-only. Run tensors in "
+                    "flat geometry (omega_k = 0, curvature=False)."
+                )
             k_axis_tensor_pert, k_axis_tensor_transfer = tensors.get_tensor_k_axes(
                 specs, k_axis_perturbations, k_axis_transfer)
             self.TPE = tensors.TensorPerturbationEvolver(
@@ -412,6 +421,10 @@ class Model(eqx.Module):
         params['A_s']           = jnp.array(params.get('A_s', 2.1e-9))
         params['n_s']           = jnp.array(params.get('n_s', 0.9649))
         params['TCMB0']         = jnp.array(params.get('TCMB0', 2.34865418e-4))
+        params['omega_k']       = jnp.array(params.get('omega_k', 0.))
+        # Curvature constant K = -Omega_k H0^2 in Mpc^-2 (CLASS sign convention:
+        # omega_k > 0 <=> open <=> K < 0). H0_over_h/c_Mpc_over_s = H100 in Mpc^-1.
+        params['K']             = -params['omega_k'] * (cnst.H0_over_h/cnst.c_Mpc_over_s)**2
 
         # Tensor modes: tensor-to-scalar ratio r and tensor tilt n_t. The
         # n_t default is CLASS's self-consistency condition ("scc"). Only
@@ -636,7 +649,7 @@ class Model(eqx.Module):
         params['om'] = params['omega_m'] / jnp.sqrt(params['omega_r']) * cnst.H0_over_h / cnst.c_Mpc_over_s
 
         # Having inferred correct omega_m and omega_r, compute correct omega_Lambda
-        params['omega_Lambda'] = params['h']**2 - params['omega_r'] - params['omega_m']
+        params['omega_Lambda'] = params['h']**2 - params['omega_r'] - params['omega_m'] - params['omega_k']
 
         # There is NO NEED to modify this list!!  This is to make sure any new
         # user-defined keys will not trigger recompilation by wrapping them in
@@ -647,7 +660,7 @@ class Model(eqx.Module):
             'tau_reion', 'z_reion', 'Delta_z_reion', 'z_reion_He', 'Delta_z_reion_He', 'exp_reion',
             'omega_Lambda', 'T_nu_massive', 'N_nu_massive', 'm_nu_massive',
             'N_nu_massless', 'Neff', 'T_nu_massless', 'YHe',
-            'omega_m', 'R_b', 'omega_r', 'R_nu', 'om',
+            'omega_m', 'R_b', 'omega_r', 'R_nu', 'om', 'omega_k', 'K',
             'r', 'n_t'
         }
         

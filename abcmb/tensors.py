@@ -8,8 +8,6 @@ from interpax import CubicSpline
 
 from . import constants as cnst
 from . import ABCMBTools as tools
-from .spectrum import bessel_l_tab, xphi0_tab, phi0_tab, xphi1_tab, phi1_tab, \
-    xphi2_tab, phi2_tab, j
 
 jax.config.update("jax_enable_x64", True)
 
@@ -507,18 +505,21 @@ class TensorSpectrumSolver(eqx.Module):
         Cl^XY = 4 pi int dk/k P_h(k) Delta_X Delta_Y,
         P_h(k) = r A_s (k/k_pivot)^{n_t}.
 
-    The tensor spectra are computed up to l_tensor_max and zero above it
-    (CLASS convention), on the same output ell grid as the scalar solver
-    so they can be summed with the scalar spectra before lensing.
+    The Bessel functions j_l, j_l', j_l'' are generated at every integer
+    multipole by the spherical-Bessel three-term recurrence (the flat limit
+    of the scalar SpectrumSolver._Cl_all_ells_curved), so there are no Bessel
+    tables and no sparse-ell spline. The tensor spectra are computed up to
+    l_tensor_max and are zero above it (CLASS convention), on the same output
+    ell grid as the scalar solver so they can be summed before lensing.
 
     Attributes:
     -----------
     out_ells : jnp.array
         Output multipole grid (the scalar solver's lensing_ells)
-    dense_ells : jnp.array
-        Multipoles ellmin..l_tensor_max on which the spline is evaluated
-    tensor_ells_indices : jnp.array
-        Indices into bessel_l_tab covering ellmin..l_tensor_max
+    ten_ells : jnp.array
+        Multipoles 2..l_tensor_max emitted directly by the recurrence
+    ten_xmin : jnp.array
+        Per-ell evanescent cutoff in x = k chi (below it the radials are masked)
     k_axis_transfer : jnp.array
         Wavenumber grid for the transfer integration (units: Mpc^{-1})
     k_pivot : float
@@ -528,14 +529,15 @@ class TensorSpectrumSolver(eqx.Module):
     --------
     primordial_tensor_spectrum : Compute dimensionless P_h(k)
     get_Cl : Compute tensor (TT, TE, EE, BB) on the output ell grid
-    Cl_one_ell : Compute tensor spectra for single ell
+    _tensor_sources : Interpolate the tensor sources onto the transfer grid
+    _Cl_all_ells_tensor : Recurrence over ell for the tensor spectra
     """
 
-    out_ells            : jnp.array
-    dense_ells          : jnp.array
-    tensor_ells_indices : jnp.array
-    k_axis_transfer     : jnp.array
-    k_pivot             : float = 0.05
+    out_ells        : jnp.array
+    ten_ells        : jnp.array
+    ten_xmin        : jnp.array
+    k_axis_transfer : jnp.array
+    k_pivot         : float = 0.05
 
     def __init__(self, ellmin, l_tensor_max, out_ells, k_axis_transfer,
                  k_pivot=0.05):
@@ -556,11 +558,18 @@ class TensorSpectrumSolver(eqx.Module):
             Pivot scale for primordial spectrum (units: Mpc^{-1})
         """
         self.out_ells = out_ells
-        self.dense_ells = jnp.arange(ellmin, l_tensor_max + 1)
+        # Recurrence ell grid: every integer 2..l_tensor_max (CLASS tensor BB
+        # is defined for ell >= 2). out_ells (the scalar lensing_ells) also
+        # starts at ell = 2, so the two align directly with a zero pad above.
+        self.ten_ells = jnp.arange(2, l_tensor_max + 1)
 
-        ell_idx_min = jnp.where(bessel_l_tab <= ellmin)[0][-1]
-        ell_idx_max = jnp.where(bessel_l_tab >= l_tensor_max)[0][0]
-        self.tensor_ells_indices = jnp.arange(ell_idx_min, ell_idx_max + 1)
+        # Per-ell evanescent cutoff in x = k chi (|j_l| < 1e-10), CLASS's
+        # closed-form hyperspherical_get_xmin_from_approx (same as the scalar
+        # SpectrumSolver.curv_xmin); below it the radial functions are masked.
+        lph = np.arange(2, l_tensor_max + 1, dtype=np.float64) + 0.5
+        lhs = np.log(2.e-10 * lph) / lph
+        alpha = -2.*lhs/5.*(1. + 2.*np.cosh(np.arccosh(1. + 375./(16.*lhs*lhs))/3.))
+        self.ten_xmin = jnp.array(lph / np.cosh(alpha))
 
         self.k_axis_transfer = k_axis_transfer
         self.k_pivot = k_pivot
@@ -602,37 +611,31 @@ class TensorSpectrumSolver(eqx.Module):
             (ClTT, ClTE, ClEE, ClBB) tensor spectra on out_ells, zero
             above l_tensor_max
         """
-        tt_raw, te_raw, ee_raw, bb_raw = vmap(
-            self.Cl_one_ell, in_axes=(0, None, None, None)
-        )(self.tensor_ells_indices, TPT, BG, params)
+        sources = self._tensor_sources(TPT, BG, params)
+        tt, te, ee, bb = self._Cl_all_ells_tensor(sources, params)
 
-        node_ells = bessel_l_tab[self.tensor_ells_indices]
-        pad = self.out_ells.shape[0] - self.dense_ells.shape[0]
-
-        def to_out_grid(raw):
-            dense = CubicSpline(node_ells, raw, check=False)(self.dense_ells)
-            return jnp.concatenate((dense, jnp.zeros(pad)))
-
+        # ten_ells (2..l_tensor_max) aligns with the head of out_ells; the
+        # tensor spectra are zero above l_tensor_max (CLASS convention).
+        pad = self.out_ells.shape[0] - self.ten_ells.shape[0]
+        z = jnp.zeros(pad)
         return (
-            to_out_grid(tt_raw),
-            to_out_grid(te_raw),
-            to_out_grid(ee_raw),
-            to_out_grid(bb_raw),
+            jnp.concatenate((tt, z)),
+            jnp.concatenate((te, z)),
+            jnp.concatenate((ee, z)),
+            jnp.concatenate((bb, z)),
         )
 
-    def Cl_one_ell(self, idx, TPT, BG, params):
+    def _tensor_sources(self, TPT, BG, params):
         """
-        Compute tensor angular power spectra for single multipole.
+        Assemble the tensor line-of-sight sources on the (lna, k_transfer) grid.
 
-        Mirrors the scalar SpectrumSolver.Cl_one_ell structure: interpolate
-        sources onto the transfer k grid, accumulate the conformal-time
-        integral with a rolling lax.scan over lna, then integrate the
-        transfer functions against the primordial tensor spectrum over k.
+        Interpolates the two CLASS tensor sources (source_T2 = -hdot exp(-kappa)
+        + g Pi, source_E = sqrt(6) g Pi) from the tensor solver's k grid onto the
+        transfer k grid, and returns the background quantities the recurrence
+        contracts against.
 
         Parameters:
         -----------
-        idx : int
-            Index into bessel_l_tab for multipole ell
         TPT : TensorSourceTable
             Tensor source function table
         BG : background.Background
@@ -643,9 +646,9 @@ class TensorSpectrumSolver(eqx.Module):
         Returns:
         --------
         tuple
-            (C_l^TT, C_l^TE, C_l^EE, C_l^BB) tensor contributions
+            ((source_T2, source_E) of shape (Nlna, Nk), aH, tau, weights of
+            shape (Nlna,), tau0).
         """
-        l = bessel_l_tab[idx]
         k_axis = self.k_axis_transfer
         lna_axis = TPT.lna[:-1]
         delta_lna = TPT.lna[-1] - TPT.lna[-2]
@@ -654,97 +657,137 @@ class TensorSpectrumSolver(eqx.Module):
         tau = BG.tau(lna_axis)
         aH = BG.aH(lna_axis, params)
 
-        # Interpolate sources onto the transfer k grid, (Nlna, Nk)
         interp_column = lambda col: CubicSpline(
             jnp.log10(TPT.k), col, check=False)(jnp.log10(k_axis))
-        sourceT2 = vmap(interp_column, in_axes=0, out_axes=0)(
-            TPT.source_T2[:-1, :])
-        sourceE = vmap(interp_column, in_axes=0, out_axes=0)(
-            TPT.source_E[:-1, :])
-
-        # Pre-slice bessel-table columns (same pattern as the scalar solver)
-        x0_min = xphi0_tab[0, idx]
-        x0_max = xphi0_tab[-1, idx]
-        x1_min = xphi1_tab[0, idx]
-        x1_max = xphi1_tab[-1, idx]
-        x2_min = xphi2_tab[0, idx]
-        x2_max = xphi2_tab[-1, idx]
-        col_phi0_l = phi0_tab[:, idx]
-        col_phi1_l = phi1_tab[:, idx]
-        col_phi2_l = phi2_tab[:, idx]
-        ell_T_factor = jnp.sqrt(3. / 8. * (l + 2) * (l + 1) * l * (l - 1))
-
-        def phi0_local(x):
-            x_safe = jnp.where(x >= x0_max, x, x0_max)
-            return jnp.where(
-                x < x0_min,
-                0.,
-                jnp.where(
-                    x >= x0_max,
-                    j(l, x_safe),
-                    tools.fast_interp(x, x0_min, x0_max, col_phi0_l)
-                )
-            )
-
-        def phi1_local(x):
-            x_safe = jnp.where(x >= x1_max, x, x1_max)
-            return jnp.where(
-                x < x1_min,
-                0.,
-                jnp.where(
-                    x >= x1_max,
-                    l / x_safe * j(l, x_safe) - j(l + 1, x_safe),
-                    tools.fast_interp(x, x1_min, x1_max, col_phi1_l)
-                )
-            )
-
-        def phi2_local(x):
-            x_safe = jnp.where(x >= x2_max, x, x2_max)
-            return jnp.where(
-                x < x2_min,
-                0.,
-                jnp.where(
-                    x >= x2_max,
-                    ((3 * l * (l - 1) - 2 * x_safe**2) * j(l, x_safe)
-                     + 6 * x_safe * j(l + 1, x_safe)) / 2 / x_safe**2,
-                    tools.fast_interp(x, x2_min, x2_max, col_phi2_l)
-                )
-            )
+        source_T2 = vmap(interp_column, in_axes=0, out_axes=0)(TPT.source_T2[:-1, :])
+        source_E = vmap(interp_column, in_axes=0, out_axes=0)(TPT.source_E[:-1, :])
 
         Nlna = lna_axis.shape[0]
-        weights = jnp.full((Nlna,), delta_lna, dtype=sourceT2.dtype)
+        weights = jnp.full((Nlna,), delta_lna, dtype=source_T2.dtype)
         weights = weights.at[0].set(0.5 * delta_lna)
-        zero_k = jnp.zeros(k_axis.shape, dtype=sourceT2.dtype)
 
-        def scan_step(carry, xs_l):
-            acc_T, acc_E, acc_B = carry
-            sT2_l, sE_l, aH_l, tau_l, w_l = xs_l
-            x = (tau0 - tau_l) * k_axis
-            p0 = phi0_local(x)
-            p1 = phi1_local(x)
-            p2 = phi2_local(x)
-            jpp = (2. * p2 - p0) / 3.  # j_l'' from phi2 = (3 j'' + j)/2
-            radT = ell_T_factor * p0 / x**2
-            radE = 0.25 * (jpp + 4. * p1 / x - (1. - 2. / x**2) * p0)
-            radB = 0.5 * (p1 + 2. * p0 / x)
-            inv_aH = 1.0 / aH_l
-            acc_T = acc_T + w_l * sT2_l * inv_aH * radT
-            acc_E = acc_E + w_l * sE_l * inv_aH * radE
-            acc_B = acc_B + w_l * sE_l * inv_aH * radB
-            return (acc_T, acc_E, acc_B), None
+        return (source_T2, source_E), aH, tau, weights, tau0
 
-        init = (zero_k, zero_k, zero_k)
-        xs = (sourceT2, sourceE, aH, tau, weights)
-        (transferT, transferE, transferB), _ = lax.scan(
-            jax.checkpoint(scan_step), init, xs
-        )
+    def _Cl_all_ells_tensor(self, sources, params):
+        """
+        Tensor C_l at every integer ell 2..l_tensor_max via the spherical-Bessel
+        recurrence (the flat limit of SpectrumSolver._Cl_all_ells_curved).
 
-        Ph_over_k = 4. * jnp.pi * self.primordial_tensor_spectrum(
-            k_axis, params) / k_axis
+        Walks ell upward with the cancellation-safe seeds and the evanescent
+        clamp/mask of the scalar recurrence (carrying K, which is 0 on the
+        supported tensor path), forming at each ell the flat tensor radial
+        functions from Phi_l (= j_l), dPhi/k (= j_l') and d2Phi/k^2 (= j_l''):
 
-        return (
-            jnp.trapezoid(Ph_over_k * transferT**2, k_axis),
-            jnp.trapezoid(Ph_over_k * transferT * transferE, k_axis),
-            jnp.trapezoid(Ph_over_k * transferE**2, k_axis),
-            jnp.trapezoid(Ph_over_k * transferB**2, k_axis),
-        )
+            radT = sqrt(3/8 (l+2)(l+1)l(l-1)) j_l / x^2
+            radE = 1/4 [ j_l'' + 4 j_l'/x - (1 - 2/x^2) j_l ]
+            radB = 1/2 [ j_l' + 2 j_l/x ],     x = k (tau0 - tau),
+
+        contracting them against the tensor sources and integrating over k with
+        P_h(k) = r A_s (k/k_pivot)^{n_t}. No tables, no sparse-ell spline: every
+        ell is computed exactly, which removes the cubic-spline residual the
+        old node+spline path carried between the bessel_l_tab nodes.
+
+        Curved geometries (K != 0) are NOT supported on the tensor path: the
+        spin-2 radial basis differs from the scalar Phi recurrence used here, so
+        omega_k != 0 with tensors=True is invalid (guarded in Model).
+
+        Parameters:
+        -----------
+        sources : tuple
+            Output of _tensor_sources.
+        params : dict
+            Dictionary of input and derived parameters.
+
+        Returns:
+        --------
+        tuple
+            (ClTT, ClTE, ClEE, ClBB) on arange(2, l_tensor_max+1).
+        """
+        (source_T2, source_E), aH_1d, tau, weights, tau0 = sources
+        k_axis = self.k_axis_transfer                       # (Nk,)
+        K = params['K']
+
+        chi = (tau0 - tau)[:, None]                         # (Nlna, 1)
+        q2 = k_axis**2 + K                                  # (Nk,)
+        qmask = (q2 > 0.)
+        q = jnp.sqrt(jnp.clip(q2, 1.e-30, None))
+
+        sinK = tools.sin_K(chi, K)                          # (Nlna, 1)
+        cotK = tools.cot_K(chi, K)                          # (Nlna, 1)
+        uK = K*chi**2
+        qchi = q*chi                                        # (Nlna, Nk)
+
+        # Seeds Phi_0 = j_0, Phi_1 = j_1 (sqrt(q^2 - K) = k exactly at the seed;
+        # _curv_g_diff is cancellation-safe at small argument).
+        Phi0 = jnp.sinc(qchi/jnp.pi) / tools._curv_f(uK)
+        Phi1 = Phi0 * tools._curv_g_diff(uK, qchi**2) / (chi*k_axis)
+        s1d = k_axis
+        term_tol = 1.e-6*q2
+        s2d_arg = q2 - 4.*K
+        s2d = jnp.sqrt(jnp.clip(s2d_arg, 1.e-30, None))
+        Phi2 = jnp.where(s2d_arg > term_tol,
+                         jnp.clip((3.*cotK*Phi1 - s1d*Phi0)/s2d, -1.e10, 1.e10),
+                         0.)
+
+        # Sources pre-multiplied by the lna trapezoid weight / aH.
+        wa = (weights/aH_1d)[:, None]
+        SW_T2 = source_T2 * wa
+        SW_E = source_E * wa
+
+        # k-trapezoid weight times the primordial tensor power / k.
+        dk = jnp.diff(k_axis)
+        wk = jnp.concatenate((dk[:1]/2., (dk[1:]+dk[:-1])/2., dk[-1:]/2.))
+        Ph = self.primordial_tensor_spectrum(k_axis, params)
+        wk_prim = wk * 4.*jnp.pi * Ph / k_axis * qmask
+
+        x_eff = q*sinK                                      # (Nlna, Nk); = k chi at K=0
+
+        def step(carry, xs_l):
+            Phi_lm1, Phi_l = carry
+            lf, xmin_l = xs_l
+
+            sld = jnp.sqrt(jnp.clip(q2 - K*lf**2, 1.e-30, None))
+            dPhi = sld*Phi_lm1 - (lf+1.)*cotK*Phi_l
+            d2Phi = -2.*cotK*dPhi + (lf*(lf+1.)/sinK**2 - q2 + K)*Phi_l
+            mask = x_eff >= xmin_l
+
+            jl = jnp.where(mask, Phi_l, 0.)
+            jlp = jnp.where(mask, dPhi, 0.)/k_axis
+            jlpp = jnp.where(mask, d2Phi, 0.)/k_axis**2
+
+            ell_T = jnp.sqrt(3./8.*(lf+2.)*(lf+1.)*lf*(lf-1.))
+            radT = ell_T * jl / x_eff**2
+            radE = 0.25*(jlpp + 4.*jlp/x_eff - (1. - 2./x_eff**2)*jl)
+            radB = 0.5*(jlp + 2.*jl/x_eff)
+
+            transferT = jnp.sum(SW_T2*radT, axis=0)         # (Nk,)
+            transferE = jnp.sum(SW_E*radE, axis=0)
+            transferB = jnp.sum(SW_E*radB, axis=0)
+
+            clTT = jnp.sum(wk_prim*transferT**2)
+            clTE = jnp.sum(wk_prim*transferT*transferE)
+            clEE = jnp.sum(wk_prim*transferE**2)
+            clBB = jnp.sum(wk_prim*transferB**2)
+
+            slp_arg = q2 - K*(lf+1.)**2
+            slpd = jnp.sqrt(jnp.clip(slp_arg, 1.e-30, None))
+            Phi_next = jnp.where(slp_arg > term_tol,
+                                 jnp.clip(((2.*lf+1.)*cotK*Phi_l - sld*Phi_lm1)/slpd, -1.e10, 1.e10),
+                                 0.)
+            return (Phi_l, Phi_next), jnp.stack((clTT, clTE, clEE, clBB))
+
+        # Chunked scan over ell; jax.checkpoint per chunk bounds reverse-AD residency.
+        CHUNK = 64
+        n = self.ten_ells.shape[0]
+        npad = (-n) % CHUNK
+        lf_all = jnp.concatenate((self.ten_ells.astype(jnp.float64),
+                                  self.ten_ells[-1] + 1. + jnp.arange(npad, dtype=jnp.float64)))
+        xmin_all = jnp.concatenate((self.ten_xmin, jnp.full((npad,), self.ten_xmin[-1])))
+        xs = (lf_all.reshape(-1, CHUNK), xmin_all.reshape(-1, CHUNK))
+
+        def chunk_body(carry, xs_chunk):
+            return lax.scan(step, carry, xs_chunk)
+
+        _, outs = lax.scan(jax.checkpoint(chunk_body), (Phi1, Phi2), xs)
+        cls = outs.reshape(-1, 4)[:n]
+        return cls[:, 0], cls[:, 1], cls[:, 2], cls[:, 3]

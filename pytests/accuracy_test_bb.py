@@ -19,7 +19,6 @@ import jax
 jax.config.update("jax_enable_x64", True)
 jax.config.update("jax_debug_nans", True)
 from abcmb.main import Model
-from abcmb.spectrum import bessel_l_tab
 import numpy as np
 
 ELLMIN = 2
@@ -45,6 +44,20 @@ PARAMS = {
     'exp_reion': 1.5,
     'r': R_TENSOR,
 }
+
+# CLASS's computed transfer multipoles up to l_tensor_max (formerly
+# abcmb/bessel_tab/l.txt, the CLASS l-sampling). ABCMB now computes every
+# integer ell via the tensor Bessel recurrence, but CLASS still interpolates
+# its raw_cl between these nodes, so the BB transfer-accuracy comparison is
+# made at the nodes (both codes exact there). Between nodes the residual is
+# CLASS's own cubic interpolation (~5e-3 at the 370-410 / 450-490 gap
+# midpoints l=387, 477), not ABCMB error -- see diag_bb_recurrence_check.py
+# (node-level 8.9e-4 vs every-l 5.1e-3).
+CLASS_TRANSFER_ELLS = np.array([
+    2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 19, 21, 23, 25,
+    28, 31, 34, 38, 42, 47, 52, 58, 64, 71, 79, 88, 98, 109, 122, 136, 152,
+    170, 190, 212, 237, 265, 296, 331, 370, 410, 450, 490,
+])
 
 
 def run_pair(lensing):
@@ -168,57 +181,47 @@ def test_bb_raw():
 
     # The accuracy assertion has two parts, both vs high-precision
     # tensor-only CLASS (l=2 exempt; 490 is the last ell node below
-    # l_tensor_max). The 491-500 sliver is excluded: there the two codes
-    # interpolate the dying tail across the arbitrary l_tensor_max cutoff
-    # differently (CLASS has a computed node at exactly 500; ABCMB splines
-    # through its node at 530), giving ~1% differences that reflect the
-    # cutoff convention, not physics.
+    # l_tensor_max). ABCMB now computes every multipole exactly via the tensor
+    # Bessel recurrence, so the 491-500 sliver (the dying tail up to the cutoff)
+    # is also tight (~9e-4) instead of the ~1.4e-2 the old node+spline path left
+    # (it splined through its node at 530).
     cl_hp = class_tensor_hp_reference()
     bb_hp = np.zeros(ELLMAX - ELLMIN + 1)
     bb_hp[:500 - ELLMIN + 1] = cl_hp["bb"][ELLMIN:]
 
-    # (a) Physics check at the tensor spline NODES (the bessel_l_tab ells,
-    #     which ABCMB computes exactly — no interpolation). Split in two:
-    #       - recomb tail (l >= 100): ~0.85e-3, held to 1.5e-3. Clean
-    #         transfer-accuracy assertion.
-    #       - low l (3 <= l < 100): ~3.1e-3 (peak at l=3, decaying), held to
-    #         4e-3. The 2026-06-16 start-time fix (tensors.py:376, lna_start cap
-    #         -10 -> -14; the -10 cap let the tensor polarization quadrupole
-    #         start too late) ~halved this from the old 4.2e-3. The remaining
-    #         residual is the l<=4 reion-bump region (likely the ~0.5%
-    #         HyRex-vs-C-HYREC-2 visibility-wing diff) plus a converged
-    #         ~1e-3 inter-code Pi difference — within inter-code scatter for
-    #         raw tensor BB. See NOTE_lowl_bb_excess.md.
-    nodes = np.asarray(bessel_l_tab)
-    nodes_hi = nodes[(nodes >= 100) & (nodes <= 490)]
-    nodes_lo = nodes[(nodes >= 3) & (nodes < 100)]
-    ok_bb_hi, _ = compare("raw BB vs CLASS hp @ nodes l>=100", output.ClBB,
-                          bb_hp, lmask=np.isin(ells, nodes_hi), tol=1.5e-3)
-    ok_bb_lo, _ = compare("raw BB vs CLASS hp @ nodes l<100", output.ClBB,
-                          bb_hp, lmask=np.isin(ells, nodes_lo), tol=4.0e-3)
-
-    # (b) Interp-limited sanity over the full dense grid: between the
-    #     40-wide tensor nodes the cubic spline carries ~1% error in the BB
-    #     damping tail (l >~ 410) — the same noise floor the scalar spectra
-    #     are held to, and intrinsic to the bessel_l_tab node spacing. This
-    #     is a CubicSpline-scheme artifact, NOT transfer error: confirmed by
-    #     the CLASS-internal self-interpolation test (diag_bb_dense_hp.py),
-    #     where re-splining CLASS's OWN node values over the 450-490 gap
-    #     reproduces ~7e-3 at l=477, matching the observed residual, with
-    #     zero error at the nodes. Finer nodes (new Bessel tables) would be
-    #     needed to tighten this; the physics at the nodes is sub-permille.
-    mask_band = (ells >= 3) & (ells <= 490)
-    ok_bb_band, _ = compare("raw BB vs CLASS hp, full band", output.ClBB,
-                            bb_hp, lmask=mask_band, tol=1.0e-2)
-    compare("raw BB vs CLASS hp, cutoff sliver 491-500 (info)",
-            output.ClBB, bb_hp, lmask=(ells > 490) & (ells <= 500),
-            tol=np.inf)
+    # The tensor recurrence computes every integer multipole exactly, so the
+    # only meaningful transfer-accuracy comparison is at the CLASS computed
+    # nodes (CLASS interpolates its raw_cl between them; ABCMB does not). Split:
+    #   - recomb tail (100 <= l <= 490, at CLASS nodes): clean transfer
+    #     accuracy, ~0.9e-3, held to 1.5e-3.
+    #   - low l (3 <= l < 100, at CLASS nodes): the converged tensor-quadrupole
+    #     inter-code difference (h exact, Pi ~+0.1% -> +0.4% in BB; NOT reion/
+    #     grid/recomb/TCA). ~3.1e-3, held to 4e-3; do NOT tighten. See
+    #     NOTE_lowl_bb_excess.md.
+    #   - 491-500 sliver: ABCMB exact to the cutoff -> ~9e-4 (was ~1.4e-2 with
+    #     the old node+spline path); asserted as a direct check.
+    # l=2 carries the known small ABCMB error (exempt). The full every-l band
+    # is reported for information only: it is limited by CLASS's own cubic
+    # interpolation between its nodes (~5e-3 at the 370-410 / 450-490 gap
+    # midpoints), NOT ABCMB error (diag_bb_recurrence_check.py).
+    nodes = CLASS_TRANSFER_ELLS
+    m_hi = np.isin(ells, nodes) & (ells >= 100) & (ells <= 490)
+    m_lo = np.isin(ells, nodes) & (ells >= 3) & (ells < 100)
+    ok_bb_hi, _ = compare("raw BB vs CLASS hp @ nodes 100<=l<=490", output.ClBB,
+                          bb_hp, lmask=m_hi, tol=1.5e-3)
+    ok_bb_lo, _ = compare("raw BB vs CLASS hp @ nodes 3<=l<100", output.ClBB,
+                          bb_hp, lmask=m_lo, tol=4.0e-3)
+    ok_bb_cut, _ = compare("raw BB vs CLASS hp, 491-500 (exact to cutoff)",
+                           output.ClBB, bb_hp,
+                           lmask=(ells > 490) & (ells <= 500), tol=2.0e-3)
+    compare("raw BB vs CLASS hp, every-l 3<=l<=490 (CLASS-interp-limited, info)",
+            output.ClBB, bb_hp, lmask=(ells >= 3) & (ells <= 490), tol=np.inf)
 
     assert ok_tt, "raw TT accuracy"
     assert ok_ee, "raw EE accuracy"
-    assert ok_bb_hi, "raw BB recomb-node accuracy (l>=100, interpolation-free)"
-    assert ok_bb_lo, "raw BB low-l-node accuracy (l<100, known structural diff)"
-    assert ok_bb_band, "raw BB band accuracy (interp-limited, vs hp CLASS)"
+    assert ok_bb_hi, "raw BB recomb-node accuracy (100<=l<=490, recurrence exact)"
+    assert ok_bb_lo, "raw BB low-l-node accuracy (3<=l<100, inter-code scatter)"
+    assert ok_bb_cut, "raw BB cutoff sliver 491-500 (recurrence exact to l_tensor_max)"
 
 
 def test_bb_lensed():

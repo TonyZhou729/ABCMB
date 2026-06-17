@@ -21,6 +21,30 @@ source, deferred to a follow-up session. Full writeup + remaining candidates
 The B-modes work is committed (`bmodes` @ `1774dad`, pushed). The test +
 diagnostic changes from 2026-06-15 are not yet committed.
 
+**UPDATE 2026-06-16 (B_modes_4):** the curvature branch was merged into `bmodes`
+and the tensor spectrum was ported to the exact every-ℓ hyperspherical-Bessel
+recurrence (Option C in `SCOPE_bessel_merge.md`). `origin/curvature` (==
+`worktree-curvature` @ `3174b25`) was merged wholesale (curved background /
+`species.Curvature` / curved k-grids / `ABCMBTools` helpers + the 79 MB
+`bessel_tab/*.txt` deletion); only `spectrum.py` (recurrence `get_Cl` + bmodes'
+`tensor_cls` graft + 4-tuple EE↔BB `lensed_Cls`) and `main.py` (`expected_keys`
+union + a guard) conflicted. `tensors.py:TensorSpectrumSolver` now computes
+every integer ℓ via a flat (K=0) recurrence (`_tensor_sources` +
+`_Cl_all_ells_tensor`), dropping the phi-table imports and the sparse-ℓ
+CubicSpline. **The §5 ℓ=477 interp residual is gone**: at CLASS's computed
+nodes raw BB is 8.9e-4 (recomb) / 3.1e-3 (low-ℓ, unchanged inter-code scatter),
+the 491–500 sliver is 8.8e-4 (was 1.4e-2), and the residual ~5e-3 between
+nodes is CLASS's OWN interpolation (node 8.9e-4 vs every-ℓ 5.1e-3;
+`diag_bb_recurrence_check.py`). Validated: `accuracy_test_bb.py` PASS (raw +
+lensed), scalar `accuracy_test.py` PASS, reverse-AD tensors=True finite on both
+lensing flags (`test_reverse_ad_bb.py`). Forward ClBB² and reverse grads match
+the old table path to ~1e-6. tensors=True warm ~16.5–17.1 s (+0.7 s vs the
+table path). **Curved + tensors is guarded as unsupported** (the tensor radial
+basis is flat-only; `omega_k != 0` needs the spin-2 hyperspherical radials).
+NOT re-validated this session: curvature's own curved (`omega_k != 0`) scalar
+configs — that code is merged verbatim from `origin/curvature` (which validated
+them) and the flat scalar path passes `accuracy_test.py`.
+
 ---
 
 ## 1. What was built
