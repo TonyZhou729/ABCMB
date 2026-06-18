@@ -3,8 +3,39 @@ from jax import config, lax, vmap
 import jax.numpy as jnp
 import equinox as eqx
 from . import constants as cnst
+from .ABCMBTools import _curv_g
 
 config.update("jax_enable_x64", True)
+
+
+def curvature_s_l(l, k, K):
+    """
+    Curved-space free-streaming coefficients s_l = sqrt(1 - K(l^2-1)/k^2).
+
+    Dresses the l <-> l+1 couplings of every Boltzmann hierarchy in non-flat
+    FLRW space (Lesgourgues & Tram, arXiv:1305.3261; CLASS perturbations.c
+    s_l array). s_1 = 1 and all s_l = 1 in the flat limit, so the flat
+    equations are recovered exactly at K = 0. Clipped at zero (with an
+    AD-safe sqrt argument): for closed universes modes only support l <= nu-1,
+    and the clip terminates the hierarchy physically.
+
+    Parameters:
+    -----------
+    l : array
+        Multipole indices.
+    k : float
+        Wavenumber eigenvalue label, Mpc^-1.
+    K : float
+        Curvature constant, Mpc^-2.
+
+    Returns:
+    --------
+    array
+        s_l, same shape as l.
+    """
+    arg = 1. - K*(l*l - 1.)/k**2
+    return jnp.where(arg > 0., jnp.sqrt(jnp.clip(arg, 1e-30, None)), 0.)
+
 
 ### ABSTRACT BASE CLASSES AND INTERFACES ###
 
@@ -489,6 +520,71 @@ class DarkEnergy(BackgroundFluid):
         params = args
         return -self.rho(lna, params)
 
+class Curvature(BackgroundFluid):
+    """
+    Spatial-curvature pseudo-fluid.
+
+    Represents the -K c^2/a^2 term of the curved Friedmann equation as a
+    background species with rho ~ a^{-2} and w = -1/3, so that H, aH_prime
+    and d2adtau2_over_a inherit the curved forms with no changes to the
+    background machinery (rho + 3P = 0 for w = -1/3, so the constant -K c^2
+    drops out of the (aH)^2 derivative exactly as it should). Carries no
+    perturbations: the perturbed Einstein equations and Boltzmann hierarchies
+    take curvature through explicit K factors instead.
+
+    Required input parameters: params['omega_k'] (= Omega_k h^2; positive for
+    an open universe, CLASS sign convention).
+
+    Methods:
+    --------
+    rho : Compute curvature pseudo-density (units: eV cm^{-3}; negative for closed)
+    P : Compute curvature pseudo-pressure (units: eV cm^{-3})
+    """
+
+    name = "Curvature"
+
+    def __init__(self, first_idx, specs):
+        super().__init__(first_idx, specs)
+        self.name = "Curvature"
+
+    def rho(self, lna, args):
+        """
+        Compute curvature pseudo-density.
+
+        Parameters:
+        -----------
+        lna : float
+            Logarithm of scale factor
+        args : dict
+            Cosmological parameters (params)
+
+        Returns:
+        --------
+        float
+            Curvature pseudo-density (units: eV cm^{-3})
+        """
+        params = args
+        return params['omega_k'] * (3.*cnst.H0_over_h**2/8./jnp.pi/cnst.G) / jnp.exp(lna)**2
+
+    def P(self, lna, args):
+        """
+        Compute curvature pseudo-pressure (w = -1/3).
+
+        Parameters:
+        -----------
+        lna : float
+            Logarithm of scale factor
+        args : dict
+            Cosmological parameters (params)
+
+        Returns:
+        --------
+        float
+            Curvature pseudo-pressure (units: eV cm^{-3})
+        """
+        params = args
+        return -self.rho(lna, params)/3.
+
 class ColdDarkMatter(StandardFluid):
     """
     Cold dark matter fluid species implementation.
@@ -577,7 +673,8 @@ class ColdDarkMatter(StandardFluid):
             Initial density perturbation (units: dimensionless)
         """
         params = args
-        delta = -(k*tau_ini)**2/4. * (1.-params["om"]*tau_ini/5.)
+        s2_squared = 1. - 3.*params['K']/k**2
+        delta = -(k*tau_ini)**2/4. * (1.-params["om"]*tau_ini/5.) * s2_squared
         return jnp.array([delta])
 
     def y_prime(self, k, lna, metric_h_prime, metric_eta_prime, y, args):
@@ -694,12 +791,13 @@ class MasslessNeutrino(StandardFluid):
         """
         params = args
         R_nu = params['R_nu']
+        s2_squared = 1. - 3.*params['K']/k**2
 
-        delta = - (k*tau_ini)**2/3. * (1.-params["om"]*tau_ini/5.)
+        delta = - (k*tau_ini)**2/3. * (1.-params["om"]*tau_ini/5.) * s2_squared
         theta = - k*(k*tau_ini)**3/36./(4.*R_nu+15.) \
-                * (4.*R_nu+11.+12.-3.*(8.*R_nu**2+50.*R_nu+275.)/20./(2.*R_nu+15.)*tau_ini*params["om"])
-        sigma = (k*tau_ini)**2/(45.+12.*R_nu) * 2. * (1.+(4.*R_nu-5.)/4./(2.*R_nu+15.)*tau_ini*params["om"])
-        
+                * (4.*R_nu+11.+12.*s2_squared-3.*(8.*R_nu**2+50.*R_nu+275.)/20./(2.*R_nu+15.)*tau_ini*params["om"]) * s2_squared
+        sigma = (k*tau_ini)**2/(45.+12.*R_nu) * (3.*s2_squared-1.) * (1.+(4.*R_nu-5.)/4./(2.*R_nu+15.)*tau_ini*params["om"])
+
         # Return the four non-zero ell modes, and all higher ell-modes are zero to start.
         # For the neutrinos we track Fnu_2 = 2*sigma, for better structure within the hierarchy.
         return jnp.concatenate((jnp.array([delta, theta, sigma]), jnp.zeros(self.num_equations-3)))
@@ -738,17 +836,23 @@ class MasslessNeutrino(StandardFluid):
         theta = F[1]
         sigma = F[2]
 
+        # Curved free-streaming coefficients s and l_max factor g (CLASS ur
+        # hierarchy, arXiv:1305.3261; both = 1 at K = 0).
+        K = params['K']
+        s = curvature_s_l(jnp.arange(self.num_equations), k, K)
+        gcurv = _curv_g(K*tau**2)
+
         # density, velocity, shear perturbations
         delta_prime = -4./3./aH*theta - 2./3.*metric_h_prime
-        theta_prime = k**2/aH*(delta/4.-sigma)
-        sigma_prime = 4./15./aH*theta - 3./10.*k/aH*F[3] + 2./15.*metric_h_prime + 4./5.*metric_eta_prime
-        F3_prime = 1./7. * k/aH * (6.*sigma - 4.*F[4])
+        theta_prime = k**2/aH*(delta/4.-s[2]**2*sigma)
+        sigma_prime = 4./15./aH*theta - 3./10.*k/aH*s[3]/s[2]*F[3] + 2./15.*metric_h_prime + 4./5.*metric_eta_prime
+        F3_prime = 1./7. * k/aH * (6.*s[3]*s[2]*sigma - 4.*s[4]*F[4])
 
         # Rest of the Boltzmann Hierarchy
         lmax = self.num_equations-1
         L = jnp.arange(4, lmax)
-        Fl_prime    = 1./(2.*L+1.)*k/aH * (L*F[L-1]-(L+1)*F[L+1])
-        Flmax_prime = k/aH*F[lmax-1] - (lmax+1)/aH/tau*F[lmax]
+        Fl_prime    = 1./(2.*L+1.)*k/aH * (L*s[L]*F[L-1]-(L+1)*s[L+1]*F[L+1])
+        Flmax_prime = k/aH*s[lmax]*F[lmax-1] - (lmax+1)/aH/tau*gcurv*F[lmax]
 
         return jnp.concatenate((jnp.array([delta_prime, theta_prime, sigma_prime, F3_prime]), Fl_prime, jnp.array([Flmax_prime])))
 
@@ -901,11 +1005,12 @@ class MassiveNeutrino(Fluid):
 
         # Initial conditions for massless neutrinos first, needed here.
         R_nu = params['R_nu']
+        s2_squared = 1. - 3.*params['K']/k**2
 
-        delta = - (k*tau_ini)**2/3. * (1.-params["om"]*tau_ini/5.)
+        delta = - (k*tau_ini)**2/3. * (1.-params["om"]*tau_ini/5.) * s2_squared
         theta = - k*(k*tau_ini)**3/36./(4.*R_nu+15.) \
-                * (4.*R_nu+11.+12.-3.*(8.*R_nu**2+50.*R_nu+275.)/20./(2.*R_nu+15.)*tau_ini*params["om"])
-        sigma = (k*tau_ini)**2/(45.+12.*R_nu) * 2. * (1.+(4.*R_nu-5.)/4./(2.*R_nu+15.)*tau_ini*params["om"])
+                * (4.*R_nu+11.+12.*s2_squared-3.*(8.*R_nu**2+50.*R_nu+275.)/20./(2.*R_nu+15.)*tau_ini*params["om"]) * s2_squared
+        sigma = (k*tau_ini)**2/(45.+12.*R_nu) * (3.*s2_squared-1.) * (1.+(4.*R_nu-5.)/4./(2.*R_nu+15.)*tau_ini*params["om"])
 
         bins = []
         for i in range(3):
@@ -948,6 +1053,12 @@ class MassiveNeutrino(Fluid):
         aH  = BG.aH(lna, params)
         tau = BG.tau(lna)
 
+        # Curved free-streaming coefficients s and l_max factor g (CLASS ncdm
+        # hierarchy, arXiv:1305.3261; both = 1 at K = 0).
+        K = params['K']
+        s = curvature_s_l(jnp.arange(self.num_ells_per_bin), k, K)
+        gcurv = _curv_g(K*tau**2)
+
         # Iterate through momentum bins
         bins = []
         for i in range(3):
@@ -960,16 +1071,16 @@ class MassiveNeutrino(Fluid):
             Psi = y[L]
 
             Psi0_prime = -q/epsilon/aH*Psi[1] + metric_h_prime/6. * dlnf0_dlnq
-            kPsi1_prime = q*k**2/3./epsilon/aH * (Psi[0] - 2.*Psi[2])
-            Psi2_prime = q*k/5./epsilon/aH * (2.*Psi[1]/k - 3.*Psi[3]) - (metric_h_prime/15. + 2.*metric_eta_prime/5.) * dlnf0_dlnq
+            kPsi1_prime = q*k**2/3./epsilon/aH * (Psi[0] - 2.*s[2]*Psi[2])
+            Psi2_prime = q*k/5./epsilon/aH * (2.*s[2]*Psi[1]/k - 3.*s[3]*Psi[3]) - s[2]*(metric_h_prime/15. + 2.*metric_eta_prime/5.) * dlnf0_dlnq
 
             # Intermediate hierarchy, 3<=L<lmax
             lmax = self.num_ells_per_bin - 1
             L_inter = jnp.arange(3, lmax) # Doesn't include lmax.
-            Psi_inter_prime = q*k/epsilon/aH/(2*L_inter+1) * (L_inter*Psi[L_inter-1] - (L_inter+1)*Psi[L_inter+1])
+            Psi_inter_prime = q*k/epsilon/aH/(2*L_inter+1) * (L_inter*s[L_inter]*Psi[L_inter-1] - (L_inter+1)*s[L_inter+1]*Psi[L_inter+1])
 
-            # lmax mode
-            Psi_lmax_prime = q*k/aH/epsilon*Psi[lmax-1] - (lmax+1)/aH/tau*Psi[lmax]
+            # lmax mode (no s_lmax on the upstream term, as in CLASS)
+            Psi_lmax_prime = q*k/aH/epsilon*Psi[lmax-1] - (lmax+1)/aH/tau*gcurv*Psi[lmax]
 
             # Putting it all together
             bins.append(jnp.concatenate((jnp.array([Psi0_prime, kPsi1_prime, Psi2_prime]), Psi_inter_prime, jnp.array([Psi_lmax_prime]))))
@@ -1238,8 +1349,9 @@ class Baryon(StandardFluid):
             Initial perturbation mode values (units: 1/Mpc for theta, else dimensionless)
         """
         params = args
-        delta = -(k*tau_ini)**2/4. * (1.-params["om"]*tau_ini/5.)
-        theta = - k**4 * tau_ini**3/36. * (1.-3.*(1.+5.*params['R_b']-params['R_nu'])/20./(1.-params['R_nu'])*params["om"]*tau_ini)
+        s2_squared = 1. - 3.*params['K']/k**2
+        delta = -(k*tau_ini)**2/4. * (1.-params["om"]*tau_ini/5.) * s2_squared
+        theta = - k**4 * tau_ini**3/36. * (1.-3.*(1.+5.*params['R_b']-params['R_nu'])/20./(1.-params['R_nu'])*params["om"]*tau_ini) * s2_squared
         return jnp.array([delta, theta])
 
     def y_prime(self, k, lna, metric_h_prime, metric_eta_prime, y, args):
@@ -1383,8 +1495,9 @@ class Photon(StandardFluid):
             Initial perturbation mode values (units: 1/Mpc for theta, else dimensionless)
         """
         params = args
-        delta = - (k*tau_ini)**2/3. * (1.-params["om"]*tau_ini/5.)
-        theta = - k**4 * tau_ini**3/36. * (1.-3.*(1.+5.*params['R_b']-params['R_nu'])/20./(1.-params['R_nu'])*params["om"]*tau_ini)
+        s2_squared = 1. - 3.*params['K']/k**2
+        delta = - (k*tau_ini)**2/3. * (1.-params["om"]*tau_ini/5.) * s2_squared
+        theta = - k**4 * tau_ini**3/36. * (1.-3.*(1.+5.*params['R_b']-params['R_nu'])/20./(1.-params['R_nu'])*params["om"]*tau_ini) * s2_squared
         return jnp.concatenate((jnp.array([delta, theta]), jnp.zeros(self.num_equations - 2)))
 
     def y_prime(self, k, lna, metric_h_prime, metric_eta_prime, y, args):
@@ -1429,22 +1542,28 @@ class Photon(StandardFluid):
         sigma = F[2]
         theta_b = baryon.get_theta(lna, y, args)
 
+        # Curved free-streaming coefficients s and l_max factor g (CLASS photon
+        # hierarchy, arXiv:1305.3261; both = 1 at K = 0).
+        K = params['K']
+        s = curvature_s_l(jnp.arange(max(self.num_F_ell_modes, self.num_G_ell_modes) + 1), k, K)
+        gcurv = _curv_g(K*tau**2)
+
         delta_prime = -4./3./aH*theta - 2./3.*metric_h_prime
-        theta_prime = k**2/aH*(delta/4.-sigma) + (theta_b-theta)/aH/tau_c
-        sigma_prime = 4./15./aH*theta - 3./10.*k/aH*F[3] + 2./15.*metric_h_prime + 4./5.*metric_eta_prime - 9./10./aH/tau_c*sigma + (G[0]+G[2])/20./aH/tau_c
-        F3_prime    = k/7./aH * (6.*sigma - 4.*F[4]) - F[3]/aH/tau_c
+        theta_prime = k**2/aH*(delta/4.-s[2]**2*sigma) + (theta_b-theta)/aH/tau_c
+        sigma_prime = 4./15./aH*theta - 3./10.*k/aH*s[3]/s[2]*F[3] + 2./15.*metric_h_prime + 4./5.*metric_eta_prime - 9./10./aH/tau_c*sigma + (G[0]+G[2])/20./aH/tau_c/s[2]
+        F3_prime    = k/7./aH * (6.*s[3]*s[2]*sigma - 4.*s[4]*F[4]) - F[3]/aH/tau_c
 
         # Temperature Boltzmann Hierarchy
         L = jnp.arange(4, Flmax) # Excludes the lmax mode
-        Fl_prime    = 1./(2.*L+1.)*k/aH * (L*F[L-1]-(L+1)*F[L+1]) - F[L]/aH/tau_c
-        Flmax_prime = k/aH*F[Flmax-1] - (Flmax+1)/aH/tau*F[Flmax] - F[Flmax]/aH/tau_c
+        Fl_prime    = 1./(2.*L+1.)*k/aH * (L*s[L]*F[L-1]-(L+1)*s[L+1]*F[L+1]) - F[L]/aH/tau_c
+        Flmax_prime = k/aH*s[Flmax]*F[Flmax-1] - (Flmax+1)/aH/tau*gcurv*F[Flmax] - F[Flmax]/aH/tau_c
 
         # Polarization Boltzmann Hierarchy
         L = jnp.arange(0, Glmax) # Excludes the lmax mode
-        Gl_prime    = 1./(2.*L+1.)*k/aH * (L*G[L-1]-(L+1)*G[L+1]) - G[L]/aH/tau_c \
-                    + (2.*sigma+G[0]+G[2])/2./aH/tau_c * jnp.concatenate((jnp.array([1., 0., 0.2]), jnp.zeros(Glmax-3)))
+        Gl_prime    = 1./(2.*L+1.)*k/aH * (L*s[L]*G[L-1]-(L+1)*s[L+1]*G[L+1]) - G[L]/aH/tau_c \
+                    + (2.*s[2]*sigma+G[0]+G[2])/2./aH/tau_c * jnp.concatenate((jnp.array([1., 0., 0.2]), jnp.zeros(Glmax-3)))
 
-        Glmax_prime = k/aH*G[Glmax-1] - (Glmax+1)/aH/tau*G[Glmax] - G[Glmax]/aH/tau_c
+        Glmax_prime = k/aH*s[Glmax]*G[Glmax-1] - (Glmax+1)/aH/tau*gcurv*G[Glmax] - G[Glmax]/aH/tau_c
         return jnp.concatenate((jnp.array([delta_prime, theta_prime, sigma_prime, F3_prime]), Fl_prime, jnp.array([Flmax_prime]), Gl_prime, jnp.array([Glmax_prime])))
 
     def output_perturbations(self, lna, modes, args):

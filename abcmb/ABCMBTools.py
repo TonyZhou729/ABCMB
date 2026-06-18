@@ -360,3 +360,112 @@ def bilinear_interp(x, y, z, xq, yq):
     return (1 - tx) * (1 - ty) * z00 + tx * (1 - ty) * z01 + (1 - tx) * ty * z10 + tx * ty * z11
 
 
+
+
+### CURVED-GEOMETRY HELPERS ###
+
+# Generalized trig functions for curved FLRW as entire functions of u = K chi^2,
+# smooth through K = 0 (exact flat limit). K > 0 closed, K < 0 open. Series for
+# |u| < _CURV_U0; clipped sqrt args keep the unused branch finite under reverse AD.
+
+_CURV_U0 = 1.e-2
+
+
+def _curv_f(u):
+    """
+    f(u) = sin(sqrt(u))/sqrt(u), continued through u=0 (sinh for u<0, 1 at 0).
+
+    Parameters:
+    -----------
+    u : array
+        K * chi^2.
+
+    Returns:
+    --------
+    array
+        f(u); used as sin_K(chi) = chi * f(K chi^2).
+    """
+    series = 1. - u/6. + u**2/120. - u**3/5040. + u**4/362880.
+    sp = jnp.sqrt(jnp.clip(u, _CURV_U0, None))
+    sm = jnp.sqrt(jnp.clip(-u, _CURV_U0, None))
+    return jnp.where(u > _CURV_U0, jnp.sin(sp)/sp,
+                     jnp.where(u < -_CURV_U0, jnp.sinh(sm)/sm, series))
+
+
+def _curv_g(u):
+    """
+    g(u) = sqrt(u)*cot(sqrt(u)), continued through u=0 (coth for u<0, 1 at 0).
+
+    Parameters:
+    -----------
+    u : array
+        K * chi^2.
+
+    Returns:
+    --------
+    array
+        g(u); used as cot_K(chi) = g(K chi^2)/chi.
+    """
+    series = 1. - u/3. - u**2/45. - 2.*u**3/945. - u**4/4725.
+    sp = jnp.sqrt(jnp.clip(u, _CURV_U0, None))
+    sm = jnp.sqrt(jnp.clip(-u, _CURV_U0, None))
+    return jnp.where(u > _CURV_U0, sp/jnp.tan(sp),
+                     jnp.where(u < -_CURV_U0, sm/jnp.tanh(sm), series))
+
+
+def _curv_g_diff(a, b):
+    """
+    Cancellation-safe g(a) - g(b) for the Phi_1 seed.
+
+    Parameters:
+    -----------
+    a, b : array
+        Arguments of g (K chi^2 and q^2 chi^2 at the call site).
+
+    Returns:
+    --------
+    array
+        g(a) - g(b); factored series when both |a|, |b| < _CURV_U0.
+    """
+    both_small = jnp.maximum(jnp.abs(a), jnp.abs(b)) < _CURV_U0
+    series = (a - b) * (-1./3. - (a + b)/45. - 2.*(a**2 + a*b + b**2)/945.
+                        - (a**3 + a**2*b + a*b**2 + b**3)/4725.)
+    return jnp.where(both_small, series, _curv_g(a) - _curv_g(b))
+
+
+def sin_K(chi, K):
+    """
+    Curved-space comoving distance S_K(chi) = chi * f(K chi^2).
+
+    Parameters:
+    -----------
+    chi : array
+        Comoving radial distance, Mpc.
+    K : array
+        Curvature constant, Mpc^-2 (K > 0 closed, K < 0 open).
+
+    Returns:
+    --------
+    array
+        S_K(chi), Mpc: sin(sqrt(K) chi)/sqrt(K) (closed), sinh form (open), chi (flat).
+    """
+    return chi * _curv_f(K * chi**2)
+
+
+def cot_K(chi, K):
+    """
+    Generalized cotangent cot_K(chi) = g(K chi^2)/chi.
+
+    Parameters:
+    -----------
+    chi : array
+        Comoving radial distance, Mpc (kept > 0; diverges as 1/chi at 0).
+    K : array
+        Curvature constant, Mpc^-2.
+
+    Returns:
+    --------
+    array
+        cot_K(chi), Mpc^-1: sqrt(K) cot(sqrt(K) chi) (closed), coth form (open), 1/chi (flat).
+    """
+    return _curv_g(K * chi**2) / chi
