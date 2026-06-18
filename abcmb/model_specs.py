@@ -3,12 +3,24 @@ import jax.numpy as jnp
 import equinox as eqx
 
 from . import species
+from . import constants as cnst
 
 def load_specs(input_specs):
 
     specs = {}
 
     specs["use_LCDM_species"] = input_specs.get("use_LCDM_species", True)
+
+    ### CURVATURE ###
+    # curvature: use the hyperspherical-Bessel recurrence (required for omega_k != 0).
+    # omega_k_ref: static reference Omega_k h^2 for the (shape-static) k-grids;
+    # closed runs require it (grid starts at nu=3, k=sqrt(8K)), set to the
+    # most-closed value explored. closed_integer_nu: snap the low-q transfer
+    # grid to the integer-nu lattice (see get_k_axis_transfer). params['omega_k']
+    # carries the actual traced value.
+    specs["curvature"]   = input_specs.get("curvature", False)
+    specs["omega_k_ref"] = input_specs.get("omega_k_ref", 0.)
+    specs["closed_integer_nu"] = input_specs.get("closed_integer_nu", True)
 
     ### INPUT RELATED specs PARAMS ###
     # For reionization, input tau_reion the optical depth, or z_reion the hydrogen redshift?
@@ -90,7 +102,8 @@ def populate_species(user_species, specs):
         species.ColdDarkMatter,
         species.Baryon,
         species.Photon,
-        species.MasslessNeutrino
+        species.MasslessNeutrino,
+        species.Curvature
     )
 
     i = 0
@@ -128,7 +141,21 @@ def get_k_axis_perturbations(specs):
     k_min = specs["k_min_tau0"] / tau0_fid
     k_max = specs["k_max_tau0_over_l_max"] / tau0_fid * specs["l_max"]
 
-    k = k_min   
+    # Static curvature reference for the grid (CLASS perturb_get_k_list): closed
+    # starts at nu=3 (k=sqrt(8K)) and needs k_max/angular_rescaling to reach the
+    # same l_max; open starts at k just above sqrt(|K|) (q -> 0).
+    K_ref = -specs["omega_k_ref"] * (cnst.H0_over_h/cnst.c_Mpc_over_s)**2
+    specs["K_ref"] = K_ref
+    if K_ref > 0.:
+        # closed: divide k_max by the angular rescaling sin(s)/s (s = sqrt(K_ref)
+        # chi_*) so l_max is still reached after the S_K(chi) distance shrink.
+        s = np.sqrt(K_ref) * (tau0_fid - specs["tau_rec_fid"])
+        k_min = np.sqrt((8.-1.e-4)*K_ref)
+        k_max = k_max / (np.sin(s)/s)
+    elif K_ref < 0.:
+        k_min = np.sqrt(-K_ref + k_min**2)
+
+    k = k_min
     ks[0] = k
     i = 0
     while k < k_max:
@@ -136,7 +163,8 @@ def get_k_axis_perturbations(specs):
                 + 0.5 * (jnp.tanh((k-k_rec_fid)/k_rec_fid/specs["k_step_transition"])+1.)
                 * (specs["k_step_sub"]-specs["k_step_super"])) * k_rec_fid
 
-        scale2 = H0_fid**2
+        # CLASS adds |K| to the super-Hubble densification scale in curved space.
+        scale2 = H0_fid**2 + abs(K_ref)
 
         step *= (k**2/scale2+1.)/(k**2/scale2+1./specs["k_step_super_reduction"])
 
@@ -179,6 +207,23 @@ def get_k_axis_transfer(specs):
 
     k_period = 2*jnp.pi/(specs["tau0_fid"] - specs["tau_rec_fid"])
 
+    K_ref = specs.get("K_ref", 0.)
+
+    if K_ref < 0.:
+        # Open universes: transfer functions oscillate in q (q^2 = k^2 + K),
+        # so walk the step formula in q and map k = sqrt(q^2 - K) (CLASS
+        # densifies its low-q sampling the same way).
+        q = specs["k_min_tau0"] / specs["tau0_fid"]
+        q_max = np.sqrt(specs["k_max_cmb"]**2 + K_ref)
+        qs = [q]
+        while q < q_max:
+            q = q \
+                + k_period * specs["k_transfer_linstep"] * q \
+                / (q + specs["k_transfer_linstep"]/specs["k_transfer_logstep"])
+            qs.append(q)
+        ks = np.sqrt(np.array(qs)**2 - K_ref)
+        return jnp.array(ks)
+
     k = specs["k_min"]
     ks[0] = k
     i = 0
@@ -189,5 +234,38 @@ def get_k_axis_transfer(specs):
         i += 1
         ks[i] = k
 
-    ks = jnp.array(ks[np.where(ks>0)])
-    return ks
+    ks = ks[np.where(ks>0)]
+
+    # Closed universes have discrete modes nu = sqrt(k^2+K)/sqrt(K) = 3,4,5,...
+    # Resample the grid's low end onto the integer-nu lattice (CLASS
+    # transfer_get_q_list): Delta nu = 1 up to nu_dense_top, then ramp.
+    K_ref = specs.get("K_ref", 0.)
+    if K_ref > 0. and specs.get("closed_integer_nu", True):
+        # Delta nu = 1 up to nu_dense_top (samples the sharp ell ~ nu onset and
+        # makes the k-trapezoid the exact discrete-mode sum), then ramp the step
+        # over n_transition points to avoid a sampling-density boundary artifact.
+        sqrtK = np.sqrt(K_ref)
+        nu_dense_top = 512.
+        n_transition = 250.
+        nu = 3.
+        nus = [nu]
+        i_since = 0
+        while True:
+            k_cur = np.sqrt(max(nu**2*K_ref - K_ref, 0.))
+            if k_cur >= specs["k_max_cmb"]:
+                break
+            step_k = k_period * specs["k_transfer_linstep"] * max(k_cur, sqrtK) \
+                / (max(k_cur, sqrtK) + specs["k_transfer_linstep"]/specs["k_transfer_logstep"])
+            dnu_f = max(1., np.round(step_k/sqrtK))
+            if nu < nu_dense_top:
+                dnu = 1.
+            else:
+                t = min(1., i_since/n_transition)
+                i_since += 1
+                dnu = max(1., np.round((1.-t)*1. + t*dnu_f))
+            nu += dnu
+            nus.append(nu)
+        nu_grid = np.array(nus)
+        ks = np.sqrt(nu_grid**2*K_ref - K_ref)
+
+    return jnp.array(ks)

@@ -556,7 +556,7 @@ class Background(BackgroundPreRecomb):
         vis_vals = vmap(self.visibility, in_axes=[0, None])(lna_vals, params)
         self.lna_rec = lna_vals[jnp.argmax(vis_vals)]
         self.lna_visibility_stop = lna_vals[jnp.argmin((vis_vals - 1.e-3)**2)]
-        self.rA_rec = self.tau0 - self.tau(self.lna_rec)
+        self.rA_rec = tools.sin_K(self.tau0 - self.tau(self.lna_rec), params['K'])
 
         # Find approximate early time when aH x tau_c = 0.008
         lna_vals = jnp.linspace(-15.0, -6.0, 5000)
@@ -878,7 +878,10 @@ class Background(BackgroundPreRecomb):
         # initial condition assuming cs**2 = 1/3 at early times
         rs0 = 1./jnp.sqrt(3) / (self.aH( self.lna_tau_tab[0], params ))
 
-        integrand = lambda lna, y, args: 1./jnp.sqrt(3*(1+self.R_ratio_lna(lna, params))) / (self.aH(lna, params))
+        # The sqrt(1 - K rs^2) factor measures rs along the curved radial
+        # geodesic (CLASS background.c); a tiny correction since rs is far
+        # inside the curvature radius.
+        integrand = lambda lna, y, args: 1./jnp.sqrt(3*(1+self.R_ratio_lna(lna, params))) / (self.aH(lna, params)) * jnp.sqrt(1.-params['K']*y**2)
         term = ODETerm(integrand)
         stepsize_controller = PIDController(pcoeff=0.4, icoeff=0.3, dcoeff=0, rtol=1.e-3, atol=1.e-6)
         adjoint=self.adjoint()

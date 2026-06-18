@@ -190,8 +190,9 @@ class PerturbationEvolver(eqx.Module):
         tau_ini = BG.tau(lna_ini)
         
         om = params["om"]
+        s2_squared = 1. - 3.*params['K']/k**2
 
-        metric_eta_ini = (1.-k**2*tau_ini**2/12./(15.+4.*params['R_nu'])*(5.+4.*params['R_nu'] - (16.*params['R_nu']*params['R_nu']+280.*params['R_nu']+325)/10./(2.*params['R_nu']+15.)*tau_ini*om))
+        metric_eta_ini = (1.-k**2*tau_ini**2/12./(15.+4.*params['R_nu'])*(5.+4.*s2_squared*params['R_nu'] - (16.*params['R_nu']*params['R_nu']+280.*params['R_nu']+325)/10./(2.*params['R_nu']+15.)*tau_ini*om))
 
         all_fluid_ini = jnp.concatenate([p.y_ini(k, tau_ini, params) for p in self.species_list])
         y_ini = jnp.concatenate((jnp.array([metric_eta_ini]), all_fluid_ini))
@@ -235,8 +236,12 @@ class PerturbationEvolver(eqx.Module):
             # If species has velocity perturbation, add to total.
             sum_rho_plus_P_theta += species.rho_plus_P_theta(lna, y, params)
 
-        metric_h_prime   = 2./aH**2 * (k**2*metric_eta + 4.*jnp.pi*cnst.G*a**2/cnst.c_Mpc_over_s**2 * sum_rho_delta)
-        metric_eta_prime = 4.*jnp.pi*cnst.G*a**2/aH/k**2 * sum_rho_plus_P_theta / cnst.c_Mpc_over_s**2
+        # Synchronous-gauge Einstein constraints with curvature (CLASS
+        # perturbations_einstein): k^2 eta -> (k^2-3K) eta in h', and eta'
+        # gains the +K h'/2 term with a (k^2-3K) denominator.
+        K = params['K']
+        metric_h_prime   = 2./aH**2 * ((k**2-3.*K)*metric_eta + 4.*jnp.pi*cnst.G*a**2/cnst.c_Mpc_over_s**2 * sum_rho_delta)
+        metric_eta_prime = (4.*jnp.pi*cnst.G*a**2/aH * sum_rho_plus_P_theta / cnst.c_Mpc_over_s**2 + K/2.*metric_h_prime) / (k**2-3.*K)
 
         # Now loop over all species and assemble their respective y_primes
         args = (BG, params, self.species_list, self.species_dict)
@@ -384,8 +389,11 @@ class PerturbationEvolver(eqx.Module):
 
         delta_m = sum_rho_delta_m / sum_rho_m[:, None]
 
-        metric_h_prime     = 2./aH**2 * (karr**2*metric_eta + 4.*jnp.pi*cnst.G*a**2/cnst.c_Mpc_over_s**2 * sum_rho_delta)
-        metric_eta_prime   = 4.*jnp.pi*cnst.G*a**2/aH * sum_rho_plus_P_theta / cnst.c_Mpc_over_s**2 / karr**2
+        # Same curved Einstein constraints as in get_derivatives; alpha and
+        # alpha' keep their flat forms (bare k^2), as in CLASS.
+        K = params['K']
+        metric_h_prime     = 2./aH**2 * ((karr**2-3.*K)*metric_eta + 4.*jnp.pi*cnst.G*a**2/cnst.c_Mpc_over_s**2 * sum_rho_delta)
+        metric_eta_prime   = (4.*jnp.pi*cnst.G*a**2/aH * sum_rho_plus_P_theta / cnst.c_Mpc_over_s**2 + K/2.*metric_h_prime) / (karr**2-3.*K)
         metric_alpha       = aH*(metric_h_prime + 6.*metric_eta_prime)/2./karr**2
         metric_alpha_prime = metric_eta/aH - 2.*metric_alpha \
                            - 12.*jnp.pi*cnst.G*a**2/aH * sum_rho_plus_P_sigma / cnst.c_Mpc_over_s**2 / karr**2
