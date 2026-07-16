@@ -1,3 +1,95 @@
 [build-system]
-requires = ["setuptools>=61", "wheel"]
+requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "ABCMB"
+description = "A fast, differentiable, and extensible CMB code"
+readme = { file = "README.md", content-type = "text/markdown" }
+license = { text = "MIT" }
+keywords = ["cosmology", "differentiable", "CMB", "physics", "JAX"]
+requires-python = ">=3.11"
+dynamic = ["version"]
+
+authors = [
+    { name = "Zilu Zhou" },
+    { name = "Cara Giovanetti", email = "cgiovanetti@lbl.gov" },
+    { name = "Hongwan Liu" },
+]
+
+classifiers = [
+    "Development Status :: 1 - Planning",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+
+dependencies = [
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "diffrax",
+    "equinox==0.13.2",
+    "interpax",
+    "jax==0.8.1",
+    "optimistix==0.0.11",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "classy",
+]
+dev = [
+    "ruff==0.15.20",
+    "pre-commit",
+]
+
+[project.urls]
+Homepage = "https://github.com/TonyZhou729/ABCMB"
+
+[tool.setuptools.dynamic]
+version = { attr = "abcmb.version.__version__" }
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["abcmb", "abcmb.*"]
+
+[tool.setuptools.package-data]
+abcmb = [
+    "bessel_tab/*.txt",
+    "hyrex/tabs/*.dat",
+    "linx/data/*",
+    "linx/data/background/*.txt",
+    "linx/data/nuclear_rates/key_PRIMAT_2018/*.txt",
+    "linx/data/nuclear_rates/key_PRIMAT_2023/*.txt",
+    "linx/data/nuclear_rates/key_YOF/*.txt",
+    "linx/data/nuclear_rates/other_PRIMAT_2023/*.txt",
+    "linx/data/weak_thermal_corrections/*.txt",
+    "sBBN_2025_CLASS.txt",
+]
+
+[tool.ruff]
+target-version = "py311"
+# linx/ and hyrex/ are vendored companion codes (LINX, HyRex); leave them to
+# their upstreams rather than reformatting/linting to ABCMB's rules.
+# example_notebooks/ are pedagogical; don't reformat teaching material.
+extend-exclude = ["abcmb/linx", "abcmb/hyrex", "example_notebooks"]
+
+[tool.ruff.lint]
+# Ruff defaults (pyflakes F + pycodestyle E4/E7/E9) plus import sorting (I).
+extend-select = ["I"]
+# `l` is the standard multipole-moment symbol throughout this CMB code
+# (the Output.l attribute, etc.), so don't flag it as an ambiguous name.
+ignore = ["E741"]
+
+[tool.ruff.lint.per-file-ignores]
+# Sphinx conf.py must manipulate sys.path before importing the package for
+# autodoc, so module-level imports legitimately follow other statements.
+"docs/conf.py" = ["E402"]

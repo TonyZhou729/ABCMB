@@ -1,0 +1,22 @@
+# Local git hooks. Install once with:
+#     uvx pre-commit install --install-hooks --hook-type pre-commit --hook-type pre-push
+#
+# Lint + format run on every `git commit`; the (slow) accuracy test runs on
+# `git push`. CI runs the same hooks server-side.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.20
+    hooks:
+      - id: ruff-check    # lint (respects [tool.ruff] excludes/ignores)
+        args: [--fix]
+      - id: ruff-format   # formatter
+
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest (accuracy test vs CLASS)
+        entry: uv run --extra test pytest -q pytests
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]

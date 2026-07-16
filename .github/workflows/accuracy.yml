@@ -7,6 +7,27 @@ on:
     branches: [main]
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Cache pre-commit environments
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      # Runs the commit-stage hooks (ruff lint + format). The pre-push pytest
+      # hook is excluded here; tests run in the `build` job below.
+      - name: Run pre-commit (lint + format)
+        run: uvx pre-commit run --all-files --show-diff-on-failure
+
   build:
     runs-on: ubuntu-latest
     env:
@@ -24,24 +45,18 @@ jobs:
 
     strategy:
       matrix:
-        python-version: ['3.X']
+        python-version: ['3.11', '3.12']
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v2
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          enable-cache: true
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r pytest_requirements.txt
+        run: uv sync --extra test --python ${{ matrix.python-version }}
 
       - name: Run tests
-        env:
-          PYTHONPATH: ${{ github.workspace }}/ABCMB
-        run: |
-          cd pytests
-          pytest -s -vv
+        run: uv run --python ${{ matrix.python-version }} pytest -s -vv pytests

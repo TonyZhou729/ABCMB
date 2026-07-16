@@ -6,3 +6,5 @@
 **/benchmark_scripts/
 **/Module_Tests/
 **/comparison_scripts/
+*.egg-info/
+scratch/
