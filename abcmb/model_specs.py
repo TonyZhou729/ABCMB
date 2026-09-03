@@ -1,8 +1,8 @@
-import numpy as np
 import jax.numpy as jnp
-import equinox as eqx
+import numpy as np
 
 from . import species
+
 
 def load_specs(input_specs):
 

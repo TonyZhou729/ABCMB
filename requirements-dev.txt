@@ -1,0 +1,6 @@
+# Developer tooling (linters, git hooks). Install with:
+#     pip install -r requirements-dev.txt
+#
+# Runtime/test dependencies live in setup.cfg and pytest_requirements.txt.
+ruff==0.15.20
+pre-commit

@@ -1,0 +1,23 @@
+# Local git hooks. Install once with:
+#     pip install -r requirements-dev.txt
+#     pre-commit install
+#
+# Ruff lint runs on every `git commit`, over the files being committed.
+# CI runs the same lint over the whole repo.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.20
+    hooks:
+      - id: ruff-check    # respects [tool.ruff] excludes/ignores in pyproject.toml
+        args: [--fix]
+
+      # --- Formatter: not enabled yet ---------------------------------------
+      # Enabling `ruff-format` reformats the entire codebase in one commit,
+      # which buries real changes in review noise. To turn it on:
+      #   1. Land a standalone commit that is *only* `ruff format .`
+      #   2. Record that commit's SHA in .git-blame-ignore-revs so `git blame`
+      #      skips it.
+      #   3. Uncomment the hook below and the matching step in
+      #      .github/workflows/accuracy.yml, and drop the `format` cases in
+      #      check.sh.
+      # - id: ruff-format
