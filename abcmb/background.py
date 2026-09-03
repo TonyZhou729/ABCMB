@@ -1,18 +1,26 @@
-import jax
-from jax import config, vmap, lax
-import numpy as np
-import jax.numpy as jnp
-import equinox as eqx
-from diffrax import diffeqsolve, ODETerm, Kvaerno5, Tsit5, SaveAt, PIDController, ForwardMode
-import optimistix as optx
+import os
 
-from .hyrex.array_with_padding import array_with_padding
-from .hyrex import recomb_functions
-from .hyrex.hyrex import RecombInputs
+import diffrax
+import equinox as eqx
+import jax.numpy as jnp
+import optimistix as optx
+from diffrax import (
+    ForwardMode,
+    Kvaerno5,
+    ODETerm,
+    PIDController,
+    SaveAt,
+    Tsit5,
+    diffeqsolve,
+)
+from jax import config, lax, vmap
+
 from . import ABCMBTools as tools
 from . import constants as cnst
+from .hyrex import recomb_functions
+from .hyrex.array_with_padding import array_with_padding
+from .hyrex.hyrex import RecombInputs
 
-import os
 file_dir = os.path.dirname(__file__)
 config.update("jax_enable_x64", True)
 
@@ -271,9 +279,10 @@ class BackgroundPreRecomb(eqx.Module):
 
         lna_cut = -16.1  # use analytic approx before this
         # Analytic early-time approximation
-        tau_approx = lambda lna: (
-            jnp.exp(lna) / (cnst.H0_over_h / cnst.c_Mpc_over_s) / jnp.sqrt(params["omega_r"])
-        )
+        def tau_approx(lna):
+            return (
+                    jnp.exp(lna) / (cnst.H0_over_h / cnst.c_Mpc_over_s) / jnp.sqrt(params["omega_r"])
+                )
 
         lna_end = self.lna_tau_tab[-1]
 
@@ -701,7 +710,8 @@ class Background(BackgroundPreRecomb):
         Also computes time derivative of optical depth, which is the
         integrand involving the free electron fraction.
         """
-        integrand = lambda lna, y, args: -1./self.tau_c(lna, params)/self.aH(lna, params)
+        def integrand(lna, y, args):
+            return -1./self.tau_c(lna, params)/self.aH(lna, params)
         term = ODETerm(integrand)
         stepsize_controller = PIDController(pcoeff=0.4, icoeff=0.3, dcoeff=0, rtol=1.e-10, atol=1.e-10)
         adjoint=self.adjoint()
@@ -838,7 +848,8 @@ class Background(BackgroundPreRecomb):
         array
             Tabulated baryon optical depth values (units: dimensionless)
         """
-        integrand = lambda lna, y, args: jnp.float64(-1./self.tau_c(lna, params)/self.aH(lna, params)/(self.R_ratio_lna(lna, params)))
+        def integrand(lna, y, args):
+            return jnp.float64(-1./self.tau_c(lna, params)/self.aH(lna, params)/(self.R_ratio_lna(lna, params)))
         term = ODETerm(integrand)
         stepsize_controller = PIDController(pcoeff=0.4, icoeff=0.3, dcoeff=0, rtol=1.e-3, atol=1.e-6)
         adjoint=self.adjoint()
@@ -878,7 +889,8 @@ class Background(BackgroundPreRecomb):
         # initial condition assuming cs**2 = 1/3 at early times
         rs0 = 1./jnp.sqrt(3) / (self.aH( self.lna_tau_tab[0], params ))
 
-        integrand = lambda lna, y, args: 1./jnp.sqrt(3*(1+self.R_ratio_lna(lna, params))) / (self.aH(lna, params))
+        def integrand(lna, y, args):
+            return 1./jnp.sqrt(3*(1+self.R_ratio_lna(lna, params))) / (self.aH(lna, params))
         term = ODETerm(integrand)
         stepsize_controller = PIDController(pcoeff=0.4, icoeff=0.3, dcoeff=0, rtol=1.e-3, atol=1.e-6)
         adjoint=self.adjoint()
