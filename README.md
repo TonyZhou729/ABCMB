@@ -38,9 +38,9 @@ If you would like to contribute back to ABCMB, please do the following.
 ```
 python -m venv .venv
 source .venv/bin/activate
-pip install -r pytest_requirements.txt   # runtime and test dependencies
-pip install -r requirements-dev.txt      # ruff, pre-commit
-pip install -e . --no-deps               # makes `abcmb` importable from anywhere
+pip install -r pytest_requirements.txt   
+pip install -r requirements-dev.txt      
+pip install -e . --no-deps               
 pre-commit install
 ```
 
