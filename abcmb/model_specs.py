@@ -21,6 +21,9 @@ def load_specs(input_specs):
     specs["l_min"]     = input_specs.get("l_min", 2)
     specs["l_max"]     = input_specs.get("l_max", 2500)
     specs["lensing"]   = input_specs.get("lensing", False)
+    # Sequential chunks the lensing convolution's mu quadrature is processed in,
+    # for memory conservation reasons. 1 recovers the single-pass evaluation.
+    specs["lensing_mu_chunks"] = input_specs.get("lensing_mu_chunks", 32)
     specs["k_max"] = input_specs.get("k_max", 0.5)
 
     ### BBN ###

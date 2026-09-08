@@ -127,10 +127,15 @@ class SpectrumSolver(eqx.Module):
         Indices into bessel_l_tab for lensing multipoles
     lensing_mus : jnp.array
         Used for lensing, the Gauss-Legendre quadrature roots for the correlation function -> Cl integral.
+        Padded with zero-weight nodes up to a multiple of lensing_mu_chunks.
     lensing_ws : jnp.array
         Used for lensing, the Gauss-Legendre quadrature weights for the correlation function -> Cl integral.
     lensing : bool
         Whether to include gravitational lensing effects
+    lensing_mu_chunks : int
+        Number of sequential chunks the lensing convolution's mu quadrature
+        is processed in, to bound peak memory. 1 recovers the single-pass
+        evaluation; the result is independent of the chunk count.
     k_axis_transfer : jnp.array
         Wavenumber grid for transfer function integration (units: Mpc^{-1})
     k_axis_Pk_output : jnp.array
@@ -167,6 +172,7 @@ class SpectrumSolver(eqx.Module):
     lensing_ws   : jnp.array
 
     lensing : bool
+    lensing_mu_chunks : int
 
     k_axis_transfer  : jnp.array
     k_axis_Pk_output : jnp.array
@@ -187,7 +193,8 @@ class SpectrumSolver(eqx.Module):
                  scale_sw=1,
                  scale_isw=1,
                  scale_dop=1,
-                 scale_pol=1):
+                 scale_pol=1,
+                 lensing_mu_chunks=32):
         """
         Initialize CMB spectrum solver.
 
@@ -212,6 +219,10 @@ class SpectrumSolver(eqx.Module):
             Switch for Doppler term (default: 1)
         scale_pol : float, optional
             Switch for polarization term (default: 1)
+        lensing_mu_chunks : int, optional
+            Sequential chunks the lensing convolution's mu quadrature is
+            processed in, for memory conservation reasons. 1 recovers the
+            single-pass evaluation (default: 32)
         """
 
         self.lensing = lensing
@@ -229,14 +240,22 @@ class SpectrumSolver(eqx.Module):
             #self.lensing_theta = jnp.linspace(0., jnp.pi/16., lensing_ellmax // 8) # Size recommended by CLASS
             num_mu = lensing_ellmax + 70
             mu, w = tools.gauss_legendre_weights(num_mu)
-            self.lensing_mus = jnp.concatenate((mu, jnp.array([1.])))
-            self.lensing_ws = jnp.concatenate((w, jnp.array([0.])))
+            # lensed_Cls processes the mu axis in lensing_mu_chunks sequential
+            # chunks to bound peak memory. Pad the node list up to a multiple
+            # of the chunk count; padded nodes carry weight 0, so they do not
+            # alter the quadrature.
+            self.lensing_mu_chunks = min(max(int(lensing_mu_chunks), 1), num_mu)
+            rows_per_chunk = -(-num_mu // self.lensing_mu_chunks)
+            pad = self.lensing_mu_chunks * rows_per_chunk - num_mu
+            self.lensing_mus = jnp.concatenate((mu, jnp.ones(pad)))
+            self.lensing_ws = jnp.concatenate((w, jnp.zeros(pad)))
         else:
             self.lensing_ells = self.ells
             self.lensing_ells_indices = self.ells_indices
             #self.lensing_theta = jnp.array([0.]) # Not needed
             self.lensing_mus = jnp.array([0.]) # Not needed
             self.lensing_ws  = jnp.array([0.]) # Not needed
+            self.lensing_mu_chunks = 1
 
         self.k_axis_transfer = k_axis_transfer
         self.k_axis_Pk_output = k_axis_Pk_output
@@ -463,110 +482,116 @@ class SpectrumSolver(eqx.Module):
         tuple
             (ClTT, ClTE, ClEE) lensed power spectra
         """
-        # CLASS samples angle uniformly
-        # 500 points is enough for lmax < 4000
-        #theta = jnp.linspace(0., jnp.pi/16., 500)
-
-        # Flip mu so that mu is in ascending order, works better for trapz.
-        #mu = jnp.flip(jnp.cos(self.lensing_theta))
-        mu = self.lensing_mus
-
         # Compute lensing Cl
         Clpp = self.lensing_Cl(ells, PT, BG, params)
 
-        # Wigner matrices needed in general and for temperature
-        # Note that for all wigner matrices, the symmetry relation is dnm = (-1)^(m-n) x dmn
-        d00 = tools.d00(mu, ells)
-        d11 = tools.d1n(mu, ells, 1)
-        d1m1 = tools.d1n(mu, ells, -1)
-        d2m2 = tools.d2n(mu, ells, -2)
-        dm11 = d1m1
+        return self._lensed_Cls_from_Clpp(ells, Clpp, ClTT_unlensed, ClTE_unlensed, ClEE_unlensed)
 
-        # Wigner matrices needed for polarization
-        d22 = tools.d2n(mu, ells, 2)
-        d31 = tools.d3n(mu, ells, 1)
-        d40 = tools.d4n(mu, ells, 0)
-        d3m3 = tools.d3n(mu, ells, -3)
-        d4m4 = tools.d4n(mu, ells, -4)
-        d20 = tools.d2n(mu, ells, 0)
-        d3m1 = tools.d3n(mu, ells, -1)
-        d4m2 = tools.d4n(mu, ells, -2)
-        d02 = d20
-        dm24 = d4m2
+    def _lensed_Cls_from_Clpp(self, ells, Clpp, ClTT_unlensed, ClTE_unlensed, ClEE_unlensed):
+        """
+        Lensing convolution of the unlensed spectra with the lensing
+        potential spectrum Clpp. Process sequential chunks of quadrature at a time 
+        to keep memory usage in check. 
 
-        # Lensing angular correlation function
-        Cgl  = 1./4./jnp.pi * jnp.sum(
-            (2.*ells+1)*ells*(ells+1)*Clpp*d11, axis=1
-        ) # Nmu
-        Cgl2 = 1./4./jnp.pi * jnp.sum(
-            (2.*ells+1)*ells*(ells+1)*Clpp*dm11, axis=1
-        ) # Nmu
-        sigma2     = Cgl[-1] - Cgl
-        Cgl    = Cgl[:, None]
-        Cgl2   = Cgl2[:, None]
-        sigma2 = sigma2[:, None]
+        """
+        mu_chunks = self.lensing_mus.reshape(self.lensing_mu_chunks, -1)
+        w_chunks = self.lensing_ws.reshape(self.lensing_mu_chunks, -1)
 
-        llp1   = ells*(ells+1)
+        llp1 = ells*(ells+1)
 
-        X000       = jnp.exp(-llp1*sigma2/4)
-        X000_prime = -llp1/4.*X000
-        X220       = 1./4.*jnp.sqrt((ells+2)*(ells-1)*ells*(ells+1))*jnp.exp(-(llp1-2)*sigma2/4.)
-        X022       = jnp.exp(-(llp1-4)*sigma2/4)
-        X022_prime = -(llp1-4)/4*X022
-        X121       = -1./2.*jnp.sqrt((ells+2)*(ells-1))*jnp.exp(-(llp1-8./3.)*sigma2/4.)
-        X132       = -1./2.*jnp.sqrt((ells+3)*(ells-2))*jnp.exp(-(llp1-20./3.)*sigma2/4.)
-        X242       = 1./4.*jnp.sqrt((ells+4)*(ells+3)*(ells-2)*(ells-3))*jnp.exp(-(llp1-10.)*sigma2/4.)
+        def corr(Cl, kernel):
+            """(1/4pi) Sum_l (2l+1) Cl K_l(mu): (num_ell,) against a
+            (n_mu_rows, num_ell) kernel, summed over ell -> (n_mu_rows,)."""
+            return 1./4./jnp.pi * jnp.sum((2.*ells+1)*Cl*kernel, axis=1)
 
-        # Correlation functions
-        ksi = 1./4./jnp.pi * jnp.sum(
-            (2.*ells+1)*ClTT_unlensed * (
+        Cgl_at_1 = corr(llp1*Clpp, tools.d1n(jnp.array([1.]), ells, 1))[0]
+
+        # X-factor prefactors depending only on ell, hoisted out of the scan.
+        p220 = 1./4.*jnp.sqrt((ells+2)*(ells-1)*ells*(ells+1))
+        p121 = -1./2.*jnp.sqrt((ells+2)*(ells-1))
+        p132 = -1./2.*jnp.sqrt((ells+3)*(ells-2))
+        p242 = 1./4.*jnp.sqrt((ells+4)*(ells+3)*(ells-2)*(ells-3))
+
+        def one_chunk(carry, mu_w):
+            mu, w = mu_w # each (num_mu / lensing_mu_chunks,)
+
+            # Wigner matrices needed in general and for temperature, for this
+            # chunk's mu rows only.
+            # Note that for all wigner matrices, the symmetry relation is dnm = (-1)^(m-n) x dmn
+            d00 = tools.d00(mu, ells)
+            d11 = tools.d1n(mu, ells, 1)
+            d1m1 = tools.d1n(mu, ells, -1)
+            d2m2 = tools.d2n(mu, ells, -2)
+            dm11 = d1m1
+
+            # Wigner matrices needed for polarization
+            d22 = tools.d2n(mu, ells, 2)
+            d31 = tools.d3n(mu, ells, 1)
+            d40 = tools.d4n(mu, ells, 0)
+            d3m3 = tools.d3n(mu, ells, -3)
+            d4m4 = tools.d4n(mu, ells, -4)
+            d20 = tools.d2n(mu, ells, 0)
+            d3m1 = tools.d3n(mu, ells, -1)
+            d4m2 = tools.d4n(mu, ells, -2)
+            d02 = d20
+            dm24 = d4m2
+
+            # Lensing angular correlation function
+            Cgl = corr(llp1*Clpp, d11)
+            Cgl2 = corr(llp1*Clpp, dm11)[:, None]
+            sigma2 = (Cgl_at_1 - Cgl)[:, None]
+
+            X000       = jnp.exp(-llp1*sigma2/4)
+            X000_prime = -llp1/4.*X000
+            X220       = p220*jnp.exp(-(llp1-2)*sigma2/4.)
+            X022       = jnp.exp(-(llp1-4)*sigma2/4)
+            X022_prime = -(llp1-4)/4*X022
+            X121       = p121*jnp.exp(-(llp1-8./3.)*sigma2/4.)
+            X132       = p132*jnp.exp(-(llp1-20./3.)*sigma2/4.)
+            X242       = p242*jnp.exp(-(llp1-10.)*sigma2/4.)
+
+            # Correlation functions
+            ksi = corr(
+                ClTT_unlensed,
                 X000**2 * d00 \
-                + 8./ells/(ells+1)*Cgl2*X000_prime**2*d1m1 \
-                + Cgl2**2 * (X000_prime**2*d00 + X220**2*d2m2) \
-                #- d00
-            ), 
-            axis=1
-        )
+                + 8./llp1*Cgl2*X000_prime**2*d1m1 \
+                + Cgl2**2 * (X000_prime**2*d00 + X220**2*d2m2)
+            )
 
-        ksip = 1./4./jnp.pi * jnp.sum(
-            (2.*ells+1)*ClEE_unlensed * (
+            ksip = corr(
+                ClEE_unlensed,
                 X022**2 * d22 \
                 + 2*Cgl2*X132*X121*d31 \
-                + Cgl2**2 * (X022_prime**2*d22 + X242*X220*d40) \
-                #- d22
-            ), 
-            axis=1
-        )
+                + Cgl2**2 * (X022_prime**2*d22 + X242*X220*d40)
+            )
 
-        ksim = 1./4./jnp.pi * jnp.sum(
-            (2.*ells+1)*ClEE_unlensed * (
+            ksim = corr(
+                ClEE_unlensed,
                 X022**2 * d2m2 \
                 + Cgl2*(X121**2*d1m1 + X132**2*d3m3) \
-                + 1./2.*Cgl2**2 * (2*X022_prime**2*d2m2 + X220**2*d00 + X242**2*d4m4) \
-                #- d2m2
-            ), 
-            axis=1
-        )
+                + 1./2.*Cgl2**2 * (2*X022_prime**2*d2m2 + X220**2*d00 + X242**2*d4m4)
+            )
 
-        ksix = 1./4./jnp.pi * jnp.sum(
-            (2.*ells+1)*ClTE_unlensed * (
+            ksix = corr(
+                ClTE_unlensed,
                 X022*X000*d02 \
                 + Cgl2 * 2*X000_prime/jnp.sqrt(llp1) * (X121*d11 + X132*d3m1) \
-                + 1./2.*Cgl2**2 * ((2*X022_prime*X000_prime+X220**2)*d20+X220*X242*dm24) \
-                #- d02
-            ), 
-            axis=1
-        )
-        
-        #ClTT = 2.*jnp.pi * jnp.trapezoid(ksi[:, None]*d00, mu, axis=0) + ClTT_unlensed
-        #ClTE = 2.*jnp.pi * jnp.trapezoid(ksix[:, None]*d20, mu, axis=0) + ClTE_unlensed
-        #ClEE = 1./2. * 2.*jnp.pi * jnp.trapezoid(ksip[:, None]*d22+ksim[:, None]*d2m2, mu, axis=0) + ClEE_unlensed
-        w = self.lensing_ws[:, None]
-        ClTT = 2*jnp.pi * jnp.sum(ksi[:, None]*d00*w, axis=0)
-        ClTE = 2*jnp.pi * jnp.sum(ksix[:, None]*d20*w, axis=0)
-        ClEE = 1./2. * 2*jnp.pi * jnp.sum(
-            (ksip[:, None]*d22 + ksim[:, None]*d2m2)*w,
-            axis=0
+                + 1./2.*Cgl2**2 * ((2*X022_prime*X000_prime+X220**2)*d20+X220*X242*dm24)
+            )
+
+            w_col = w[:, None]
+            tt, te, ee = carry
+            tt = tt + 2*jnp.pi * jnp.sum(ksi[:, None]*d00*w_col, axis=0)
+            te = te + 2*jnp.pi * jnp.sum(ksix[:, None]*d20*w_col, axis=0)
+            ee = ee + 1./2. * 2*jnp.pi * jnp.sum(
+                (ksip[:, None]*d22 + ksim[:, None]*d2m2)*w_col,
+                axis=0
+            )
+            return (tt, te, ee), None
+
+        zeros = jnp.zeros(ells.shape[0])
+        (ClTT, ClTE, ClEE), _ = lax.scan(
+            one_chunk, (zeros, zeros, zeros), (mu_chunks, w_chunks)
         )
 
         return (ClTT, ClTE, ClEE)
