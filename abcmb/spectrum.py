@@ -949,10 +949,11 @@ class SpectrumSolver(eqx.Module):
             Phi_next = jnp.where(mask, (2.*lf + 1.)*inv_x*Phi_l - Phi_lm1, 0.)
             return (Phi_l, Phi_next), jnp.stack((clTT, clTE, clEE))
 
-        # finally, reshape.  Memory-aware to avoid spoiling reverse AD
+        # Set up and run the loop.  Memory-aware to avoid spoiling reverse AD
         CHUNK = 64
         n = self.l_top - 1
         npad = (-n) % CHUNK
+        # This is hyperspherical_get_xmin_from_approx in CLASS for K = 0, find xmin_l for the loops above
         lf_all = np.arange(2, 2 + n + npad, dtype=np.float64)
         lph = lf_all + 0.5
         lhs = np.log(2.e-10*lph)/lph
@@ -960,10 +961,11 @@ class SpectrumSolver(eqx.Module):
         xmin_all = lph/np.cosh(alpha)
         xs = (jnp.asarray(lf_all).reshape(-1, CHUNK), jnp.asarray(xmin_all).reshape(-1, CHUNK))
 
+        # run the loop
         def chunk_body(carry, xs_chunk):
             return lax.scan(step, carry, xs_chunk)
 
-        # Chunked scan over l; jax.checkpoint per chunk bounds reverse-AD residency.
+        # Chunked scan over l and reshaping
         _, outs = lax.scan(jax.checkpoint(chunk_body), (Phi1, Phi2), xs)
         cls = outs.reshape(-1, 3)[:n]
         return cls[:, 0], cls[:, 1], cls[:, 2]
