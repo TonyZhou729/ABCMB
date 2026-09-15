@@ -638,8 +638,8 @@ class SpectrumSolver(eqx.Module):
         
         else:
             sources = self._transfer_sources(PT, BG, params)
-            tt_raw te_raw, ee_raw = self._Cl_all_ells_recurrence(sources, params)
-            # recursion will compute all ell, contract to just the lensed ells
+            tt_raw, te_raw, ee_raw = self._Cl_all_ells_recurrence(sources, params)
+            # recursion will compute all ell, contract to just the lensing ells grid
             offset = (self.l_top - 1) - self.lensing_ells.shape[0]
             # no need to interpolate!
             tt_unlensed = tt_raw[offset:]
@@ -785,7 +785,7 @@ class SpectrumSolver(eqx.Module):
     # CG: reorganizing this section into its own method
     def _transfer_sources(self, PT, BG, params):
             """
-            Assemble the line-of sight source functions on (lna, k_transfer) grid.
+            Assemble the line-of-sight source functions on (lna, k_transfer) grid.
 
             Parameters:
             -----------
@@ -864,6 +864,8 @@ class SpectrumSolver(eqx.Module):
             weights = jnp.full((Nlna,), delta_lna, dtype=sourceT0.dtype)
             weights = weights.at[0].set(0.5 * delta_lna)
 
+            return (sourceT0, sourceT1, sourceT2, sourceE), aH_1d, tau, weights, tau0
+
     def _Cl_all_ells_recurrence(self, sources, params):
         """
         Compute Cl at each integer ell using the recursion relation for spherical
@@ -883,7 +885,7 @@ class SpectrumSolver(eqx.Module):
         Returns:
         --------
         tuple
-            (ClTT, ClTE, CLEE) for ell between ell_min and l_top
+            (ClTT, ClTE, CLEE) for ell between ell=2 (regardless of ell_min) and l_top
 
         
         Notes:
@@ -897,8 +899,8 @@ class SpectrumSolver(eqx.Module):
         # same operations as scan_step above
         chi = (tau0 - tau)[:, None]             # (Nlna, 1)
         x = k_axis * chi                        # (Nlna, Nk)
-        inx_x = 1./x
-        inx_x2 = 1./x**2
+        inv_x = 1./x
+        inv_x2 = 1./x**2
 
         # set up recursion
         Phi0 = jnp.sinc(x/jnp.pi)
@@ -913,7 +915,7 @@ class SpectrumSolver(eqx.Module):
         SWE = sourceE * wa
 
         # k integral is the same trapezoid in Cl_one_ell; see e.g. integrandTT
-        df = jnp.diff(k_axis)
+        dk = jnp.diff(k_axis)
         wk = jnp.concatenate((dk[:1]/2., (dk[1:] + dk[:-1])/2., dk[-1:]/2.))
         wk_prim = wk * 4.*jnp.pi * params['A_s'] * (k_axis/self.k_pivot)**(params['n_s']-1.) / k_axis
 
@@ -933,7 +935,7 @@ class SpectrumSolver(eqx.Module):
             r0 = jnp.where(mask, Phi_l, 0.)
             r1 = jnp.where(mask, j_prime, 0.)
             r2 = jnp.where(mask, (3.*j_2prime + Phi_l)/2., 0.)
-            eps_fractor = jnp.sqrt(3./8.*(lf+2.)*(lf+1.)*lf*(lf-1.))
+            eps_factor = jnp.sqrt(3./8.*(lf+2.)*(lf+1.)*lf*(lf-1.))
             rE = eps_factor * jnp.where(mask, Phi_l * inv_x2, 0.)
 
             transferT = jnp.sum(SW0*r0 + SW1*r1 + SW2*r2, axis=0)  # sum lna. (Nk,)
