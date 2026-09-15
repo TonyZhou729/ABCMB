@@ -50,6 +50,18 @@ Q = lambda l, x : jnp.sqrt(x**2-l**2) - l*jnp.pi/2 + l * jnp.arcsin(l/x)
 J = lambda l, x : jnp.sqrt(2/jnp.pi/jnp.sqrt(x**2-l**2)) * jnp.cos(Q(l, x) - jnp.pi/4)
 j = lambda l, x : jnp.sqrt(jnp.pi/2/x) * J(l+1/2, x)
 
+def _j1(x):
+    """
+    Spherical bessel j_1(x) = (sin(x) - x cos(x))/x^2. 
+
+    Notes:
+    ------
+    Uses small x series for x^2 < 1e-2.
+    """
+    # for small x
+    series = x/3. * (1 - x**2/10. + x**4/280. - x**6/15120. + x**8/1330560.)
+    return jnp.where(x**2 < 1.e-2, series, (jnp.sin(x) - x * jnp.cos(x))/x**2)
+
 def phi0(i, x):
     """
     New method for computing phi0 (or just jl)
@@ -131,6 +143,13 @@ class SpectrumSolver(eqx.Module):
         Used for lensing, the Gauss-Legendre quadrature weights for the correlation function -> Cl integral.
     lensing : bool
         Whether to include gravitational lensing effects
+    use_bessel_tables : bool
+        Switch for using tabulated Bessel functions for lensing or compute as part 
+        of the lensing calculation.  Tabulated results save ~5% runtime but are 
+        only available up to ell_max = 5000.  Defaults to True.
+    l_top : int
+        Highest multipole of lensing ells (concretized), required for Bessel functions
+        computed via recurrence.
     k_axis_transfer : jnp.array
         Wavenumber grid for transfer function integration (units: Mpc^{-1})
     k_axis_Pk_output : jnp.array
@@ -167,6 +186,8 @@ class SpectrumSolver(eqx.Module):
     lensing_ws   : jnp.array
 
     lensing : bool
+    use_bessel_tables : bool = eqx.field(static=True)
+    l_top : int = eqx.field(static=True)
 
     k_axis_transfer  : jnp.array
     k_axis_Pk_output : jnp.array
@@ -187,7 +208,8 @@ class SpectrumSolver(eqx.Module):
                  scale_sw=1,
                  scale_isw=1,
                  scale_dop=1,
-                 scale_pol=1):
+                 scale_pol=1,
+                 use_bessel_tables=True):
         """
         Initialize CMB spectrum solver.
 
@@ -212,20 +234,31 @@ class SpectrumSolver(eqx.Module):
             Switch for Doppler term (default: 1)
         scale_pol : float, optional
             Switch for polarization term (default: 1)
+        use_bessel_tables : bool, optional
+            Switch for using tabulated Bessel functions for lensing or compute as part 
+            of the lensing calculation.  Tabulated results save ~5% runtime but are 
+            only available up to ell_max = 5000.  Defaults to True.
         """
 
         self.lensing = lensing
+        self.use_bessel_tables = bool(use_bessel_tables)
 
         self.ells = jnp.arange(ellmin, ellmax+1)
-        ell_idx_min = jnp.where(bessel_l_tab<=ellmin)[0][-1]
-        ell_idx_max = jnp.where(bessel_l_tab>=ellmax)[0][0]
-        self.ells_indices = jnp.arange(ell_idx_min, ell_idx_max+1)
+        if self.use_bessel_tables:
+            ell_idx_min = jnp.where(bessel_l_tab<=ellmin)[0][-1]
+            ell_idx_max = jnp.where(bessel_l_tab>=ellmax)[0][0]
+            self.ells_indices = jnp.arange(ell_idx_min, ell_idx_max+1)
+        else:
+            self.ells_indices = jnp.array([0])
         
         if self.lensing:
             lensing_ellmax = ellmax+500
-            lensing_ell_idx_max = jnp.where(bessel_l_tab>=lensing_ellmax)[0][0]
             self.lensing_ells = jnp.arange(ellmin, lensing_ellmax+1)
-            self.lensing_ells_indices = jnp.arange(ell_idx_min, lensing_ell_idx_max+1)
+            if self.use_bessel_tables:
+                lensing_ell_idx_max = jnp.where(bessel_l_tab>=lensing_ellmax)[0][0]
+                self.lensing_ells_indices = jnp.arange(ell_idx_min, lensing_ell_idx_max+1)
+            else:
+                self.lensing_ells_indices = self.ells_indices # not read if not using bessel tables
             #self.lensing_theta = jnp.linspace(0., jnp.pi/16., lensing_ellmax // 8) # Size recommended by CLASS
             num_mu = lensing_ellmax + 70
             mu, w = tools.gauss_legendre_weights(num_mu)
@@ -246,6 +279,9 @@ class SpectrumSolver(eqx.Module):
         self.scale_isw = scale_isw
         self.scale_dop = scale_dop
         self.scale_pol = scale_pol
+
+        # need to have this static int stored for Bessel recursion
+        self.l_top = int(self.lensing_ells[-1])
 
     def primordial_spectrum(self, k, params):
         """
@@ -590,15 +626,25 @@ class SpectrumSolver(eqx.Module):
             (ClTT, ClTE, ClEE) angular power spectra
         """
 
-            
-        tt_raw, te_raw, ee_raw = vmap(self.Cl_one_ell, in_axes=(0, None, None, None))(self.lensing_ells_indices, PT, BG, params)
+        if self.use_bessel_tables:
+            # _transfer_sources() will be called in Cl_one_ell
+            tt_raw, te_raw, ee_raw = vmap(self.Cl_one_ell, in_axes=(0, None, None, None))(self.lensing_ells_indices, PT, BG, params)
 
-
-        # Cubic spline for smooth Cl over user requested ells
-        lensing_ells = bessel_l_tab[self.lensing_ells_indices]
-        tt_unlensed = CubicSpline(lensing_ells, tt_raw, check=False)(self.lensing_ells)
-        te_unlensed = CubicSpline(lensing_ells, te_raw, check=False)(self.lensing_ells)
-        ee_unlensed = CubicSpline(lensing_ells, ee_raw, check=False)(self.lensing_ells)
+            # Cubic spline for smooth Cl over user requested ells
+            lensing_ells = bessel_l_tab[self.lensing_ells_indices]
+            tt_unlensed = CubicSpline(lensing_ells, tt_raw, check=False)(self.lensing_ells)
+            te_unlensed = CubicSpline(lensing_ells, te_raw, check=False)(self.lensing_ells)
+            ee_unlensed = CubicSpline(lensing_ells, ee_raw, check=False)(self.lensing_ells)
+        
+        else:
+            sources = self._transfer_sources(PT, BG, params)
+            tt_raw te_raw, ee_raw = self._Cl_all_ells_recurrence(sources, params)
+            # recursion will compute all ell, contract to just the lensed ells
+            offset = (self.l_top - 1) - self.lensing_ells.shape[0]
+            # no need to interpolate!
+            tt_unlensed = tt_raw[offset:]
+            te_unlensed = te_raw[offset:]
+            ee_unlensed = ee_raw[offset:]
 
         def get_lensed_Cls():
             tt_lensed, te_lensed, ee_lensed = self.lensed_Cls(self.lensing_ells, tt_unlensed, te_unlensed, ee_unlensed, PT, BG, params)
@@ -637,64 +683,7 @@ class SpectrumSolver(eqx.Module):
         """
         l = bessel_l_tab[idx]
         k_axis = self.k_axis_transfer
-        lna_axis = PT.lna[:-1]
-        delta_lna = PT.lna[-1] - PT.lna[-2]
-
-        ### TRANSFER FUNCTION ###
-        # Background quantities, all Nlna 1D vectors
-        tau0 = BG.tau0
-        tau = BG.tau(lna_axis)
-        g   = vmap(BG.visibility,in_axes=[0,None])(lna_axis, params)
-        g_prime = vmap(grad(BG.visibility,argnums=0),in_axes=[0,None])(lna_axis, params) # Derivative of g w.r.t. lna
-        aH  = BG.aH(lna_axis, params)
-        expmkappa = vmap(BG.expmkappa)(lna_axis)
-        aH_dot = BG.aH_prime(lna_axis, params) * aH # Derivative of aH w.r.t. conformal time tau.
-
-        # Keep a 1D alias of aH for the rolling-accumulator scan below.
-        aH_1d = aH
-
-        g         = g[:, None]
-        g_prime   = g_prime[:, None]
-        aH        = aH[:, None]
-        expmkappa = expmkappa[:, None]
-        aH_dot    = aH_dot[:, None]
-
-        # Perturbations, all (Nlna, Nk) 2D vectors
-        # Cubic Spline is necessary here for accuracy. 
-        interp_column = lambda col : CubicSpline(jnp.log10(PT.k), col, check=False)(jnp.log10(k_axis))
-
-        # Found that this is much much faster than RegularGridInterpolator
-        photon_sp = PT.species_perturbations["Photon"]
-        baryon_sp = PT.species_perturbations["Baryon"]
-        delta_g       = vmap(interp_column, in_axes=0, out_axes=0)(photon_sp["delta"][:-1, :])
-        theta_b       = vmap(interp_column, in_axes=0, out_axes=0)(baryon_sp["theta"][:-1, :])
-        theta_b_prime = vmap(interp_column, in_axes=0, out_axes=0)(PT.theta_b_prime[:-1, :])
-        sigma_g       = vmap(interp_column, in_axes=0, out_axes=0)(photon_sp["sigma"][:-1, :])
-        Gg0           = vmap(interp_column, in_axes=0, out_axes=0)(photon_sp["G0"][:-1, :])
-        Gg2           = vmap(interp_column, in_axes=0, out_axes=0)(photon_sp["G2"][:-1, :])
-        eta           = vmap(interp_column, in_axes=0, out_axes=0)(PT.metric_eta[:-1, :])
-        eta_prime     = vmap(interp_column, in_axes=0, out_axes=0)(PT.metric_eta_prime[:-1, :])
-        alpha         = vmap(interp_column, in_axes=0, out_axes=0)(PT.metric_alpha[:-1, :])
-        alpha_prime   = vmap(interp_column, in_axes=0, out_axes=0)(PT.metric_alpha_prime[:-1, :])
-
-        # Source terms
-        sourceT0 = self.scale_sw * g * (delta_g/4. + aH*alpha_prime) \
-                + self.scale_isw * (
-                    g * (eta - aH*alpha_prime - 2.*aH*alpha) \
-                    + 2.*expmkappa * (aH*eta_prime - aH_dot*alpha - aH**2*alpha_prime)
-                ) \
-                + self.scale_dop * (
-                    aH * (g*((theta_b_prime / k_axis**2) + alpha_prime) \
-                    + g_prime*((theta_b / k_axis**2) + alpha))
-                )
-
-        sourceT1 = self.scale_isw * expmkappa * \
-                ((aH*alpha_prime + 2.*aH*alpha - eta) * k_axis)
-
-        sourceT2 = self.scale_pol * g * (2*sigma_g + Gg0 + Gg2) / 8.
-
-        sourceE  = jnp.sqrt(6) * g * (2*sigma_g + Gg0 + Gg2) / 8.
-
+        (sourceT0, sourceT1, sourceT2, sourceE), aH_1d, tau, weights, tau0 = self._transfer_sources(PT, BG, params)
 
         # Here we perform the time integral to get transfer functions from source functions.
         # previously, this block explicitly built a 2D (Nlna, Nk) tensor for each ell and summed it down to (Nk).
@@ -752,9 +741,6 @@ class SpectrumSolver(eqx.Module):
                 )
             )
 
-        Nlna = lna_axis.shape[0]
-        weights = jnp.full((Nlna,), delta_lna, dtype=sourceT0.dtype)
-        weights = weights.at[0].set(0.5 * delta_lna)
         zero_k = jnp.zeros(k_axis.shape, dtype=sourceT0.dtype)
 
         def scan_step(carry, xs_l):
@@ -795,3 +781,187 @@ class SpectrumSolver(eqx.Module):
             jnp.trapezoid(integrandTE, k_axis),
             jnp.trapezoid(integrandEE, k_axis)
         )
+    
+    # CG: reorganizing this section into its own method
+    def _transfer_sources(self, PT, BG, params):
+            """
+            Assemble the line-of sight source functions on (lna, k_transfer) grid.
+
+            Parameters:
+            -----------
+            PT : perturbations.PerturbationTable
+                Perturbation evolution table
+            BG : background.Background
+                Background cosmology module
+            params : dict
+                Dictionary of input and derived parameters
+
+            Returns:
+            -------
+            tuple
+                (sourceT0, sourceT1, sourceT2, sourceE) of shape (Nlna, Nk), plus
+                aH_1d, tau, weights (Nlna,) and tau0.
+            """
+            k_axis = self.k_axis_transfer 
+            lna_axis = PT.lna[:-1]
+            delta_lna = PT.lna[-1] - PT.lna[-2]
+
+            # Background quantities, all Nlna 1D vectors
+            tau0 = BG.tau0
+            tau = BG.tau(lna_axis)
+            g   = vmap(BG.visibility,in_axes=[0,None])(lna_axis, params)
+            g_prime = vmap(grad(BG.visibility,argnums=0),in_axes=[0,None])(lna_axis, params) # Derivative of g w.r.t. lna
+            aH  = BG.aH(lna_axis, params)
+            expmkappa = vmap(BG.expmkappa)(lna_axis)
+            aH_dot = BG.aH_prime(lna_axis, params) * aH # Derivative of aH w.r.t. conformal time tau.
+
+            # Keep a 1D alias of aH for the rolling-accumulator scan below.
+            aH_1d = aH
+
+            g         = g[:, None]
+            g_prime   = g_prime[:, None]
+            aH        = aH[:, None]
+            expmkappa = expmkappa[:, None]
+            aH_dot    = aH_dot[:, None]
+
+            # Perturbations, all (Nlna, Nk) 2D vectors
+            # Cubic Spline is necessary here for accuracy. 
+            interp_column = lambda col : CubicSpline(jnp.log10(PT.k), col, check=False)(jnp.log10(k_axis))
+
+            # Found that this is much much faster than RegularGridInterpolator
+            photon_sp = PT.species_perturbations["Photon"]
+            baryon_sp = PT.species_perturbations["Baryon"]
+            delta_g       = vmap(interp_column, in_axes=0, out_axes=0)(photon_sp["delta"][:-1, :])
+            theta_b       = vmap(interp_column, in_axes=0, out_axes=0)(baryon_sp["theta"][:-1, :])
+            theta_b_prime = vmap(interp_column, in_axes=0, out_axes=0)(PT.theta_b_prime[:-1, :])
+            sigma_g       = vmap(interp_column, in_axes=0, out_axes=0)(photon_sp["sigma"][:-1, :])
+            Gg0           = vmap(interp_column, in_axes=0, out_axes=0)(photon_sp["G0"][:-1, :])
+            Gg2           = vmap(interp_column, in_axes=0, out_axes=0)(photon_sp["G2"][:-1, :])
+            eta           = vmap(interp_column, in_axes=0, out_axes=0)(PT.metric_eta[:-1, :])
+            eta_prime     = vmap(interp_column, in_axes=0, out_axes=0)(PT.metric_eta_prime[:-1, :])
+            alpha         = vmap(interp_column, in_axes=0, out_axes=0)(PT.metric_alpha[:-1, :])
+            alpha_prime   = vmap(interp_column, in_axes=0, out_axes=0)(PT.metric_alpha_prime[:-1, :])
+
+            # Source terms
+            sourceT0 = self.scale_sw * g * (delta_g/4. + aH*alpha_prime) \
+                    + self.scale_isw * (
+                        g * (eta - aH*alpha_prime - 2.*aH*alpha) \
+                        + 2.*expmkappa * (aH*eta_prime - aH_dot*alpha - aH**2*alpha_prime)
+                    ) \
+                    + self.scale_dop * (
+                        aH * (g*((theta_b_prime / k_axis**2) + alpha_prime) \
+                        + g_prime*((theta_b / k_axis**2) + alpha))
+                    )
+
+            sourceT1 = self.scale_isw * expmkappa * \
+                    ((aH*alpha_prime + 2.*aH*alpha - eta) * k_axis)
+
+            sourceT2 = self.scale_pol * g * (2*sigma_g + Gg0 + Gg2) / 8.
+
+            sourceE  = jnp.sqrt(6) * g * (2*sigma_g + Gg0 + Gg2) / 8.
+
+            Nlna = lna_axis.shape[0]
+            weights = jnp.full((Nlna,), delta_lna, dtype=sourceT0.dtype)
+            weights = weights.at[0].set(0.5 * delta_lna)
+
+    def _Cl_all_ells_recurrence(self, sources, params):
+        """
+        Compute Cl at each integer ell using the recursion relation for spherical
+        Bessel functions
+
+            j_{l+1}(x) = (2l+1)/x j_l(x) - j_{l-1}(x),   x = k chi
+
+        as opposed to the tabulated Bessel functions.
+
+        Parameters:
+        -----------
+        sources : tuple
+            Output of _transfer_sources (source functions for transfer functions)
+        params : dict
+            Dictionary of the input and derived parameters.
+
+        Returns:
+        --------
+        tuple
+            (ClTT, ClTE, CLEE) for ell between ell_min and l_top
+
+        
+        Notes:
+        ------
+        Stable for x > l.  Error is clamped for x < l, and a zero-mask is applied
+        below x_min(l), where |j_l| ~ 1e-10.
+        """
+        (sourceT0, sourceT1, sourceT2, sourceE), aH_1d, tau, weights, tau0 = sources
+        k_axis = self.k_axis_transfer           # (Nk,)
+
+        # same operations as scan_step above
+        chi = (tau0 - tau)[:, None]             # (Nlna, 1)
+        x = k_axis * chi                        # (Nlna, Nk)
+        inx_x = 1./x
+        inx_x2 = 1./x**2
+
+        # set up recursion
+        Phi0 = jnp.sinc(x/jnp.pi)
+        Phi1 = _j1(x)
+        Phi2 = 3. * inv_x * Phi1 - Phi0
+
+        # e.g. w_l * sT0_l * inv_aH in Cl_one_ell is row l of SW0 here
+        wa = (weights/aH_1d)[:,None]
+        SW0 = sourceT0 * wa
+        SW1 = sourceT1 * wa
+        SW2 = sourceT2 * wa
+        SWE = sourceE * wa
+
+        # k integral is the same trapezoid in Cl_one_ell; see e.g. integrandTT
+        df = jnp.diff(k_axis)
+        wk = jnp.concatenate((dk[:1]/2., (dk[1:] + dk[:-1])/2., dk[-1:]/2.))
+        wk_prim = wk * 4.*jnp.pi * params['A_s'] * (k_axis/self.k_pivot)**(params['n_s']-1.) / k_axis
+
+        # with weights precomputed, sum over lna then sum over k
+        def step(carry, xs_l):
+            Phi_lm1, Phi_l = carry
+            lf, xmin_l = xs_l # lf is current ell as a float
+
+            # phi0 = j_l, phi1 = j_l', phi2 = (3 j_l'' + j_l)/2, 
+            # eps = sqrt(3/8 (l+2)!/(l-2)!) j_l/x^2, as in Cl_one_ell.
+            # j_l and its derivatives are now computed sequentially in this loop.
+            j_prime = Phi_lm1 - (lf+1.)*inv_x*Phi_l
+            j_2prime = -2*inv_x*j_prime + (lf*(lf+1.)*inv_x2 - 1.)*Phi_l
+            mask = x >= xmin_l
+
+            # get masked bessel arrays
+            r0 = jnp.where(mask, Phi_l, 0.)
+            r1 = jnp.where(mask, j_prime, 0.)
+            r2 = jnp.where(mask, (3.*j_2prime + Phi_l)/2., 0.)
+            eps_fractor = jnp.sqrt(3./8.*(lf+2.)*(lf+1.)*lf*(lf-1.))
+            rE = eps_factor * jnp.where(mask, Phi_l * inv_x2, 0.)
+
+            transferT = jnp.sum(SW0*r0 + SW1*r1 + SW2*r2, axis=0)  # sum lna. (Nk,)
+            transferE = jnp.sum(SWE*rE, axis=0)
+
+            clTT = jnp.sum(wk_prim*transferT**2) # sum in k
+            clTE = jnp.sum(wk_prim*transferT*transferE)
+            clEE = jnp.sum(wk_prim*transferE**2)
+    
+            # clip masked growth from instability of recursion
+            Phi_next = jnp.where(mask, (2.*lf + 1.)*inv_x*Phi_l - Phi_lm1, 0.)
+            return (Phi_l, Phi_next), jnp.stack((clTT, clTE, clEE))
+
+        # finally, reshape.  Memory-aware to avoid spoiling reverse AD
+        CHUNK = 64
+        n = self.l_top - 1
+        npad = (-n) % CHUNK
+        lf_all = np.arange(2, 2 + n + npad, dtype=np.float64)
+        lph = lf_all + 0.5
+        lhs = np.log(2.e-10*lph)/lph
+        alpha = -2.*lhs/5.*(1. + 2.*np.cosh(np.arccosh(1. + 375./(16.*lhs*lhs))/3.))
+        xmin_all = lph/np.cosh(alpha)
+        xs = (jnp.asarray(lf_all).reshape(-1, CHUNK), jnp.asarray(xmin_all).reshape(-1, CHUNK))
+
+        def chunk_body(carry, xs_chunk):
+            return lax.scan(step, carry, xs_chunk)
+
+        # Chunked scan over l; jax.checkpoint per chunk bounds reverse-AD residency.
+        _, outs = lax.scan(jax.checkpoint(chunk_body), (Phi1, Phi2), xs)
+        cls = outs.reshape(-1, 3)[:n]
+        return cls[:, 0], cls[:, 1], cls[:, 2]
