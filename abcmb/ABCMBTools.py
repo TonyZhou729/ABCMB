@@ -1,13 +1,9 @@
 """
 Script for helper numerical tools
 """
-import jax
-from jax import grad, lax, config, jit, vmap
-from jax.scipy.special import gamma, factorial
-from functools import partial
-import numpy as np
 import jax.numpy as jnp
-import equinox as eqx
+from jax import config, lax, vmap
+from jax.scipy.special import factorial
 
 config.update("jax_enable_x64", True)
 

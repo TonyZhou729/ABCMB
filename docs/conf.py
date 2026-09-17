@@ -11,9 +11,11 @@ copyright = '2026, Zilu Zhou, Cara Giovanetti, and Hongwan Liu'
 author = 'Zilu Zhou, Cara Giovanetti, and Hongwan Liu'
 
 import sys
+
 sys.path.append('..')
 
 from abcmb.version import __version__
+
 release = __version__
 
 # -- General configuration ---------------------------------------------------
@@ -23,10 +25,11 @@ release = __version__
 # # Make sure Sphinx can import your code
 import os
 import sys
+
 sys.path.insert(0, os.path.abspath('..'))  # if your package is in repo root
 
 import re
-import sphinx
+
 from sphinx.util import logging
 
 logger = logging.getLogger(__name__)
@@ -58,8 +61,6 @@ def format_method_summaries(app, what, name, obj, options, lines):
     in_custom_block = False
     in_methods_block = False
     in_prose_section = False
-    just_opened_block = False
-    pending_header = None
 
     i = 0
     while i < len(lines):
@@ -72,8 +73,6 @@ def format_method_summaries(app, what, name, obj, options, lines):
             if re.match(r'^\s*-+\s*$', next_line) and line.strip():
                 # This is a section header with hyphen underlining
                 in_custom_block = True
-                just_opened_block = True
-                pending_header = line
                 
                 # Check if this is a Methods section
                 in_methods_block = bool(re.search(r'Methods:', line, re.IGNORECASE))
@@ -95,7 +94,6 @@ def format_method_summaries(app, what, name, obj, options, lines):
             in_custom_block = True
             in_methods_block = True
             in_prose_section = False
-            just_opened_block = True
 
             # Output the header line with bold formatting
             out.append(f"**{line.strip()}**")
@@ -111,7 +109,6 @@ def format_method_summaries(app, what, name, obj, options, lines):
             in_custom_block = False
             in_methods_block = False
             in_prose_section = False
-            just_opened_block = False
             out.append(line)
             i += 1
             continue
@@ -154,7 +151,6 @@ def skip_equinox_field_attributes(app, what, name, obj, skip, options):
     Skip class attributes that are equinox fields to prevent duplicate documentation.
     These are already documented in the class docstring's Fields section.
     """
-    import inspect
     
     # Only process attributes
     if what not in ('attribute', 'data'):
