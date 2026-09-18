@@ -142,7 +142,8 @@ class Model(eqx.Module):
             scale_sw=specs["scale_sw"],
             scale_isw=specs["scale_isw"],
             scale_dop=specs["scale_dop"],
-            scale_pol=specs["scale_pol"]
+            scale_pol=specs["scale_pol"],
+            use_bessel_tables=specs["use_bessel_tables"]
         )
 
         # Initialize recombination model.

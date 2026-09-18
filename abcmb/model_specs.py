@@ -23,6 +23,9 @@ def load_specs(input_specs):
     specs["lensing"]   = input_specs.get("lensing", False)
     specs["k_max"] = input_specs.get("k_max", 0.5)
 
+    ### BESSEL FUNCTION OPTIONS ###
+    specs["use_bessel_tables"] = input_specs.get("use_bessel_tables", True)
+
     ### BBN ###
     specs["bbn_type"] = input_specs.get("bbn_type", "")
     specs["linx_reaction_net"] = input_specs.get("linx_reaction_net", "key_PRIMAT_2023")
