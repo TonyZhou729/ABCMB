@@ -209,7 +209,8 @@ class SpectrumSolver(eqx.Module):
                  scale_isw=1,
                  scale_dop=1,
                  scale_pol=1,
-                 use_bessel_tables=True):
+                 use_bessel_tables=True,
+                 delta_l_max=500):
         """
         Initialize CMB spectrum solver.
 
@@ -238,6 +239,10 @@ class SpectrumSolver(eqx.Module):
             Switch for using tabulated Bessel functions for lensing or compute as part 
             of the lensing calculation.  Tabulated results save ~5% runtime but are 
             only available up to ell_max = 5000.  Defaults to True.
+        delta_l_max : int, optional
+            Extra multipoles computed above ellmax so the lensed spectra are accurate
+            up to ellmax. Same role as CLASS's delta_l_max precision parameter.
+            Defaults to 500.
         """
 
         self.lensing = lensing
@@ -252,7 +257,7 @@ class SpectrumSolver(eqx.Module):
             self.ells_indices = jnp.array([0])
         
         if self.lensing:
-            lensing_ellmax = ellmax+500
+            lensing_ellmax = ellmax + delta_l_max
             self.lensing_ells = jnp.arange(ellmin, lensing_ellmax+1)
             if self.use_bessel_tables:
                 lensing_ell_idx_max = jnp.where(bessel_l_tab>=lensing_ellmax)[0][0]
