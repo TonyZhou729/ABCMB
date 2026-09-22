@@ -187,9 +187,7 @@ def get_k_axis_perturbations(specs):
     #
     # Only the lensing k-integral sees these modes: the transfer grid still stops
     # at k_max_cmb, and the source spline is restricted to the same range.
-    # Modes above this are the lensing-only extension, and get the looser third
-    # tolerance tier in perturbations.py. inf when there is no extension, so the
-    # user-k_max P(k) modes below never qualify.
+    
     specs["k_limber_start"] = np.inf
     if specs["lensing"]:
         specs["k_limber_start"] = float(k)
