@@ -164,6 +164,16 @@ class SpectrumSolver(eqx.Module):
         Multiplicative factor for Doppler term (default: 1.0)
     scale_pol : float
         Multiplicative factor for polarization term (default: 1.0)
+    use_bessel_tables : bool
+        If true, uses tabulated bessel function tables, valid up to l=5000. Else bessel functions
+        are computed analytically through recurrence relations. 
+    delta_l_max : int
+        How much to extend the theory Cl l_max if lensing is on, needed for end point convergence in 
+        unlensed -> lensed transformation. 
+    n_k_cmb : int
+        Number of k points over which the CMB source functions should be interpolated over. If lensing
+        is on, n_k will be greater than this for accurate lensing potential, but the extra portion is
+        irrelevant for just the CMB source part. 
 
     Methods:
     --------
@@ -188,6 +198,7 @@ class SpectrumSolver(eqx.Module):
     lensing : bool
     use_bessel_tables : bool = eqx.field(static=True)
     l_top : int = eqx.field(static=True)
+    n_k_cmb : int = eqx.field(static=True)
 
     k_axis_transfer  : jnp.array
     k_axis_Pk_output : jnp.array
@@ -210,7 +221,8 @@ class SpectrumSolver(eqx.Module):
                  scale_dop=1,
                  scale_pol=1,
                  use_bessel_tables=True,
-                 delta_l_max=500):
+                 delta_l_max=500,
+                 n_k_cmb=-1):
         """
         Initialize CMB spectrum solver.
 
@@ -243,10 +255,14 @@ class SpectrumSolver(eqx.Module):
             Extra multipoles computed above ellmax so the lensed spectra are accurate
             up to ellmax. Same role as CLASS's delta_l_max precision parameter.
             Defaults to 500.
+        n_k_cmb : int, optional
+            Number of leading nodes of the perturbation k-grid that cover the CMB
+            (transfer) range.
         """
 
         self.lensing = lensing
         self.use_bessel_tables = bool(use_bessel_tables)
+        self.n_k_cmb = int(n_k_cmb)
 
         self.ells = jnp.arange(ellmin, ellmax+1)
         if self.use_bessel_tables:
@@ -337,8 +353,13 @@ class SpectrumSolver(eqx.Module):
 
         delta_m_lna = interp_over_lna(PT.delta_m)  # shape (Nk,)
 
-        # now interpolate over k
-        delta_m = jnp.interp(k, PT.k, delta_m_lna)
+        # Now interpolate over k, in log-log. Log-log matters
+        # above the CMB ceiling, where the grid is coarse (~10 nodes/decade).
+        delta_m = jnp.exp(
+            jnp.interp(jnp.log(k),
+                       jnp.log(PT.k),
+                       jnp.log(jnp.abs(delta_m_lna)))
+        )
 
         return delta_m**2 * self.primordial_spectrum(k, params)
 
@@ -416,9 +437,14 @@ class SpectrumSolver(eqx.Module):
 
         Omega_m = params["omega_m"]/params["h"]**2
         Omega_L = params["omega_Lambda"]/params["h"]**2
+        Omega_r = params["omega_r"]/params["h"]**2
 
-        # Matter fraction over time after equality. 1 at early times and becomes Om0 today. 
-        Om = (Omega_m * (1.+z)**3)/ ((Omega_m * (1.+z)**3) + Omega_L)
+        # Fractional matter density rho_m/rho_tot. This must be the TRUE fraction:
+        # the combination Om**2 * aH**4 below reconstructs (4 pi G a^2 rho_m)^2 in
+        # the Poisson relation, and that identity only holds if Om = rho_m/rho_tot.
+        Om = (Omega_m * (1.+z)**3) / (
+            (Omega_m * (1.+z)**3) + Omega_r * (1.+z)**4 + Omega_L
+        )
 
         Pk = self.Pk_lin(k, z, PT, params) # Mpc^3
 
@@ -831,7 +857,12 @@ class SpectrumSolver(eqx.Module):
 
             # Perturbations, all (Nlna, Nk) 2D vectors
             # Cubic Spline is necessary here for accuracy. 
-            interp_column = lambda col : CubicSpline(jnp.log10(PT.k), col, check=False)(jnp.log10(k_axis))
+            # Restrict the spline to the CMB portion of the perturbation grid.
+            # Above it the grid switches to coarse logarithmic steps for the
+            # lensing potential.
+            n_cmb = self.n_k_cmb if self.n_k_cmb > 0 else PT.k.shape[0]
+            log_k_cmb = jnp.log10(PT.k[:n_cmb])
+            interp_column = lambda col : CubicSpline(log_k_cmb, col[:n_cmb], check=False)(jnp.log10(k_axis))
 
             # Found that this is much much faster than RegularGridInterpolator
             photon_sp = PT.species_perturbations["Photon"]
