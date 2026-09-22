@@ -79,10 +79,10 @@ def load_specs(input_specs):
     specs["rtol_large_k_PE"] = input_specs.get("rtol_large_k_PE", 1.e-4)
     specs["atol_small_k_PE"] = input_specs.get("atol_small_k_PE", 1.e-10)
     specs["atol_large_k_PE"] = input_specs.get("atol_large_k_PE", 1.e-6)
-    # Third tier, for the handful of modes added above the CMB ceiling purely for
-    # the lensing potential. They only need phi+psi at late times, which is
+    # The lensing potential needs k modes above the CMB power spectrum 
+    # These modes only need phi+psi at late times, which is
     # smooth; resolving their photon oscillations to rtol_large_k_PE costs more
-    # solver steps than every CMB mode combined.
+    # solver steps than every CMB mode combined, so we split this solve:
     specs["rtol_limber_k_PE"] = input_specs.get("rtol_limber_k_PE", 1.e-3)
     specs["atol_limber_k_PE"] = input_specs.get("atol_limber_k_PE", 1.e-5)
     specs["pcoeff_PE"]       = input_specs.get("pcoeff_PE", 0.25)
