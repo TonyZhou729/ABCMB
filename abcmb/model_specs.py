@@ -186,7 +186,7 @@ def get_k_axis_perturbations(specs):
     # transfer functions need.
     #
     # Only the lensing k-integral sees these modes: the transfer grid still stops
-    # at k_max_cmb, and the source spline is restricted to the same range.
+    # at k_max_cmb.
     
     specs["k_limber_start"] = np.inf
     if specs["lensing"]:
@@ -215,7 +215,7 @@ def get_k_axis_perturbations(specs):
     return jnp.array(ks), jnp.array(k_axis_Pk_output)
 
 def get_k_axis_transfer(specs):
-    ks = []   # grown dynamically; no fixed cap
+    ks = [] 
 
     k_period = 2*jnp.pi/(specs["tau0_fid"] - specs["tau_rec_fid"])
 
