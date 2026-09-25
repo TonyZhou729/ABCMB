@@ -48,6 +48,13 @@ def load_specs(input_specs):
     # name (precisions.h, default 500), which CLASS folds into l_scalar_max
     # before deriving k_max (input.c: ppt->l_scalar_max += ppr->delta_l_max).
     specs["delta_l_max"]            = input_specs.get("delta_l_max", 500)
+    # Sampling of the k-grid above the CMB ceiling, used only for the CMB lensing potential.
+    specs["k_per_decade_for_pk"]    = input_specs.get("k_per_decade_for_pk", 10.)
+    specs["k_per_decade_for_bao"]   = input_specs.get("k_per_decade_for_bao", 70.)
+    specs["k_bao_center"]           = input_specs.get("k_bao_center", 3.)
+    specs["k_bao_width"]            = input_specs.get("k_bao_width", 4.)
+    # CLASS's "full Limber" k_max for C_l^phiphi. Set to 0 to disable the extension.
+    specs["k_max_limber_over_l_max"] = input_specs.get("k_max_limber_over_l_max", 1.e-3)
     specs["H0_fid"]                 = input_specs.get("H0_fid", 2.255560e-04)
     specs["tau0_fid"]               = input_specs.get("tau0_fid",1.418668e+04)
     specs["rs_rec_fid"]             = input_specs.get("rs_rec_fid", 1.446279e+02)
@@ -72,6 +79,12 @@ def load_specs(input_specs):
     specs["rtol_large_k_PE"] = input_specs.get("rtol_large_k_PE", 1.e-4)
     specs["atol_small_k_PE"] = input_specs.get("atol_small_k_PE", 1.e-10)
     specs["atol_large_k_PE"] = input_specs.get("atol_large_k_PE", 1.e-6)
+    # The lensing potential needs k modes above the CMB power spectrum 
+    # These modes only need phi+psi at late times, which is
+    # smooth; resolving their photon oscillations to rtol_large_k_PE costs more
+    # solver steps than every CMB mode combined, so we split this solve:
+    specs["rtol_limber_k_PE"] = input_specs.get("rtol_limber_k_PE", 1.e-3)
+    specs["atol_limber_k_PE"] = input_specs.get("atol_limber_k_PE", 1.e-5)
     specs["pcoeff_PE"]       = input_specs.get("pcoeff_PE", 0.25)
     specs["icoeff_PE"]       = input_specs.get("icoeff_PE", 0.8)
     specs["dcoeff_PE"]       = input_specs.get("dcoeff_PE", 0.)
@@ -167,17 +180,42 @@ def get_k_axis_perturbations(specs):
             k += step
             ks.append(k)
 
+    # --- CMB lensing potential extension ------------------------------------
+    # CLASS's "full Limber" scheme for C_l^phiphi. The Limber integral samples
+    # k = (l+1/2)/chi and therefore runs far past the ceiling the line-of-sight
+    # transfer functions need.
+    #
+    # Only the lensing k-integral sees these modes: the transfer grid still stops
+    # at k_max_cmb.
+    
+    specs["k_limber_start"] = np.inf
+    if specs["lensing"]:
+        specs["k_limber_start"] = float(k)
+        k_max_limber = specs["k_max_limber_over_l_max"] * l_max_eff
+        ln_bao_center = np.log(specs["k_bao_center"] * k_rec_fid)
+        ln_bao_width  = np.log(specs["k_bao_width"])
+        while k < k_max_limber:
+            k_per_decade = (
+                specs["k_per_decade_for_pk"]
+                + (specs["k_per_decade_for_bao"] - specs["k_per_decade_for_pk"])
+                * (1. - np.tanh(((np.log(k) - ln_bao_center)/ln_bao_width)**4))
+            )
+            k = k * 10.**(1./k_per_decade)
+            ks.append(k)
+
     ks = np.asarray(ks)
-    # CLASS takes the transfer q_max straight off the top of the perturbation
-    # k list (transfer.c: q_max = ppt->k[...k_size_cl-1]). Record it so the
-    # transfer grid cannot run past the range the perturbations were solved on.
-    specs["k_max_pert"] = float(ks[-1])
+    # Number of leading nodes that cover the CMB range -- CLASS's k_size_cl. 
+    specs["k_size_cmb"] = int(np.searchsorted(ks, specs["k_max_cmb"], side="right"))
+    # CLASS takes the transfer q_max straight off the top of that slice
+    # (transfer.c: q_max = ppt->k[...k_size_cl-1]). Record it so the transfer
+    # grid cannot run past the range the source spline was built on.
+    specs["k_max_pert"] = float(ks[specs["k_size_cmb"]-1])
     k_axis_Pk_output = ks[np.where(ks<=specs["k_max"])]
 
     return jnp.array(ks), jnp.array(k_axis_Pk_output)
 
 def get_k_axis_transfer(specs):
-    ks = []   # grown dynamically; no fixed cap
+    ks = [] 
 
     k_period = 2*jnp.pi/(specs["tau0_fid"] - specs["tau_rec_fid"])
 

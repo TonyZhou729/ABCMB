@@ -285,16 +285,27 @@ class PerturbationEvolver(eqx.Module):
         term = diffrax.ODETerm(self.get_derivatives)
         solver = diffrax.Kvaerno5()
 
+        # Three tiers: small k, large k, and the lensing-only extension above
+        # specs["k_limber_start"] (inf unless the k-grid was extended for the
+        # lensing potential -- see model_specs.get_k_axis_perturbations).
         rtol=jnp.where(
-            k > self.specs["k_split_PE"],
-            self.specs["rtol_large_k_PE"],
-            self.specs["rtol_small_k_PE"]
+            k > self.specs["k_limber_start"],
+            self.specs["rtol_limber_k_PE"],
+            jnp.where(
+                k > self.specs["k_split_PE"],
+                self.specs["rtol_large_k_PE"],
+                self.specs["rtol_small_k_PE"]
+            )
         )
 
         atol=jnp.where(
-            k > self.specs["k_split_PE"],
-            self.specs["atol_large_k_PE"],
-            self.specs["atol_small_k_PE"]
+            k > self.specs["k_limber_start"],
+            self.specs["atol_limber_k_PE"],
+            jnp.where(
+                k > self.specs["k_split_PE"],
+                self.specs["atol_large_k_PE"],
+                self.specs["atol_small_k_PE"]
+            )
         )
 
         stepsize_controller = diffrax.PIDController(pcoeff=self.specs["pcoeff_PE"], icoeff=self.specs["icoeff_PE"], dcoeff=self.specs["dcoeff_PE"], rtol=rtol, atol=atol)
