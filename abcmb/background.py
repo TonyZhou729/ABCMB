@@ -44,6 +44,9 @@ class BackgroundPreRecomb(eqx.Module):
     --------
     rho_tot : Compute total energy density (units: eV cm^{-3})
     P_tot : Compute total pressure (units: eV cm^{-3})
+    Omega_m : Compute matter density fraction (units: dimensionless)
+    Omega_de : Compute dark energy density fraction (units: dimensionless)
+    w_de : Compute dark energy equation of state (units: dimensionless)
     H : Compute Hubble parameter (units: s^{-1})
     aH : Compute conformal Hubble parameter (units: Mpc^{-1})
     aH_prime : Compute derivative of conformal Hubble (units: Mpc^{-1})
@@ -143,6 +146,85 @@ class BackgroundPreRecomb(eqx.Module):
         for i in range(len(self.species_list)):
             P_tot += self.species_list[i].P(lna, params)
         return P_tot
+
+    def Omega_m(self, lna, params):
+        """
+        Compute the matter density fraction.
+
+        Sums the energy density of all species flagged ``is_matter`` and
+        divides by the total.
+
+        Parameters:
+        -----------
+        lna : float
+            Logarithm of scale factor
+        params : dict
+            Cosmological parameters
+
+        Returns:
+        --------
+        float
+            Omega_m(a) (units: dimensionless)
+        """
+        rho_m = 0.
+        for s in self.species_list:
+            if s.is_matter:
+                rho_m += s.rho(lna, params)
+        return rho_m / self.rho_tot(lna, params)
+
+    def Omega_de(self, lna, params):
+        """
+        Compute the dark energy density fraction.
+
+        Sums the energy density of all species flagged ``is_dark_energy`` and
+        divides by the total.  Returns 0 if the cosmology has no such species.
+
+        Parameters:
+        -----------
+        lna : float
+            Logarithm of scale factor
+        params : dict
+            Cosmological parameters
+
+        Returns:
+        --------
+        float
+            Omega_de(a) (units: dimensionless)
+        """
+        rho_de = 0.
+        for s in self.species_list:
+            if s.is_dark_energy:
+                rho_de += s.rho(lna, params)
+        return rho_de / self.rho_tot(lna, params)
+
+    def w_de(self, lna, params):
+        """
+        Compute the dark energy equation of state P/rho.
+
+        Uses all species flagged ``is_dark_energy``.  Returns -1 if the
+        cosmology has no such species.
+
+        Parameters:
+        -----------
+        lna : float
+            Logarithm of scale factor
+        params : dict
+            Cosmological parameters
+
+        Returns:
+        --------
+        float
+            w(a) (units: dimensionless)
+        """
+        if not any(s.is_dark_energy for s in self.species_list):
+            return -1.
+        rho_de = 0.
+        P_de = 0.
+        for s in self.species_list:
+            if s.is_dark_energy:
+                rho_de += s.rho(lna, params)
+                P_de += s.P(lna, params)
+        return P_de / rho_de
 
     def H(self, lna, params):
         """
@@ -470,6 +552,9 @@ class Background(BackgroundPreRecomb):
     --------
     rho_tot : Compute total energy density (units: eV cm^{-3})
     P_tot : Compute total pressure (units: eV cm^{-3})
+    Omega_m : Compute matter density fraction (units: dimensionless)
+    Omega_de : Compute dark energy density fraction (units: dimensionless)
+    w_de : Compute dark energy equation of state (units: dimensionless)
     H : Compute Hubble parameter (units: s^{-1})
     aH : Compute conformal Hubble parameter (units: Mpc^{-1})
     aH_prime : Compute derivative of conformal Hubble (units: Mpc^{-1})

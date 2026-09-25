@@ -308,6 +308,27 @@ def fast_interp(x, xp_min, xp_max, fp):
     return w_lower * fp[i_lower] + w_upper * fp[i_upper]
 
 
+def loglog_interp(x, xp, fp):
+    """
+    1D interpolation that is linear in (ln x, ln f).
+
+    Parameters:
+    -----------
+    x : float or array
+        Query points, x > 0
+    xp : array
+        Increasing grid, xp > 0
+    fp : array
+        Function values on the grid, fp > 0
+
+    Returns:
+    --------
+    float or array
+        Interpolated values at query points
+    """
+    return jnp.exp(jnp.interp(jnp.log(x), jnp.log(xp), jnp.log(fp)))
+
+
 def bilinear_interp(x, y, z, xq, yq):
     """
     Bilinear interpolation on 2D regular grid.
