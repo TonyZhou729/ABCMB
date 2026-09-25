@@ -380,7 +380,9 @@ class PerturbationEvolver(eqx.Module):
         sum_rho_plus_P_theta = jnp.zeros_like(modes[0])
         sum_rho_plus_P_sigma = jnp.zeros_like(modes[0])
         sum_rho_delta_m      = jnp.zeros_like(modes[0])
+        sum_rho_delta_cb     = jnp.zeros_like(modes[0])
         sum_rho_m            = 0.
+        sum_rho_cb           = 0.
 
         for s in self.species_list:
             if s.num_equations > 0:
@@ -392,8 +394,12 @@ class PerturbationEvolver(eqx.Module):
                 if s.is_matter:
                     sum_rho_delta_m += rho_delta
                     sum_rho_m       += s.rho(lna, params)
+                    if "neutrino" not in s.name.lower():
+                        sum_rho_delta_cb += rho_delta
+                        sum_rho_cb       += s.rho(lna, params)
 
         delta_m = sum_rho_delta_m / sum_rho_m[:, None]
+        delta_cb = sum_rho_delta_cb / sum_rho_cb[:, None]
 
         metric_h_prime     = 2./aH**2 * (karr**2*metric_eta + 4.*jnp.pi*cnst.G*a**2/cnst.c_Mpc_over_s**2 * sum_rho_delta)
         metric_eta_prime   = 4.*jnp.pi*cnst.G*a**2/aH * sum_rho_plus_P_theta / cnst.c_Mpc_over_s**2 / karr**2
@@ -405,6 +411,7 @@ class PerturbationEvolver(eqx.Module):
             k,
             lna,
             delta_m,
+            delta_cb,
             theta_b_prime,
             metric_eta,
             metric_h_prime,
@@ -430,6 +437,8 @@ class PerturbationTable(eqx.Module):
         Logarithm of scale factor grid
     delta_m : array
         Total matter density perturbation, weighted sum over all matter species
+    delta_cb : array
+        Density perturbation weighted over all matter species except massive neutrinos
     theta_b_prime : array
         Baryon velocity derivative (backward-calculated from Boltzmann equations)
     metric_eta : array
@@ -450,6 +459,7 @@ class PerturbationTable(eqx.Module):
     k             : jnp.array
     lna           : jnp.array
     delta_m       : jnp.array
+    delta_cb      : jnp.array
     theta_b_prime : jnp.array
 
     metric_eta         : jnp.array

@@ -571,10 +571,14 @@ class Model(eqx.Module):
 
         # Loop over matter fluids to compute total matter density today.
         rho_m = 0.
+        rho_cb = 0.
         for s in self.species_list:
             if s.is_matter:
                 rho_m += s.rho(0., params)
+                if "neutrino" not in s.name.lower():
+                    rho_cb += s.rho(0., params)
         params['omega_m']      = rho_m / (3 * cnst.H0_over_h**2/8/jnp.pi/cnst.G) # Fractional matter density
+        params['omega_cb']     = rho_cb / (3 * cnst.H0_over_h**2/8/jnp.pi/cnst.G) # Matter density excluding massive neutrinos, used by HyRex
         params['R_b']          = params['omega_b'] / params['omega_m'] # Baryon fraction
     
         # Loop over all fluids and compute energy density at very early time, inferring radiation energy density this way.
@@ -605,7 +609,7 @@ class Model(eqx.Module):
             'tau_reion', 'z_reion', 'Delta_z_reion', 'z_reion_He', 'Delta_z_reion_He', 'exp_reion',
             'omega_Lambda', 'T_nu_massive', 'N_nu_massive', 'm_nu_massive',
             'N_nu_massless', 'Neff', 'T_nu_massless', 'YHe',
-            'omega_m', 'R_b', 'omega_r', 'R_nu', 'om'
+            'omega_m', 'omega_cb', 'R_b', 'omega_r', 'R_nu', 'om'
         }
         
         for key, value in param_in.items():
