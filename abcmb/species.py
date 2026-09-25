@@ -28,6 +28,9 @@ class Fluid(eqx.Module):
     is_matter : bool
         Default = False
         Whether the fluid is non-relativistic today and contributes towards the total matter power spectrum. 
+    is_dark_energy : bool
+        Default = False
+        Whether the fluid is the dark energy component.  Used for Omega_de(a) and w(a) in the HALOFIT fitting formulae.
 
     Methods:
     --------
@@ -45,11 +48,13 @@ class Fluid(eqx.Module):
     num_equations : int = eqx.field(default=0, static=True)
     name          : str = eqx.field(default="", static=True)
     is_matter     : bool = eqx.field(default=False, static=True) # Does the fluid contribute towards matter overdensity today.
+    is_dark_energy : bool = eqx.field(default=False, static=True) # Is the fluid the dark energy component.
 
     def __init__(self, first_idx, specs):
         self.first_idx = first_idx
         self.name = ""
         self.is_matter = False
+        self.is_dark_energy = False
 
     def rho(self, lna, args):
         """
@@ -446,10 +451,12 @@ class DarkEnergy(BackgroundFluid):
     """
 
     name = "DarkEnergy"
+    is_dark_energy = True
 
     def __init__(self, first_idx, specs):
         super().__init__(first_idx, specs)
         self.name = "DarkEnergy"
+        self.is_dark_energy = True
 
     def rho(self, lna, args):
         """

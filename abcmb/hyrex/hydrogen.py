@@ -565,7 +565,7 @@ class hydrogen_model(eqx.Module):
 
         # For the user inputed cosmology currently scanned over.
         omega_H  = params['omega_b']*(1-params['YHe'])
-        omega_cb = params['omega_b'] + params['omega_cdm']
+        omega_cb = params['omega_cb']
 
         Delta        = jnp.interp(TCMB, cnst.kB*self.swift[:, 0], self.swift[:, 1])
         dDelta_domcb = jnp.interp(TCMB, cnst.kB*self.swift[:, 0], self.swift[:, 2])

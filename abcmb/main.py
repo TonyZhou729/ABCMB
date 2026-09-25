@@ -146,6 +146,12 @@ class Model(eqx.Module):
             use_bessel_tables=specs["use_bessel_tables"],
             delta_l_max=specs["delta_l_max"],
             n_k_cmb=specs["k_size_cmb"],
+            nonlinear=specs["nonlinear"],
+            halofit_prescription=specs["halofit_prescription"],
+            # use only k that were computed for Pk_lin
+            halofit_k_min=float(k_axis_perturbations[0]),
+            halofit_k_max=float(k_axis_perturbations[-1]),
+            halofit_k_per_decade=specs["halofit_k_per_decade"],
         )
 
         # Initialize recombination model.
@@ -179,7 +185,8 @@ class Model(eqx.Module):
         --------
         Output
             Bundle of CMB power spectra (ClTT, ClTE, ClEE) and their
-            multipole grid l, matter power spectrum Pk and its k-grid,
+            multipole grid l, linear matter power spectrum Pk (and the
+            non-linear Pk_nl when ``nonlinear="halofit"``) and its k-grid,
             the Background and PerturbationTable objects, and the
             full parameter dict including derived keys.
         """
@@ -296,10 +303,17 @@ class Model(eqx.Module):
         Pk = self.SS.Pk_lin(self.SS.k_axis_Pk_output, 0., PT, params)
         k = self.SS.k_axis_Pk_output
 
+        # Non-linear matter power spectrum (HALOFIT), if requested
+        if self.SS.nonlinear == "halofit":
+            Pk_nl = self.SS.Pk_nonlinear(k, 0., PT, BG, params)
+        else:
+            Pk_nl = None
+
         # Package
         output = Output(
             Cls[0], Cls[1], Cls[2], Pk,
-            l, k, BG, PT, params
+            l, k, BG, PT, params,
+            Pk_nl=Pk_nl
         )
 
         return output
@@ -571,10 +585,14 @@ class Model(eqx.Module):
 
         # Loop over matter fluids to compute total matter density today.
         rho_m = 0.
+        rho_cb = 0.
         for s in self.species_list:
             if s.is_matter:
                 rho_m += s.rho(0., params)
+                if "neutrino" not in s.name.lower():
+                    rho_cb += s.rho(0., params)
         params['omega_m']      = rho_m / (3 * cnst.H0_over_h**2/8/jnp.pi/cnst.G) # Fractional matter density
+        params['omega_cb']     = rho_cb / (3 * cnst.H0_over_h**2/8/jnp.pi/cnst.G) # Matter density excluding massive neutrinos, used by HyRex
         params['R_b']          = params['omega_b'] / params['omega_m'] # Baryon fraction
     
         # Loop over all fluids and compute energy density at very early time, inferring radiation energy density this way.
@@ -605,7 +623,7 @@ class Model(eqx.Module):
             'tau_reion', 'z_reion', 'Delta_z_reion', 'z_reion_He', 'Delta_z_reion_He', 'exp_reion',
             'omega_Lambda', 'T_nu_massive', 'N_nu_massive', 'm_nu_massive',
             'N_nu_massless', 'Neff', 'T_nu_massless', 'YHe',
-            'omega_m', 'R_b', 'omega_r', 'R_nu', 'om'
+            'omega_m', 'omega_cb', 'R_b', 'omega_r', 'R_nu', 'om'
         }
         
         for key, value in param_in.items():
@@ -627,7 +645,7 @@ class Output(eqx.Module):
     ClEE : jnp.array
         Polarization-polarization power spectrum
     Pk : jnp.array
-        Matter power spectrum
+        Linear matter power spectrum at z=0
     l : jnp.array
         Multipoles l at which ClTT/ClTE/ClEE are output
     k : jnp.array
@@ -638,6 +656,9 @@ class Output(eqx.Module):
         Perturbation table including perturbations for all fluids
     params : dict
         Complete parameter dictionary including derived parameters
+    Pk_nl : jnp.array or None
+        HALOFIT non-linear matter power spectrum at z=0 on the same k-grid,
+        or None if the model was built without ``nonlinear="halofit"``
     """
 
     # Power spectra
@@ -651,3 +672,5 @@ class Output(eqx.Module):
     BG : background.Background
     PT : perturbations.PerturbationTable
     params : dict
+
+    Pk_nl : jnp.array = None

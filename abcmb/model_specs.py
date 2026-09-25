@@ -26,6 +26,22 @@ def load_specs(input_specs):
     ### BESSEL FUNCTION OPTIONS ###
     specs["use_bessel_tables"] = input_specs.get("use_bessel_tables", True)
 
+    ### NON-LINEAR MATTER POWER SPECTRUM ###
+    # "" for linear only, "halofit" to apply HALOFIT (abcmb.halofit) to the
+    # P(k) output (Output.Pk_nl) and to the lensing potential.  HALOFIT's
+    # sigma(R) integrals need P_lin(k) out to k ~ 100 Mpc^-1.
+    # Rather than extrapolating, they run over the perturbation k-grid, so 
+    # log-spaced high-k extension (k_tail_max; off by default) is switched 
+    # on by "halofit".
+    nonlinear = input_specs.get("nonlinear", "")
+    if nonlinear in (None, False):
+        nonlinear = ""
+    elif nonlinear is True:
+        nonlinear = "halofit"
+    specs["nonlinear"]            = str(nonlinear).lower()
+    specs["halofit_prescription"] = input_specs.get("halofit_prescription", "takahashi2012")
+    specs["halofit_k_per_decade"] = input_specs.get("halofit_k_per_decade", 80)  # sampling of the sigma(R) integrands
+
     ### BBN ###
     specs["bbn_type"] = input_specs.get("bbn_type", "")
     specs["linx_reaction_net"] = input_specs.get("linx_reaction_net", "key_PRIMAT_2023")
@@ -48,13 +64,18 @@ def load_specs(input_specs):
     # name (precisions.h, default 500), which CLASS folds into l_scalar_max
     # before deriving k_max (input.c: ppt->l_scalar_max += ppr->delta_l_max).
     specs["delta_l_max"]            = input_specs.get("delta_l_max", 500)
-    # Sampling of the k-grid above the CMB ceiling, used only for the CMB lensing potential.
-    specs["k_per_decade_for_pk"]    = input_specs.get("k_per_decade_for_pk", 10.)
+    # Sampling of the k-grid above the CMB ceiling, used only for the CMB lensing potential and HALOFIT.
+    specs["k_per_decade_for_pk"]    = input_specs.get("k_per_decade_for_pk", 20. if specs["nonlinear"] == "halofit" else 10.)
     specs["k_per_decade_for_bao"]   = input_specs.get("k_per_decade_for_bao", 70.)
     specs["k_bao_center"]           = input_specs.get("k_bao_center", 3.)
     specs["k_bao_width"]            = input_specs.get("k_bao_width", 4.)
     # CLASS's "full Limber" k_max for C_l^phiphi. Set to 0 to disable the extension.
     specs["k_max_limber_over_l_max"] = input_specs.get("k_max_limber_over_l_max", 1.e-3)
+    # k_tail_max > 0 continues the same log-spaced extension at least up to k_tail_max (Mpc^-1), with or
+    # without lensing, e.g. for P(k) beyond the CMB range.
+    # HALOFIT is only accurate while k_tail_max is well above the non-linear scale k_sigma(z), 
+    # and so using HALOFIT automatically sets this parameter to 100 Mpc^-1.
+    specs["k_tail_max"]             = input_specs.get("k_tail_max", 100. if specs["nonlinear"] == "halofit" else 0.)
     specs["H0_fid"]                 = input_specs.get("H0_fid", 2.255560e-04)
     specs["tau0_fid"]               = input_specs.get("tau0_fid",1.418668e+04)
     specs["rs_rec_fid"]             = input_specs.get("rs_rec_fid", 1.446279e+02)
@@ -88,6 +109,7 @@ def load_specs(input_specs):
     specs["pcoeff_PE"]       = input_specs.get("pcoeff_PE", 0.25)
     specs["icoeff_PE"]       = input_specs.get("icoeff_PE", 0.8)
     specs["dcoeff_PE"]       = input_specs.get("dcoeff_PE", 0.)
+    specs["dtmax_PE"]        = input_specs.get("dtmax_PE", 0.03)
 
     ### Physical contributions to CMB temperature transfer function ###
     specs["scale_sw"]  = input_specs.get("scale_sw", 1)
@@ -189,9 +211,10 @@ def get_k_axis_perturbations(specs):
     # at k_max_cmb.
     
     specs["k_limber_start"] = np.inf
-    if specs["lensing"]:
+    k_max_limber = specs["k_max_limber_over_l_max"] * l_max_eff if specs["lensing"] else 0.
+    k_max_limber = max(k_max_limber, specs["k_tail_max"])
+    if k < k_max_limber:
         specs["k_limber_start"] = float(k)
-        k_max_limber = specs["k_max_limber_over_l_max"] * l_max_eff
         ln_bao_center = np.log(specs["k_bao_center"] * k_rec_fid)
         ln_bao_width  = np.log(specs["k_bao_width"])
         while k < k_max_limber:
