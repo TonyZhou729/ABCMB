@@ -393,20 +393,12 @@ class SpectrumSolver(eqx.Module):
             in_axes=1  # loop over columns
         )
 
-        delta_dm_lna = interp_over_lna(PT.species_perturbations["ColdDarkMatter"]["delta"])
-        delta_b_lna  = interp_over_lna(PT.species_perturbations["Baryon"]["delta"])
+        delta_cb_lna = interp_over_lna(PT.delta_cb)
 
         # now interpolate over k
-        delta_dm = jnp.interp(k, PT.k, delta_dm_lna)
-        delta_b  = jnp.interp(k, PT.k, delta_b_lna)
+        delta_cb = jnp.interp(k, PT.k, delta_cb_lna)
 
-        # total matter overdensity
-        delta_m = (
-            params['omega_b']   * delta_b +
-            params['omega_cdm'] * delta_dm
-        ) / params['omega_m']
-
-        return delta_m**2 * self.primordial_spectrum(k, params)
+        return delta_cb**2 * self.primordial_spectrum(k, params)
 
     def lensing_power_spectrum(self, k, lna, PT, BG, params):
         """
