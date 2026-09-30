@@ -33,6 +33,9 @@ We have included several pedagogical jupyter notebooks to walk you through how t
 ## Issues
 Please feel free to open an issue if something is amiss in ABCMB!
 
+## Third-party code
+ABCMB's HALOFIT implementation (`abcmb/halofit.py`) is adapted from [jax-cosmo](https://github.com/DifferentiableUniverseInitiative/jax_cosmo) (MIT License, Copyright (c) 2022 Differentiable Universe Initiative); see `LICENSE-jax_cosmo`.  If you use the non-linear matter power spectrum, we suggest you cite jax-cosmo ([Campagne et al. 2023](https://arxiv.org/abs/2302.05163)) and the HALOFIT papers, [Smith et al. 2003](https://arxiv.org/abs/astro-ph/0207664) and [Takahashi et al. 2012](https://arxiv.org/abs/1208.2701).
+
 ## Citation
 
 If you use ABCMB to publish scientific research, we suggest you cite

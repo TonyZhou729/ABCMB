@@ -7,6 +7,7 @@ Detailed API documentation
    abcmb.ABCMBTools
    abcmb.background
    abcmb.constants
+   abcmb.halofit
    abcmb.main
    abcmb.perturbations
    abcmb.species
