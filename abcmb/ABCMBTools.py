@@ -307,7 +307,7 @@ def fast_interp(x, xp_min, xp_max, fp):
     w_lower = 1.0 - w_upper
     return w_lower * fp[i_lower] + w_upper * fp[i_upper]
 
-def fast_interp_cubic(x, xp_min, xp_max, fp, eps):
+def fast_interp_cubic(x, xp_min, xp_max, fp):
     """
     Cubic version of fast_interp to avoid gradient discontinuities at 
     grid points.
