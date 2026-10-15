@@ -651,7 +651,9 @@ class Background(BackgroundPreRecomb):
         lna_vals = jnp.linspace(-15.0, -6.0, 5000)
         aH_tau_c_vals = vmap(self.aH, in_axes=[0, None])(lna_vals, params) * self.tau_c(lna_vals, params)
         # these increase monotnically; interpolate rather than snapping to grid for continuity
-        self.lna_transfer_start = jnp.interp(0.008, aH_tau_c_vals, lna_vals)
+        # self.lna_transfer_start = jnp.interp(0.008, aH_tau_c_vals, lna_vals)
+        # use stop_gradient to treat this as data and avoid gradients of some jagged jitter
+        self.lna_transfer_start = jax.lax.stop_gradient(jnp.interp(0.008, aH_tau_c_vals, lna_vals))
 
     ### RECOMBINATION RELATED ###
 
