@@ -63,7 +63,7 @@ def load_specs(input_specs):
     # accurate up to l_max. Mirrors CLASS's precision parameter of the same
     # name (precisions.h, default 500), which CLASS folds into l_scalar_max
     # before deriving k_max (input.c: ppt->l_scalar_max += ppr->delta_l_max).
-    specs["delta_l_max"]            = input_specs.get("delta_l_max", 500)
+    specs["delta_l_max"]            = input_specs.get("delta_l_max", specs["l_max"]//2)
     # Sampling of the k-grid above the CMB ceiling, used only for the CMB lensing potential and HALOFIT.
     specs["k_per_decade_for_pk"]    = input_specs.get("k_per_decade_for_pk", 20. if specs["nonlinear"] == "halofit" else 10.)
     specs["k_per_decade_for_bao"]   = input_specs.get("k_per_decade_for_bao", 70.)
