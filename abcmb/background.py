@@ -797,7 +797,7 @@ class Background(BackgroundPreRecomb):
         adjoint=self.adjoint()
         sol = diffeqsolve(
             term,
-            solver=Kvaerno5(),
+            solver=Tsit5(), # no kappa dependence-->quadrature, not stiff.  Kvaerno5 produces noisy gradients
             stepsize_controller=stepsize_controller,
             t0=0.,
             t1=-10.,
