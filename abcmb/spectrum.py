@@ -11,6 +11,7 @@ from scipy.special import spherical_jn
 
 from . import ABCMBTools as tools
 from . import constants as cnst
+from . import halofit
 
 import os
 file_dir = os.path.dirname(__file__)
@@ -174,11 +175,20 @@ class SpectrumSolver(eqx.Module):
         Number of k points over which the CMB source functions should be interpolated over. If lensing
         is on, n_k will be greater than this for accurate lensing potential, but the extra portion is
         irrelevant for just the CMB source part. 
+    nonlinear : str
+        Non-linear correction applied to the matter power spectrum and to the
+        lensing potential: "" (none, default) or "halofit".
+    halofit_prescription : str
+        HALOFIT coefficients, "takahashi2012" (default) or "smith2003".
+    halofit_lnk : jnp.array
+        Uniform ln k grid (k in Mpc^{-1}) on which the sigma(R) integrals of HALOFIT
+        are evaluated.
 
     Methods:
     --------
     primordial_spectrum : Compute primordial power spectrum
     Pk_lin : Compute linear matter power spectrum
+    Pk_nonlinear : Compute HALOFIT non-linear matter power spectrum
     get_Cl : Compute angular power spectra for multiple ℓ
     Cl_one_ell : Compute angular power spectrum for single ℓ
     integrand_T0 : Compute SW+ISW temperature source integrand
@@ -199,6 +209,10 @@ class SpectrumSolver(eqx.Module):
     use_bessel_tables : bool = eqx.field(static=True)
     l_top : int = eqx.field(static=True)
     n_k_cmb : int = eqx.field(static=True)
+
+    nonlinear : str = eqx.field(static=True)
+    halofit_prescription : str = eqx.field(static=True)
+    halofit_lnk : jnp.array
 
     k_axis_transfer  : jnp.array
     k_axis_Pk_output : jnp.array
@@ -222,7 +236,12 @@ class SpectrumSolver(eqx.Module):
                  scale_pol=1,
                  use_bessel_tables=True,
                  delta_l_max=500,
-                 n_k_cmb=-1):
+                 n_k_cmb=-1,
+                 nonlinear="",
+                 halofit_prescription="takahashi2012",
+                 halofit_k_min=1.e-4,
+                 halofit_k_max=1.e3,
+                 halofit_k_per_decade=80):
         """
         Initialize CMB spectrum solver.
 
@@ -258,11 +277,37 @@ class SpectrumSolver(eqx.Module):
         n_k_cmb : int, optional
             Number of leading nodes of the perturbation k-grid that cover the CMB
             (transfer) range.
+        nonlinear : str, optional
+            Non-linear correction to the matter power spectrum: "" or None for
+            none (default), "halofit" for HALOFIT.
+        halofit_prescription : str, optional
+            "takahashi2012" (default) or "smith2003" HALOFIT coefficients.
+        halofit_k_min, halofit_k_max : float, optional
+            Range in k (Mpc^{-1}) over which the HALOFIT sigma(R) integrals are
+            evaluated.
+        halofit_k_per_decade : int, optional
+            Sampling of the sigma(R) integrands (default: 80).
         """
 
         self.lensing = lensing
         self.use_bessel_tables = bool(use_bessel_tables)
         self.n_k_cmb = int(n_k_cmb)
+
+        if nonlinear in (None, False, ""):
+            self.nonlinear = ""
+        elif nonlinear is True or str(nonlinear).lower() == "halofit":
+            self.nonlinear = "halofit"
+        else:
+            raise ValueError(f"nonlinear must be '' or 'halofit', got {nonlinear!r}")
+        if halofit_prescription not in halofit.PRESCRIPTIONS:
+            raise ValueError(
+                f"halofit_prescription must be one of {halofit.PRESCRIPTIONS}, got {halofit_prescription!r}"
+            )
+        self.halofit_prescription = halofit_prescription
+        # Odd number of points so that Simpson's rule applies.
+        n_dec = np.log10(halofit_k_max / halofit_k_min)
+        n_hf = 2 * int(np.ceil(n_dec * halofit_k_per_decade / 2.)) + 1
+        self.halofit_lnk = jnp.linspace(np.log(halofit_k_min), np.log(halofit_k_max), n_hf)
 
         self.ells = jnp.arange(ellmin, ellmax+1)
         if self.use_bessel_tables:
@@ -355,11 +400,7 @@ class SpectrumSolver(eqx.Module):
 
         # Now interpolate over k, in log-log. Log-log matters
         # above the CMB ceiling, where the grid is coarse (~10 nodes/decade).
-        delta_m = jnp.exp(
-            jnp.interp(jnp.log(k),
-                       jnp.log(PT.k),
-                       jnp.log(jnp.abs(delta_m_lna)))
-        )
+        delta_m = tools.loglog_interp(k, PT.k, jnp.abs(delta_m_lna))
 
         return delta_m**2 * self.primordial_spectrum(k, params)
 
@@ -395,10 +436,86 @@ class SpectrumSolver(eqx.Module):
 
         delta_cb_lna = interp_over_lna(PT.delta_cb)
 
-        # now interpolate over k
-        delta_cb = jnp.interp(k, PT.k, delta_cb_lna)
+        # Now interpolate over k, in log-log, as in Pk_lin.
+        delta_cb = tools.loglog_interp(k, PT.k, jnp.abs(delta_cb_lna))
 
         return delta_cb**2 * self.primordial_spectrum(k, params)
+
+    def _Pk_lin_table(self, lna, PT, params):
+        """
+        Linear matter power spectrum on the perturbation k-grid PT.k at one time.
+
+        Parameters:
+        -----------
+        lna : float
+            Logarithm of scale factor
+        PT : perturbations.PerturbationTable
+            Perturbation evolution table
+        params : dict
+            Dictionary of input and derived parameters
+
+        Returns:
+        --------
+        array
+            P_lin(PT.k, lna), units Mpc^3
+        """
+        interp_over_lna = jax.vmap(
+            lambda y: jnp.interp(lna, PT.lna, y),
+            in_axes=1
+        )
+        delta_m_lna = interp_over_lna(PT.delta_m)  # shape (Nk,)
+        return delta_m_lna**2 * self.primordial_spectrum(PT.k, params)
+
+    def Pk_nonlinear(self, k, z, PT, BG, params):
+        """
+        Compute the HALOFIT non-linear matter power spectrum at wavenumbers k
+        and redshift z.
+
+        Parameters:
+        -----------
+        k : float or array
+            Wavenumber (Mpc^{-1})
+        z : float
+            Redshift to evaluate.
+        PT : perturbations.PerturbationTable
+            Perturbation evolution table
+        BG : background.Background
+            Background cosmology module
+        params : dict
+            Dictionary of input and derived parameters
+
+        Returns:
+        --------
+        float or array
+            Non-linear matter power spectrum P_NL(k, z), units Mpc^3
+        """
+        lna = -jnp.log(1. + z)
+        Pk_tab = self._Pk_lin_table(lna, PT, params)
+
+        k_grid = jnp.exp(self.halofit_lnk)
+        Delta2 = tools.loglog_interp(k_grid, PT.k, Pk_tab) * k_grid**3 / (2. * jnp.pi**2)
+        k_sigma, n_eff, C = halofit.halofit_parameters(self.halofit_lnk, Delta2)
+
+        Pk_lin = tools.loglog_interp(k, PT.k, Pk_tab)
+
+        # Fraction of the matter density in massive neutrinos; exactly 0 in their absence.
+        f_nu = 1. - params['omega_cb'] / params['omega_m']
+
+        Pk_nl = halofit.halofit_pk(
+            k, Pk_lin, k_sigma, n_eff, C,
+            BG.Omega_m(lna, params),
+            BG.Omega_de(lna, params),
+            BG.w_de(lna, params),
+            f_nu=f_nu,
+            h=params['h'],
+            prescription=self.halofit_prescription,
+        )
+
+        # No correction at high redshift, where the non-linear scale has left the k grid
+        # and the HALOFIT parameters are meaningless.
+        w = halofit.table_coverage(k_sigma, jnp.exp(self.halofit_lnk[-1]))
+
+        return Pk_lin + w * (Pk_nl - Pk_lin)
 
     def lensing_power_spectrum(self, k, lna, PT, BG, params):
         """
@@ -438,7 +555,10 @@ class SpectrumSolver(eqx.Module):
             (Omega_m * (1.+z)**3) + Omega_r * (1.+z)**4 + Omega_L
         )
 
-        Pk = self.Pk_lin(k, z, PT, params) # Mpc^3
+        if self.nonlinear == "halofit":
+            Pk = self.Pk_nonlinear(k, z, PT, BG, params) # Mpc^3
+        else:
+            Pk = self.Pk_lin(k, z, PT, params) # Mpc^3
 
         return 9./8./jnp.pi**2 * Om**2 * aH**4 * Pk / k
 
