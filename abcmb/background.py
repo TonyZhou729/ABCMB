@@ -930,7 +930,7 @@ class Background(BackgroundPreRecomb):
         """
         integrand = lambda lna, y, args: jnp.float64(-1./self.tau_c(lna, params)/self.aH(lna, params)/(self.R_ratio_lna(lna, params)))
         term = ODETerm(integrand)
-        stepsize_controller = PIDController(pcoeff=0.4, icoeff=0.3, dcoeff=0, rtol=1.e-3, atol=1.e-6)
+        stepsize_controller = PIDController(pcoeff=0.4, icoeff=0.3, dcoeff=0, rtol=1.e-6, atol=1.e-6) # need better accuracy for DESI
         adjoint=self.adjoint()
 
         solution = diffeqsolve(
@@ -970,7 +970,7 @@ class Background(BackgroundPreRecomb):
 
         integrand = lambda lna, y, args: 1./jnp.sqrt(3*(1+self.R_ratio_lna(lna, params))) / (self.aH(lna, params))
         term = ODETerm(integrand)
-        stepsize_controller = PIDController(pcoeff=0.4, icoeff=0.3, dcoeff=0, rtol=1.e-3, atol=1.e-6)
+        stepsize_controller = PIDController(pcoeff=0.4, icoeff=0.3, dcoeff=0, rtol=1.e-6, atol=1.e-6) # need better accuracy for DESI
         adjoint=self.adjoint()
 
         solution = diffeqsolve(
