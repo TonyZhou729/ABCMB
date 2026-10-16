@@ -307,6 +307,40 @@ def fast_interp(x, xp_min, xp_max, fp):
     w_lower = 1.0 - w_upper
     return w_lower * fp[i_lower] + w_upper * fp[i_upper]
 
+def fast_interp_cubic(x, xp_min, xp_max, fp):
+    """
+    Cubic version of fast_interp to avoid gradient discontinuities at 
+    grid points.
+
+    Parameters:
+    -----------
+    x : float or array
+        Query points for interpolation
+    xp_min : float
+        Minimum value of interpolation grid
+    xp_max : float
+        Maximum value of interpolation grid
+    fp : array
+        Function values on uniform grid
+
+    Returns:
+    --------
+    float or array
+        Interpolated values at query points
+
+    """
+    eps = 1.e-6
+    n = fp.shape[-1]
+    i = (x - xp_min) / (xp_max - xp_min) * (n - 1) # fix bug in JAX issue
+    i = jnp.clip(i, eps, n - 1.0 - eps)  # Avoid index out of range
+    i1 = jnp.floor(i).astype(jnp.int32)
+    t = i - i1
+    p0 = fp[jnp.maximum(i1-1,0)]
+    p1 = fp[i1]
+    p2 = fp[jnp.minimum(i1+1, n-1)]
+    p3 = fp[jnp.minimum(i1+2, n-1)]
+    return p1 + 0.5 * t * (p2 - p0 + t * (2.*p0 - 5.*p1 + 4.*p2 - p3 + t * (3.*(p1 - p2) + p3 - p0)))
+
 
 def loglog_interp(x, xp, fp):
     """
