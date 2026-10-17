@@ -643,7 +643,7 @@ class SpectrumSolver(eqx.Module):
         Returns:
         --------
         tuple
-            (ClTT, ClTE, ClEE) lensed power spectra
+            (ClTT, ClTE, ClEE, Clpp, ClBB) lensed power spectra and lensing potential power spectrum
         """
         # CLASS samples angle uniformly
         # 500 points is enough for lmax < 4000
@@ -750,8 +750,9 @@ class SpectrumSolver(eqx.Module):
             (ksip[:, None]*d22 + ksim[:, None]*d2m2)*w,
             axis=0
         )
+        ClBB = 1./2. * 2*jnp.pi * jnp.sum((ksip[:, None]*d22 - ksim[:, None]*d2m2)*w, axis=0)
 
-        return (ClTT, ClTE, ClEE)
+        return (ClTT, ClTE, ClEE, Clpp, ClBB)
 
     def get_Cl(self, PT, BG, params):
         """
@@ -769,7 +770,8 @@ class SpectrumSolver(eqx.Module):
         Returns:
         --------
         tuple
-            (ClTT, ClTE, ClEE) angular power spectra
+            (ClTT, ClTE, ClEE, Clpp, ClBB) angular power spectra and lensing potential power spectrum. 
+            Clpp and ClBB are an array of zeros if specs["lensing"]=False.
         """
 
         if self.use_bessel_tables:
@@ -793,11 +795,11 @@ class SpectrumSolver(eqx.Module):
             ee_unlensed = ee_raw[offset:]
 
         def get_lensed_Cls():
-            tt_lensed, te_lensed, ee_lensed = self.lensed_Cls(self.lensing_ells, tt_unlensed, te_unlensed, ee_unlensed, PT, BG, params)
-            return (tt_lensed[self.ells-2], te_lensed[self.ells-2], ee_lensed[self.ells-2])
+            tt_lensed, te_lensed, ee_lensed, clpp, bb_lensed = self.lensed_Cls(self.lensing_ells, tt_unlensed, te_unlensed, ee_unlensed, PT, BG, params)
+            return (tt_lensed[self.ells-2], te_lensed[self.ells-2], ee_lensed[self.ells-2], clpp[self.ells-2], bb_lensed[self.ells-2])
 
         def get_unlensed_Cls():
-            return (tt_unlensed[self.ells-2], te_unlensed[self.ells-2], ee_unlensed[self.ells-2])
+            return (tt_unlensed[self.ells-2], te_unlensed[self.ells-2], ee_unlensed[self.ells-2], jnp.zeros_like(tt_unlensed[self.ells-2]), jnp.zeros_like(tt_unlensed[self.ells-2]))
 
         return lax.cond(
             self.lensing,
