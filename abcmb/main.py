@@ -677,8 +677,8 @@ class Output(eqx.Module):
     ClTT : jnp.array
     ClTE : jnp.array
     ClEE : jnp.array
-    Clpp : jnp.array = None
-    ClBB : jnp.array = None
+    Clpp : jnp.array
+    ClBB : jnp.array
     Pk   : jnp.array
 
     l  : jnp.array
