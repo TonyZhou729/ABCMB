@@ -712,14 +712,14 @@ class Background(BackgroundPreRecomb):
         array_with_padding
             Matter temperature table (units: eV)
         """
-        TCMB = self.TCMB(lna, params)
-        GC = recomb_functions.Gamma_compton(self.xe(lna), TCMB, params['YHe']) / self.H(lna, params)
-
+    
         pad = jnp.isinf(self.lna_Tm_tab.arr)
         lna = jnp.where(pad, 0., self.lna_Tm_tab.arr)
         mask = (lna >= -jnp.log(1.+z_start)) & ~pad
         i0 = jnp.argmax(mask)
         
+        TCMB = self.TCMB(lna, params)
+        GC = recomb_functions.Gamma_compton(self.xe(lna), TCMB, params['YHe']) / self.H(lna, params)
 
         def cumulative_from_i0(f):
             # trapezoidal int_{lna[i0]}^{lna} f dlna on the (uniform) table grid
