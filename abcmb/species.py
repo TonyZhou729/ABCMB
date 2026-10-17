@@ -802,7 +802,7 @@ class MassiveNeutrino(Fluid):
         Number of multipole moments per momentum bin for massive neutrino hierarchy
     three_efa_ktau_trigger : float
         Value of k*tau above which the three-equation fluid approximation (3EFA)
-        kicks in.  Reads specs["3efa_ktau_trigger"], which defaults to 51.  This
+        kicks in.  Reads specs["3efa_ktau_trigger"], which defaults to 31.  This
         is *more accurate* than setting to 0 or None, as 3EFA eliminates accumulating 
         finite hierarchy error.
 
