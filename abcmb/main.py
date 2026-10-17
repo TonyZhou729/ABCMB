@@ -309,9 +309,16 @@ class Model(eqx.Module):
         else:
             Pk_nl = None
 
+        if self.specs["lensing"]:
+            Clpp = Cls[3]
+            ClBB = Cls[4]
+        else:
+            Clpp = None
+            ClBB = None
+
         # Package
         output = Output(
-            Cls[0], Cls[1], Cls[2], Pk,
+            Cls[0], Cls[1], Cls[2], Clpp, ClBB, Pk,
             l, k, BG, PT, params,
             Pk_nl=Pk_nl
         )
@@ -644,6 +651,10 @@ class Output(eqx.Module):
         Temperature-polarization power spectrum
     ClEE : jnp.array
         Polarization-polarization power spectrum
+    Clpp : jnp.array or None
+        Lensing potential power spectrum.  None if specs["lensing"]=False.
+    ClBB : jnp.array or None
+        Lensed B-mode power spectrum (induced from scalar perturbations).  None if specs["lensing"]=False.
     Pk : jnp.array
         Linear matter power spectrum at z=0
     l : jnp.array
@@ -659,12 +670,15 @@ class Output(eqx.Module):
     Pk_nl : jnp.array or None
         HALOFIT non-linear matter power spectrum at z=0 on the same k-grid,
         or None if the model was built without ``nonlinear="halofit"``
+    
     """
 
     # Power spectra
     ClTT : jnp.array
     ClTE : jnp.array
     ClEE : jnp.array
+    Clpp : jnp.array = None
+    ClBB : jnp.array = None
     Pk   : jnp.array
 
     l  : jnp.array
