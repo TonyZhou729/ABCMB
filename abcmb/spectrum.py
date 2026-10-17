@@ -46,10 +46,21 @@ try:
 except: 
     pass
 
-# large-x asymptotic expansion of spherical bessel functions
-Q = lambda l, x : jnp.sqrt(x**2-l**2) - l*jnp.pi/2 + l * jnp.arcsin(l/x)
-J = lambda l, x : jnp.sqrt(2/jnp.pi/jnp.sqrt(x**2-l**2)) * jnp.cos(Q(l, x) - jnp.pi/4)
-j = lambda l, x : jnp.sqrt(jnp.pi/2/x) * J(l+1/2, x)
+# # large-x asymptotic expansion of spherical bessel functions
+# Q = lambda l, x : jnp.sqrt(x**2-l**2) - l*jnp.pi/2 + l * jnp.arcsin(l/x)
+# J = lambda l, x : jnp.sqrt(2/jnp.pi/jnp.sqrt(x**2-l**2)) * jnp.cos(Q(l, x) - jnp.pi/4)
+# j = lambda l, x : jnp.sqrt(jnp.pi/2/x) * J(l+1/2, x)
+# More accurate large-x asymptotic expansion of spherical Bessel functions.  Debye's expansion of
+# J_{l+1/2}(x), DLMF 10.19.6 https://dlmf.nist.gov/10.19.  
+def j(l, x):
+    nu = l + 0.5
+    s = jnp.sqrt(x**2 - nu**2)                      # nu tan(beta), x = nu sec(beta)
+    c = nu / s                                      # cot(beta)
+    c2 = c * c
+    xi = s - nu*jnp.pi/2 + nu*jnp.arcsin(nu/x) - jnp.pi/4
+    cos_t = 1. - c2*(81. + c2*(462. + 385.*c2))/1152./nu**2
+    sin_t = c*(3. + 5.*c2)/24./nu - c**3*(30375. + c2*(369603. + c2*(765765. + 425425.*c2)))/414720./nu**3
+    return jnp.sqrt(1./(x*s)) * (jnp.cos(xi)*cos_t + jnp.sin(xi)*sin_t)
 
 def _j1(x):
     """
