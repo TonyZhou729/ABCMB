@@ -768,7 +768,7 @@ class MasslessNeutrino(StandardFluid):
         Flmax_prime = k/aH*F[lmax-1] - (lmax+1)/aH/tau*F[lmax]
 
         y_prime = jnp.concatenate((jnp.array([delta_prime, theta_prime, sigma_prime, F3_prime]), Fl_prime, jnp.array([Flmax_prime])))
-        if not self.ufa_trigger:
+        if not self.ufa_ktau_trigger:
             return y_prime
 
         # UFA, adapted from CLASS
