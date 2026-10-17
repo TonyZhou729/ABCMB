@@ -689,7 +689,7 @@ class Background(BackgroundPreRecomb):
                 lna >= self.lna_xe_tab.lastval,
                 self.xe_tab.lastval,
                 tools.fast_interp_cubic(lna, self.lna_xe_tab.arr[0],
-                self.lna_xe_tab.arr[0] + len(self.lna_xe_tab.arr) * (self.lna_xe_tab.arr[1]-self.lna_xe_tab.arr[0]),
+                self.lna_xe_tab.arr[0] + (len(self.lna_xe_tab.arr) - 1) * (self.lna_xe_tab.arr[1]-self.lna_xe_tab.arr[0]),
                 self.xe_tab.arr)
             )
         )
@@ -743,7 +743,7 @@ class Background(BackgroundPreRecomb):
                 lna >= self.lna_Tm_tab.lastval,
                 self.Tm_tab.lastval,
                 tools.fast_interp(lna, self.lna_Tm_tab.arr[0],
-                self.lna_Tm_tab.arr[0] + len(self.lna_Tm_tab.arr) * (self.lna_Tm_tab.arr[1]-self.lna_Tm_tab.arr[0]),
+                self.lna_Tm_tab.arr[0] + (len(self.lna_Tm_tab.arr) - 1) * (self.lna_Tm_tab.arr[1]-self.lna_Tm_tab.arr[0]),
                 self.Tm_tab.arr)
             )
         )
