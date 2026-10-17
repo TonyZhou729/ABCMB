@@ -800,11 +800,17 @@ class MassiveNeutrino(Fluid):
     -----------
     num_ells_per_bin : int
         Number of multipole moments per momentum bin for massive neutrino hierarchy
+    three_efa_ktau_trigger : float
+        Value of k*tau above which the three-equation fluid approximation (3EFA)
+        kicks in.  Reads specs["3efa_ktau_trigger"], which defaults to 51.  This
+        is *more accurate* than setting to 0 or None, as 3EFA eliminates accumulating 
+        finite hierarchy error.
 
     Methods:
     --------
     rho : Compute massive neutrino density (units: eV cm^{-3})
     P : Compute massive neutrino pressure (units: eV cm^{-3})
+    pseudo_P : Compute the pseudo-pressure of the fluid approximation (units: eV cm^{-3})
     y_ini : Compute initial perturbation conditions 
     y_prime : Compute perturbation time derivatives 
     rho_delta : Compute density perturbation (units: eV cm^{-3})
@@ -813,6 +819,7 @@ class MassiveNeutrino(Fluid):
     """
 
     num_ells_per_bin : int = eqx.field(static=True)
+    three_efa_ktau_trigger : float = eqx.field(default=None, static=True)
 
     q_3p = jnp.array([0.913201, 3.37517, 7.79184])
     w_3p = jnp.array([0.0687359, 3.31435, 2.29911])
@@ -830,7 +837,8 @@ class MassiveNeutrino(Fluid):
         self.name = "MassiveNeutrino"
         self.is_matter = True
         self.num_ells_per_bin = specs["l_max_massive_nu"] + 1
-        self.num_equations = 3 * self.num_ells_per_bin
+        self.fluid_trigger = specs["3efa_ktau_trigger"]
+        self.num_equations = 3 * self.num_ells_per_bin + (3 if self.three_efa_ktau_trigger else 0)
 
     def rho(self, lna, args):
         """
@@ -905,6 +913,41 @@ class MassiveNeutrino(Fluid):
         # Remove extra dimension if original input was scalar
         return jnp.squeeze(P_val) if jnp.ndim(lna) == 0 else P_val
 
+    def pseudo_P(self, lna, args):
+        """
+        Massive neutrino pseudo-pressure of the 3EFA,
+
+            4 pi * (Tncdm,0/a)^4 int dq q^2 f0 q^4 / (3 epsilon^3) 
+       
+
+        Parameters:
+        -----------
+        lna : float or ArrayLike
+            Logarithm of scale factor
+        args : dict
+            Cosmological parameters (params)
+
+        Returns:
+        --------
+        float or ArrayLike
+            Massive neutrino pseudo-pressure (units: eV cm^{-3})
+
+        Notes:
+        ------
+        CLASS IV, arXiv:1104.2935, eq 3.4
+        
+        Calling with an array of lna of size 5 silently fails.
+        """
+        params = args
+        a = jnp.exp(lna)
+        T = params['T_nu_massive'] * params['TCMB0'] / a
+        x = params['m_nu_massive'] / T
+
+        integrand = (1. + jnp.exp(-self.q_5p)) * self.q_5p**2 / (self.q_5p**2 + x**2)**1.5  # (N, 5)
+        integral = jnp.dot(integrand, self.w_5p)
+
+        return params['N_nu_massive'] * 4./3. * T**4 / jnp.pi**2 * integral / cnst.hbar**3 / cnst.c**3
+
     def y_ini(self, k, tau_ini, args):
         """
         Compute initial conditions for massive neutrino perturbations.
@@ -939,6 +982,9 @@ class MassiveNeutrino(Fluid):
             # ZZ : Techniclly Psi1 requires epsilon/q = 1/v, but at early times this should be 1. Should check this accuracy!
             first_three = jnp.array([delta/4., theta/3., sigma/2.]) * q / (1.+jnp.exp(-q))
             bins.append(jnp.concatenate((first_three, jnp.zeros(self.num_ells_per_bin - 3))))
+
+        if self.three_efa_ktau_trigger:
+            bins.append(jnp.zeros(3)) # differences to get delta, theta, sigma in 3efa will go here
 
         return jnp.concatenate(bins)
 
@@ -999,8 +1045,78 @@ class MassiveNeutrino(Fluid):
 
             # Putting it all together
             bins.append(jnp.concatenate((jnp.array([Psi0_prime, kPsi1_prime, Psi2_prime]), Psi_inter_prime, jnp.array([Psi_lmax_prime]))))
+        
+        y_prime_hier = jnp.concatenate(bins)
+        if not self.three_efa_ktau_trigger:
+            return y_prime_hier
 
-        return jnp.concatenate(bins)
+        # see https://arxiv.org/pdf/1104.2935 section 3
+        rho = self.rho(lna, params)
+        P = self.P(lna, params)
+        pP = self.pseudo_P(lna, params)
+        w = P / rho
+        # From CLASS IV: "Since we do not have an evolution equation for δp, we approximate c2eﬀ by c2g [here c2a]. 
+        # This approximation is sometimes as much as a factor 2 wrong as shown on Fig. 1. ...We conclude, that the 
+        # error we make from this approximation is at least not dominating the total error of our approximation scheme."
+        ca2 = w / 3. / (1. + w) * (5. - pP / P)      # adiabatic sound speed
+        cvis2 = 3. * w * ca2
+
+        # We freeze the hierarchy modes after we cross the k*tau threshold specs["3efa_ktau_trigger"]. 
+        # Then we compute delta_physical - delta_hierarchy(y, a), theta_physical - theta_hierarchy(y, a), 
+        # sigma_physical - sigma_hierarchy(y, a) as y[0] - y[2].
+
+        # first we need to integrate the frozen hierarchy for the new lna
+        pref = params['N_nu_massive'] * 4. / jnp.pi**2 * T**4 / cnst.hbar**3 / cnst.c**3
+        i0 = self.first_idx
+        n = self.num_ells_per_bin
+        rho_delta = 0.; d_rho_delta = 0.; rpt = 0.; rps = 0.; d_rps = 0.
+        for i in range(3):
+            q = self.q_3p[i]
+            W = self.w_3p[i] * (1. + jnp.exp(-q))
+            eps = jnp.sqrt(q**2 + x**2)
+            Psi0, kPsi1, Psi2 = y[i0 + i*n], y[i0 + 1 + i*n], y[i0 + 2 + i*n]
+            rho_delta   += W * eps / q**2 * Psi0
+            d_rho_delta += W / q**2 * (x**2 / eps - 4. * eps) * Psi0
+            rpt         += W / q * kPsi1
+            rps         += W / eps * Psi2
+            d_rps       += W * (-4. / eps - x**2 / eps**3) * Psi2
+        rho_delta *= pref
+        d_rho_delta *= pref
+        rpt *= pref
+        rps *= 2. / 3. * pref; d_rps *= 2. / 3. * pref
+        # background derivatives on the same (5-point) quadrature as rho and P
+        eps5 = jnp.sqrt(self.q_5p**2 + x**2)
+        W5 = self.w_5p * (1. + jnp.exp(-self.q_5p))
+        d_rho = pref * jnp.sum(W5 / self.q_5p**2 * (x**2 / eps5 - 4. * eps5))
+        d_P = pref / 3. * jnp.sum(W5 * (-4. / eps5 - x**2 / eps5**3))
+        rhoP = rho + P
+        d_rhoP = d_rho + d_P
+
+        delta_hierarchy = rho_delta / rho
+        theta_hierarchy = rpt / rhoP
+        sigma_hierarchy = rps / rhoP
+        d_delta_hierarchy = d_rho_delta / rho - delta_hierarchy * d_rho / rho
+        d_theta_hierarchy = -4. * theta_hierarchy - theta_hierarchy * d_rhoP / rhoP
+        d_sigma_hierarchy = d_rps / rhoP - sigma_hierarchy * d_rhoP / rhoP
+
+        # fluid variables = frozen-hierarchy integrals + corrections
+        yf = y[i0 + 3*n: i0 + 3*n + 3]
+        delta_physical = delta_hierarchy + yf[0]
+        theta_physical = theta_hierarchy + yf[1]
+        sigma_physical = sigma_hierarchy + yf[2]
+
+        # CLASS's fluid equations in synchronous gauge, per lna (metric_h_prime is h' per lna already)
+        delta_physical_prime = -(1. + w) * (theta_physical / aH + metric_h_prime / 2.) - 3. * (ca2 - w) * delta_physical
+        theta_physical_prime = -(1. - 3. * ca2) * theta_physical + (ca2 / (1. + w) * k**2 * delta_physical - k**2 * sigma_physical) / aH
+        sigma_physical_prime = (-3. * ((2. / 3. - ca2 - pP / P / 3.) + 1. / aH / tau) * sigma_physical
+                         + 8. / 3. * cvis2 / (1. + w) * (theta_physical / aH + metric_h_prime / 2.))
+
+        yf_prime = jnp.array([delta_physical_prime - d_delta_hierarchy, theta_physical_prime - d_theta_hierarchy, sigma_physical_prime - d_sigma_hierarchy])
+
+        y_prime_full  = jnp.concatenate((y_prime_hier, jnp.zeros(3)))
+        y_prime_fluid = jnp.concatenate((jnp.zeros_like(y_prime_hier), yf_prime))
+
+        return jnp.where(k * tau > self.fluid_trigger, y_prime_fluid, y_prime_full)
 
     def rho_delta(self, lna, y, args):
         """
@@ -1033,7 +1149,11 @@ class MassiveNeutrino(Fluid):
             Psi0 = y[self.first_idx + i*self.num_ells_per_bin]
 
             res += w*(1.+jnp.exp(-q))*epsilon/q**2 * Psi0
-        return params['N_nu_massive'] * res * 4./jnp.pi**2 * T**4 / cnst.hbar**3 / cnst.c**3
+        # return params['N_nu_massive'] * res * 4./jnp.pi**2 * T**4 / cnst.hbar**3 / cnst.c**3
+        rho_delta = params['N_nu_massive'] * res * 4./jnp.pi**2 * T**4 / cnst.hbar**3 / cnst.c**3
+        if self.three_efa_ktau_trigger:   # fluid approximation: + rho * (delta_f - delta_int), zero before the switch
+            rho_delta += self.rho(lna, params) * y[self.first_idx + 3*self.num_ells_per_bin]
+        return rho_delta
 
     def rho_plus_P_theta(self, lna, y, args):
         """
@@ -1065,7 +1185,11 @@ class MassiveNeutrino(Fluid):
             kPsi1 = y[self.first_idx+1 + i*self.num_ells_per_bin]
 
             res += w*(1.+jnp.exp(-q))/q * kPsi1
-        return params['N_nu_massive'] * res * 4./jnp.pi**2 * T**4 / cnst.hbar**3 / cnst.c**3
+        # return params['N_nu_massive'] * res * 4./jnp.pi**2 * T**4 / cnst.hbar**3 / cnst.c**3
+        rho_P_theta = params['N_nu_massive'] * res * 4./jnp.pi**2 * T**4 / cnst.hbar**3 / cnst.c**3
+        if self.three_efa_ktau_trigger:   # fluid approximation: + (rho + P) * (theta_f - theta_int), zero before the switch
+            rho_P_theta += (self.rho(lna, params) + self.P(lna, params)) * y[self.first_idx + 3*self.num_ells_per_bin + 1]
+        return rho_P_theta
 
     def rho_plus_P_sigma(self, lna, y, args):
         """
@@ -1098,7 +1222,11 @@ class MassiveNeutrino(Fluid):
             Psi2 = y[self.first_idx+2 + i*self.num_ells_per_bin]
 
             res += w*(1.+jnp.exp(-q))/epsilon * Psi2
-        return params['N_nu_massive'] * res * 8./3./jnp.pi**2 * T**4 / cnst.hbar**3 / cnst.c**3
+        # return params['N_nu_massive'] * res * 8./3./jnp.pi**2 * T**4 / cnst.hbar**3 / cnst.c**3
+        rho_P_sigma = params['N_nu_massive'] * res * 8./3./jnp.pi**2 * T**4 / cnst.hbar**3 / cnst.c**3
+        if self.fluid_trigger:   # fluid approximation: + (rho + P) * (sigma_f - sigma_int), zero before the switch
+            rho_P_sigma += (self.rho(lna, params) + self.P(lna, params)) * y[self.first_idx + 3*self.num_ells_per_bin + 2]
+        return rho_P_sigma
 
     def output_perturbations(self, lna, modes, args):
         BG, params = args
