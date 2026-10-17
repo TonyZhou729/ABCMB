@@ -837,7 +837,7 @@ class MassiveNeutrino(Fluid):
         self.name = "MassiveNeutrino"
         self.is_matter = True
         self.num_ells_per_bin = specs["l_max_massive_nu"] + 1
-        self.fluid_trigger = specs["3efa_ktau_trigger"]
+        self.three_efa_ktau_trigger = specs["3efa_ktau_trigger"]
         self.num_equations = 3 * self.num_ells_per_bin + (3 if self.three_efa_ktau_trigger else 0)
 
     def rho(self, lna, args):
@@ -1122,7 +1122,7 @@ class MassiveNeutrino(Fluid):
         y_prime_full  = jnp.concatenate((y_prime_hier, jnp.zeros(3)))
         y_prime_fluid = jnp.concatenate((jnp.zeros_like(y_prime_hier), y_physical_prime))
 
-        return jnp.where(k * tau > self.fluid_trigger, y_prime_fluid, y_prime_full)
+        return jnp.where(k * tau > self.three_efa_ktau_trigger, y_prime_fluid, y_prime_full)
 
     def rho_delta(self, lna, y, args):
         """
@@ -1230,7 +1230,7 @@ class MassiveNeutrino(Fluid):
             res += w*(1.+jnp.exp(-q))/epsilon * Psi2
         # return params['N_nu_massive'] * res * 8./3./jnp.pi**2 * T**4 / cnst.hbar**3 / cnst.c**3
         rho_P_sigma = params['N_nu_massive'] * res * 8./3./jnp.pi**2 * T**4 / cnst.hbar**3 / cnst.c**3
-        if self.fluid_trigger:   # fluid approximation: + (rho + P) * (sigma_f - sigma_int), zero before the switch
+        if self.three_efa_ktau_trigger:   # fluid approximation: + (rho + P) * (sigma_f - sigma_int), zero before the switch
             rho_P_sigma += (self.rho(lna, params) + self.P(lna, params)) * y[self.first_idx + 3*self.num_ells_per_bin + 2]
         return rho_P_sigma
 
