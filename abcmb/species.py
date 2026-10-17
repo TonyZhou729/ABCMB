@@ -1065,6 +1065,12 @@ class MassiveNeutrino(Fluid):
         # Then we compute delta_physical - delta_hierarchy(y, a), theta_physical - theta_hierarchy(y, a), 
         # sigma_physical - sigma_hierarchy(y, a) as y[0] - y[2].
 
+        # we're going to solve the system
+        # delta_f(a) = delta_int(a) + D(a) # D is y_physical[0]
+        # d delta_f  = F(delta_f, theta_f, sigma_f, h')  # CLASS fluid equation
+        # d D        = F(delta_int + D, ...) - d delta_int
+        # where delta_int(a) is known exactly after we pass the k * tau trigger
+
         # first we need to integrate the frozen hierarchy for the new lna
         pref = params['N_nu_massive'] * 4. / jnp.pi**2 * T**4 / cnst.hbar**3 / cnst.c**3
         i0 = self.first_idx
@@ -1100,10 +1106,10 @@ class MassiveNeutrino(Fluid):
         d_sigma_hierarchy = d_rps / rhoP - sigma_hierarchy * d_rhoP / rhoP
 
         # fluid variables = frozen-hierarchy integrals + corrections
-        yf = y[i0 + 3*n: i0 + 3*n + 3]
-        delta_physical = delta_hierarchy + yf[0]
-        theta_physical = theta_hierarchy + yf[1]
-        sigma_physical = sigma_hierarchy + yf[2]
+        y_physical = y[i0 + 3*n: i0 + 3*n + 3]
+        delta_physical = delta_hierarchy + y_physical[0]
+        theta_physical = theta_hierarchy + y_physical[1]
+        sigma_physical = sigma_hierarchy + y_physical[2]
 
         # CLASS's fluid equations in synchronous gauge, per lna (metric_h_prime is h' per lna already)
         delta_physical_prime = -(1. + w) * (theta_physical / aH + metric_h_prime / 2.) - 3. * (ca2 - w) * delta_physical
@@ -1111,10 +1117,10 @@ class MassiveNeutrino(Fluid):
         sigma_physical_prime = (-3. * ((2. / 3. - ca2 - pP / P / 3.) + 1. / aH / tau) * sigma_physical
                          + 8. / 3. * cvis2 / (1. + w) * (theta_physical / aH + metric_h_prime / 2.))
 
-        yf_prime = jnp.array([delta_physical_prime - d_delta_hierarchy, theta_physical_prime - d_theta_hierarchy, sigma_physical_prime - d_sigma_hierarchy])
+        y_physical_prime = jnp.array([delta_physical_prime - d_delta_hierarchy, theta_physical_prime - d_theta_hierarchy, sigma_physical_prime - d_sigma_hierarchy])
 
         y_prime_full  = jnp.concatenate((y_prime_hier, jnp.zeros(3)))
-        y_prime_fluid = jnp.concatenate((jnp.zeros_like(y_prime_hier), yf_prime))
+        y_prime_fluid = jnp.concatenate((jnp.zeros_like(y_prime_hier), y_physical_prime))
 
         return jnp.where(k * tau > self.fluid_trigger, y_prime_fluid, y_prime_full)
 
