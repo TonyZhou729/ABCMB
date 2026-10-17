@@ -1187,8 +1187,7 @@ class Baryon(StandardFluid):
         ------
         Adiabatic sound speed squared, taken from M&B Eq. (68).
         Although we can neglect the pressure, this term is important for perturbation growth
-        during recombination. During reionization this cs2 is negative. This is not physical
-        but it should not matter for cosmology.
+        during recombination.
         """
         BG, params, species_list, species_dict = args
         # Get photon class from list
