@@ -626,6 +626,14 @@ class MasslessNeutrino(StandardFluid):
 
     Required derived parameters: params['R_nu'], params['om']
 
+    Attributes:
+    -----------
+    ufa_ktau_trigger : float
+        Value of k*tau above which the ultra-relativistic fluid approximation (UFA)
+        kicks in.  Reads specs["ufa_ktau_trigger"], which defaults to 30.  This
+        is *more accurate* than setting to 0 or None, as UFA eliminates accumulating 
+        finite hierarchy error.
+
     Methods:
     --------
     rho : Compute neutrino density (units: eV cm^{-3})
@@ -633,11 +641,13 @@ class MasslessNeutrino(StandardFluid):
     """
 
     name = "MasslessNeutrino"
+    ufa_ktau_trigger : float = eqx.field(default=None, static=True)
 
     def __init__(self, first_idx, specs):
         super().__init__(first_idx, specs)
         self.name = "MasslessNeutrino"
         self.num_equations = specs["l_max_massless_nu"] + 1
+        self.ufa_ktau_trigger = specs["ufa_ktau_trigger"]
 
     def rho(self, lna, args):
         """
@@ -757,7 +767,16 @@ class MasslessNeutrino(StandardFluid):
         Fl_prime    = 1./(2.*L+1.)*k/aH * (L*F[L-1]-(L+1)*F[L+1])
         Flmax_prime = k/aH*F[lmax-1] - (lmax+1)/aH/tau*F[lmax]
 
-        return jnp.concatenate((jnp.array([delta_prime, theta_prime, sigma_prime, F3_prime]), Fl_prime, jnp.array([Flmax_prime])))
+        y_prime = jnp.concatenate((jnp.array([delta_prime, theta_prime, sigma_prime, F3_prime]), Fl_prime, jnp.array([Flmax_prime])))
+        if not self.ufa_ktau_trigger:
+            return y_prime
+
+        # UFA, adapted from CLASS
+        sigma_prime_ufa = -3./aH/tau*sigma + 2./3.*(theta/aH + metric_h_prime/2.)
+        Fl_prime_ufa    = jnp.zeros_like(F[3:])
+        y_prime_ufa = jnp.concatenate((jnp.array([delta_prime, theta_prime, sigma_prime_ufa]), Fl_prime_ufa))
+
+        return jnp.where(k*tau > self.ufa_ktau_trigger, y_prime_ufa, y_prime)
 
     def output_perturbations(self, lna, modes, args):
         return {

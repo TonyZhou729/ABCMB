@@ -51,6 +51,8 @@ def load_specs(input_specs):
     specs["l_max_pol_g"] = input_specs.get("l_max_pol_g", 10)
     specs["l_max_massless_nu"]    = input_specs.get("l_max_massless_nu", 17)
     specs["l_max_massive_nu"]  = input_specs.get("l_max_massive_nu", 17)
+    specs["ufa_ktau_trigger"] = input_specs.get("ufa_ktau_trigger", 30) # CLASS default k*tau above which UFA kicks in.  
+                                                                        # 0 or None to turn off.
 
     ### Perturbation k-grid resolution ###
     specs["k_step_sub"]             = input_specs.get("k_step_sub", 5.e-2)
