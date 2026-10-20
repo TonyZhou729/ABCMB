@@ -694,7 +694,7 @@ class Background(BackgroundPreRecomb):
             )
         )
 
-    def _Tm_through_reionization(self, params, z_start=50.):
+    def _Tm_through_reionization(self, params):
         """
         Correct HyRex output Tm to account for reionization, leading to a
         more accurate Baryon sound speed.
@@ -703,9 +703,6 @@ class Background(BackgroundPreRecomb):
         -----------
         params : dict
             Cosmological parameters
-        z_start : float, optional
-            Redshift from which Tm is re-evolved (must be before onset of reionization).
-            Defaults to 50.
 
         Returns:
         --------
@@ -715,6 +712,7 @@ class Background(BackgroundPreRecomb):
     
         pad = jnp.isinf(self.lna_Tm_tab.arr)
         lna = jnp.where(pad, 0., self.lna_Tm_tab.arr)
+        z_start = jnp.max(10.,5*params["z_reion"])
         mask = (lna >= -jnp.log(1.+z_start)) & ~pad
         i0 = jnp.argmax(mask)
         
