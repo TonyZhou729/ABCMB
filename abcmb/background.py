@@ -631,7 +631,7 @@ class Background(BackgroundPreRecomb):
             return eqx.tree_at(lambda t: t.arr, awp, finite_arr)
         self.xe_tab     = _finite_pad(self.xe_tab)
         self.lna_xe_tab = _finite_pad(self.lna_xe_tab)
-        self.Tm_tab     = _finite_pad(self.Tm_tab)
+        self.Tm_tab     = _finite_pad(self._Tm_through_reionization(params))
         self.lna_Tm_tab = _finite_pad(self.lna_Tm_tab)
 
         self.kappa_func = self._tabulate_optical_depth(params)
@@ -689,10 +689,46 @@ class Background(BackgroundPreRecomb):
                 lna >= self.lna_xe_tab.lastval,
                 self.xe_tab.lastval,
                 tools.fast_interp_cubic(lna, self.lna_xe_tab.arr[0],
-                self.lna_xe_tab.arr[0] + len(self.lna_xe_tab.arr) * (self.lna_xe_tab.arr[1]-self.lna_xe_tab.arr[0]),
+                self.lna_xe_tab.arr[0] + (len(self.lna_xe_tab.arr) - 1) * (self.lna_xe_tab.arr[1]-self.lna_xe_tab.arr[0]),
                 self.xe_tab.arr)
             )
         )
+
+    def _Tm_through_reionization(self, params):
+        """
+        Correct HyRex output Tm to account for reionization, leading to a
+        more accurate Baryon sound speed.
+
+        Parameters:
+        -----------
+        params : dict
+            Cosmological parameters
+
+        Returns:
+        --------
+        array_with_padding
+            Matter temperature table (units: eV)
+        """
+    
+        pad = jnp.isinf(self.lna_Tm_tab.arr)
+        lna = jnp.where(pad, 0., self.lna_Tm_tab.arr)
+        z_start = jnp.max(jnp.array([10.,5*self.z_reion]))
+        mask = (lna >= -jnp.log(1.+z_start)) & ~pad
+        i0 = jnp.argmax(mask)
+        
+        TCMB = self.TCMB(lna, params)
+        GC = recomb_functions.Gamma_compton(self.xe(lna), TCMB, params['YHe']) / self.H(lna, params)
+
+        def cumulative_from_i0(f):
+            # trapezoidal int_{lna[i0]}^{lna} f dlna on the (uniform) table grid
+            F = jnp.concatenate((jnp.zeros(1), jnp.cumsum(0.5*(f[1:]+f[:-1])*jnp.diff(lna))))
+            return jnp.where(mask, F - F[i0], 0.)
+        
+        I = cumulative_from_i0(2.+GC)
+        J = cumulative_from_i0(jnp.where(mask, GC*TCMB*jnp.exp(I), 0.))
+        Tm = jnp.exp(-I) * (self.Tm_tab.arr[i0] + J)
+
+        return array_with_padding(jnp.where(mask, Tm, self.Tm_tab.arr))
 
     def _Tm_early_approx(self, lna, params):
         """
@@ -743,7 +779,7 @@ class Background(BackgroundPreRecomb):
                 lna >= self.lna_Tm_tab.lastval,
                 self.Tm_tab.lastval,
                 tools.fast_interp(lna, self.lna_Tm_tab.arr[0],
-                self.lna_Tm_tab.arr[0] + len(self.lna_Tm_tab.arr) * (self.lna_Tm_tab.arr[1]-self.lna_Tm_tab.arr[0]),
+                self.lna_Tm_tab.arr[0] + (len(self.lna_Tm_tab.arr) - 1) * (self.lna_Tm_tab.arr[1]-self.lna_Tm_tab.arr[0]),
                 self.Tm_tab.arr)
             )
         )
