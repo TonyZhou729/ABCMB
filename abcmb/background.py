@@ -712,7 +712,7 @@ class Background(BackgroundPreRecomb):
     
         pad = jnp.isinf(self.lna_Tm_tab.arr)
         lna = jnp.where(pad, 0., self.lna_Tm_tab.arr)
-        z_start = jnp.max(jnp.array([10.,5*self.z_reion]))
+        z_start = 5*self.z_reion
         mask = (lna >= -jnp.log(1.+z_start)) & ~pad
         i0 = jnp.argmax(mask)
         
