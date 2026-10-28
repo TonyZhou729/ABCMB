@@ -10,12 +10,27 @@ def load_specs(input_specs):
 
     specs["use_LCDM_species"] = input_specs.get("use_LCDM_species", True)
 
-    ### INPUT RELATED specs PARAMS ###
-    # For reionization, input tau_reion the optical depth, or z_reion the hydrogen redshift?
-    # WARNING: If the following parameter is set to True (by default) and the user inputs z_reion instead of tau_reion,
-    # the default tau_reion will be used irrespective of the user input. The same is true if the user inputs tau_reion when
-    # this is set to False. 
-    specs["input_tau_reion"] = input_specs.get("input_tau_reion", True) 
+    ### Reionization ###
+    # Reionization model:
+    #   "input_tau" (default) : input tau_reion the optical depth, z_reion is inferred.
+    #   "input_z"             : input z_reion the hydrogen reionization redshift, tau_reion is inferred.
+    #   None                  : no reionization; xe is the HyRex output down to z=0 and tau_reion = 0.
+    # WARNING: With "input_tau", a user-supplied z_reion is ignored and the default tau_reion used, and vice versa
+    # for "input_z".
+    # The legacy boolean "input_tau_reion" is still accepted (True -> "input_tau", False -> "input_z").
+    if "reionization" in input_specs:
+        reionization = input_specs["reionization"]
+    elif "input_tau_reion" in input_specs:
+        reionization = "input_tau" if input_specs["input_tau_reion"] else "input_z"
+    else:
+        reionization = "input_tau"
+    if reionization in (None, False) or str(reionization).lower() == "none":
+        reionization = None
+    else:
+        reionization = str(reionization).lower()
+        if reionization not in ("input_tau", "input_z"):
+            raise ValueError(f"specs['reionization'] must be 'input_tau', 'input_z' or None, got {reionization!r}")
+    specs["reionization"] = reionization
 
     ### OUTPUT RELATED specs PARAMS ###
     specs["l_min"]     = input_specs.get("l_min", 2)

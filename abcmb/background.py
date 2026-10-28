@@ -631,7 +631,10 @@ class Background(BackgroundPreRecomb):
             return eqx.tree_at(lambda t: t.arr, awp, finite_arr)
         self.xe_tab     = _finite_pad(self.xe_tab)
         self.lna_xe_tab = _finite_pad(self.lna_xe_tab)
-        self.Tm_tab     = _finite_pad(self._Tm_through_reionization(params))
+        # Without reionization the HyRex Tm is kept as is.
+        if not isinstance(reion_model, ReionizationModelNone):
+            self.Tm_tab = self._Tm_through_reionization(params)
+        self.Tm_tab     = _finite_pad(self.Tm_tab)
         self.lna_Tm_tab = _finite_pad(self.lna_Tm_tab)
 
         self.kappa_func = self._tabulate_optical_depth(params)
@@ -1111,6 +1114,23 @@ class ReionizationModel(eqx.Module):
         # Optical depth integrand
         integrand = Gamma/aH
         return jnp.trapezoid(integrand, lna_axis)
+
+class ReionizationModelNone(ReionizationModel):
+    """
+    Concrete extension of the base ReionizationModel Class.
+    This object is used when reionization is not requested.
+    Simply returns 0 for all reionization components.
+    """
+
+    def __init__(self, BG, params):
+        self.z_reion = 0.
+        self.tau_reion = 0.
+
+    def xe_reion(self, lna, z_reion, params):
+        return jnp.zeros_like(lna)
+
+    def tau_reion_fn(self, z_reion, BG, params):
+        return 0.
 
 class ReionizationModelFromZ(ReionizationModel):
     """

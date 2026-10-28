@@ -15,7 +15,7 @@ from .hyrex import hyrex
 from . import background, perturbations, spectrum, model_specs
 from . import constants as cnst
 from .ABCMBTools import bilinear_interp
-from .background import BackgroundPreRecomb, Background, ReionizationModelFromZ, ReionizationModelFromTau
+from .background import BackgroundPreRecomb, Background, ReionizationModelNone, ReionizationModelFromZ, ReionizationModelFromTau
 
 from .linx.background import BackgroundModel
 from .linx.abundances import AbundanceModel
@@ -355,7 +355,9 @@ class Model(eqx.Module):
         """
         Construct the full ``Background`` from pre-recomb + HyRex output.
 
-        Selects the reionization model (z-input vs tau-input) via ``lax.cond``.
+        Selects the reionization model (tau-input, z-input or none) from
+        ``specs["reionization"]``.
+        
         NOT directly ``@eqx.filter_jit``-decorated; called from inside
         ``_run_post_recomb`` (which is jit-wrapped).
 
@@ -372,22 +374,14 @@ class Model(eqx.Module):
         --------
         background.Background
         """
-        def get_BG_z_reion(args):
-            params, pre_BG, recomb_output = args
-            return Background(pre_BG, recomb_output, params, ReionizationModelFromZ)
+        # specs are static, so pick the model in Python rather than tracing every branch.
+        ReionModel = {
+            "input_tau" : ReionizationModelFromTau,
+            "input_z"   : ReionizationModelFromZ,
+            None        : ReionizationModelNone,
+        }[self.specs["reionization"]]
 
-        def get_BG_tau_reion(args):
-            params, pre_BG, recomb_output = args
-            return Background(pre_BG, recomb_output, params, ReionizationModelFromTau)
-
-        BG = lax.cond(
-            self.specs["input_tau_reion"],
-            get_BG_tau_reion,
-            get_BG_z_reion,
-            (params, pre_BG, recomb_output)
-        )
-
-        return BG
+        return Background(pre_BG, recomb_output, params, ReionModel)
 
     def add_derived_parameters(self, param_in : dict) -> dict:
         # we do not want to do in-place updates so we can
@@ -404,9 +398,9 @@ class Model(eqx.Module):
         params['TCMB0']         = jnp.array(params.get('TCMB0', 2.34865418e-4))
 
         # Reionization
-        if self.specs["input_tau_reion"]:
+        if self.specs["reionization"] == "input_tau":
             params['tau_reion'] = jnp.array(params.get('tau_reion', 0.0544))
-        else:
+        elif self.specs["reionization"] == "input_z":
             params['z_reion'] = jnp.array(params.get('z_reion', 7.67))
         params['Delta_z_reion'] = jnp.array(params.get('Delta_z_reion', 0.5))
         params['z_reion_He']    = jnp.array(params.get('z_reion_He', 3.5))
