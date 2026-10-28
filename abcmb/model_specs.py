@@ -118,10 +118,15 @@ def load_specs(input_specs):
 
     ### BESSEL FUNCTION OPTIONS ###
     # Switch between "True" to interpolate from Bessel table or "False" to compute recurrence relations.
-    # Table tabulation stops at l=5000, but is slightly faster. Automatically set to use table as long as
-    # requested l_max (base+lensing) is below that threshold, else automatically set to compute. 
+    # Table tabulation stops at l=5000, but is slightly faster. User has the freedom to opt not to use tables
+    # below the limit. As default, automatically set to use table as long as requested l_max (base+lensing) 
+    # is below that limit, else automatically set to compute. 
     l_max_eff = specs["l_max"] + (specs["delta_l_max"] if specs["lensing"] else 0)
-    specs["use_bessel_tables"] = l_max_eff <= 5000
+    can_use_table = l_max_eff <= 5000
+    if not can_use_table:
+        specs["use_bessel_tables"] = False
+    else:
+        specs["use_bessel_tables"] = input_specs.get("use_bessel_tables", can_use_table)
 
     # Preserve any unknown keys for custom species extensibility
     for key, value in input_specs.items():
