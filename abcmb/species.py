@@ -1,5 +1,5 @@
 #import abc
-from jax import config, lax, vmap
+from jax import config, lax, vmap, value_and_grad
 import jax.numpy as jnp
 import equinox as eqx
 from . import constants as cnst
@@ -31,6 +31,10 @@ class Fluid(eqx.Module):
     is_dark_energy : bool
         Default = False
         Whether the fluid is the dark energy component.  Used for Omega_de(a) and w(a) in the HALOFIT fitting formulae.
+    use_rsa : bool
+        Default = False
+        Whether the fluid uses the radiation streaming approximation after the RSA switch (see
+        PerturbationEvolver.get_rsa_switch). Set from specs["rsa"]. Only support photon and massless neutrinos.
 
     Methods:
     --------
@@ -49,12 +53,14 @@ class Fluid(eqx.Module):
     name          : str = eqx.field(default="", static=True)
     is_matter     : bool = eqx.field(default=False, static=True) # Does the fluid contribute towards matter overdensity today.
     is_dark_energy : bool = eqx.field(default=False, static=True) # Is the fluid the dark energy component.
+    use_rsa       : bool = eqx.field(default=False, static=True) # Radiation streaming approximation on (implements rsa_substitute).
 
     def __init__(self, first_idx, specs):
         self.first_idx = first_idx
         self.name = ""
         self.is_matter = False
         self.is_dark_energy = False
+        self.use_rsa = False
 
     def rho(self, lna, args):
         """
@@ -638,6 +644,7 @@ class MasslessNeutrino(StandardFluid):
     --------
     rho : Compute neutrino density (units: eV cm^{-3})
     P : Compute neutrino pressure (units: eV cm^{-3})
+    rsa_substitute : Write the RSA density and velocity into the modes (if specs["rsa"])
     """
 
     name = "MasslessNeutrino"
@@ -648,6 +655,7 @@ class MasslessNeutrino(StandardFluid):
         self.name = "MasslessNeutrino"
         self.num_equations = specs["l_max_massless_nu"] + 1
         self.ufa_ktau_trigger = specs["ufa_ktau_trigger"]
+        self.use_rsa = specs.get("rsa", False)
 
     def rho(self, lna, args):
         """
@@ -784,6 +792,43 @@ class MasslessNeutrino(StandardFluid):
             "theta": modes[self.first_idx + 1],
             "sigma": modes[self.first_idx + 2],
         }
+
+    def rsa_substitute(self, k, lna, metric_h_prime, metric_eta, y, args):
+        """
+        Replace the massless neutrino modes by their RSA values. 
+
+        See equation (4.12d, 4.12e) in arXiv:1104.2933
+        Shear and all higher moments decay to zero. 
+
+        Parameters:
+        -----------
+        k : float
+            Wavenumber (units: Mpc^{-1})
+        lna : float
+            Logarithm of scale factor
+        metric_h_prime : float
+            Derivative of metric h with respect to lna
+        metric_eta : float
+            Metric perturbation eta
+        y : array
+            Current perturbation mode values
+        args : tuple
+            Background cosmology, cosmological parameters, species list and dictionary
+            (BG, params, species_list, species_dict)
+
+        Returns:
+        --------
+        array
+            y with the neutrino block set to [delta, theta, 0, ..., 0]
+        """
+
+        BG, params, _, _ = args
+        aH = BG.aH(lna, params)
+        delta = 4./k**2*(aH**2*metric_h_prime - k**2*metric_eta)
+        theta = -aH*metric_h_prime/2.
+
+        RSA_equations = jnp.zeros(self.num_equations).at[0].set(delta).at[1].set(theta)
+        return y.at[self.first_idx:self.first_idx+self.num_equations].set(RSA_equations)
 
 class MassiveNeutrino(Fluid):
     """
@@ -1472,6 +1517,7 @@ class Photon(StandardFluid):
     P : Compute photon pressure (units: eV cm^{-3})
     y_ini : Compute initial perturbation conditions 
     y_prime : Compute perturbation time derivatives 
+    rsa_substitute : Write the RSA density and velocity into the modes (if specs["rsa"])
     """
     num_F_ell_modes : int = eqx.field(static=True)
     num_G_ell_modes : int = eqx.field(static=True)
@@ -1483,6 +1529,7 @@ class Photon(StandardFluid):
         self.num_F_ell_modes = specs["l_max_g"] + 1
         self.num_G_ell_modes = specs["l_max_pol_g"] + 1
         self.num_equations = self.num_F_ell_modes + self.num_G_ell_modes
+        self.use_rsa = specs.get("rsa", False)
 
     def rho(self, lna, args):
         """
@@ -1614,3 +1661,57 @@ class Photon(StandardFluid):
             "G0":    modes[self.first_idx + self.num_F_ell_modes],
             "G2":    modes[self.first_idx + self.num_F_ell_modes + 2],
         }
+
+    def rsa_substitute(self, k, lna, metric_h_prime, metric_eta, y, args):
+        """
+        Replace the photon modes by their RSA values.
+
+        See equation (4.12a, 4.12b) in arXiv:1104.2933
+        The shear, higher multipoles and polarization are zero.
+
+        Parameters:
+        -----------
+        k : float
+            Wavenumber (units: Mpc^{-1})
+        lna : float
+            Logarithm of scale factor
+        metric_h_prime : float
+            Derivative of metric h with respect to lna
+        metric_eta : float
+            Metric perturbation eta
+        y : array
+            Current perturbation mode values
+        args : tuple
+            Background cosmology, cosmological parameters, species list and dictionary
+            (BG, params, species_list, species_dict)
+
+        Returns:
+        --------
+        array
+            y with the photon block set to [delta, theta, 0, ..., 0]
+        """
+        BG, params, species_list, species_dict = args
+        baryon = species_list[species_dict["Baryon"]]
+
+        aH = BG.aH(lna, params)
+        tau_c, tau_c_prime = value_and_grad(lambda _lna: BG.tau_c(_lna, params))(lna)
+        cs2 = baryon.cs2(lna, args)
+        delta_b = y[baryon.first_idx]
+        theta_b = y[baryon.first_idx+1]
+
+        ### WARNING ###
+        # The second term here has a minus sign in front (- 4.* ...)
+        # This is contradictory to Eq.4.12a's second term. However,
+        # the CLASS source code uses that minus sign. That sign can be derived
+        # from the photon Euler and continuity equations. 
+        # Regardless, the term's contribution is small, but the sign here matches CLASS.
+        delta = 4./k**2*(aH**2*metric_h_prime - k**2*metric_eta) - 4.*(theta_b + aH*metric_h_prime/2.)/k**2/tau_c
+
+        # Below matches both CLASS paper and source code.
+        first_term=-aH*tau_c_prime/tau_c*(theta_b + aH*metric_h_prime/2.)
+        second_term=-aH*theta_b+cs2*k**2*delta_b-aH**2*metric_h_prime+k**2*metric_eta
+
+        theta = -aH*metric_h_prime/2. + 3.*(first_term+second_term)/k**2/tau_c
+
+        RSA_equations = jnp.zeros(self.num_equations).at[0].set(delta).at[1].set(theta)
+        return y.at[self.first_idx:self.first_idx+self.num_equations].set(RSA_equations)
