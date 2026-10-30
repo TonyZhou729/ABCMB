@@ -45,9 +45,11 @@ class PerturbationEvolver(eqx.Module):
     --------
     full_evolution : Evolve perturbations for multiple k modes
     evolution_one_k : Evolve perturbations for single k mode
-    get_tca_on_off : Determine tight coupling approximation times
+    get_starting_time : Determine superhorizon initial condition start time
+    get_rsa_switch : Determine Radiation streaming approximation switch time
     initial_conditions_one_k : Compute initial perturbation conditions
-    get_derivatives : Compute perturbation time derivatives
+    get_derivatives : Assemble all derivatives, including metric and all species
+    get_metric_derivatives : Specific for metric perturbation derivatives, handles RSA case
     make_output_table : Create interpolatable perturbation table
     """
 
@@ -118,11 +120,11 @@ class PerturbationEvolver(eqx.Module):
 
     def get_starting_time(self, k, args):
         """
-        Determine tight coupling approximation time range.
+        Determine superhorizon initial condition start time.
 
-        Finds start and end times for tight coupling between photons and baryons
-        by computing when Thomson scattering becomes ineffective relative to
-        Hubble and horizon crossing time scales.
+        Uses CLASS convention, which finds start and end times for tight coupling 
+        between photons and baryons by computing when Thomson scattering becomes ineffective 
+        relative to Hubble and horizon crossing time scales.
 
         Parameters:
         -----------
@@ -198,6 +200,81 @@ class PerturbationEvolver(eqx.Module):
         
         return y_ini
 
+    def get_metric_derivatives(self, k, lna, y, BG, params, rsa_on):
+        """
+        Compute the metric perturbations derivatives.
+        h' and eta' (with respect to lna).
+
+        If RSA is off, simply solves full M&B equations.
+
+        A bit more work is required when RSA is on. The following is the CLASS strategy.
+        Computing metric_h_prime requires all fluid delta's, while computing delta requires metric_h_prime.
+        The RSA strategy is to approximate photon and massless neutrino delta analytically, so we can't
+        just solve the simultaneous coupled diff EQ. 
+        Instead, we will use the fact that rho_delta_nu and rho_delta_g << rho_delta_m in matter domination.
+        Their contributions are hence ignored in computing metric_h_prime, and we obtain a pretty accurate metric
+        perturbation that then gets fed to the RSA species. 
+
+        Parameters:
+        -----------
+        k : float
+            Wavenumber (units: Mpc^{-1})
+        lna : float
+            Logarithm of scale factor
+        y : array
+            Current perturbation state vector, contains metric eta and all species
+        BG : background.Background
+            Background cosmology
+        params : dict
+            Cosmological parameters
+        rsa_on : bool
+            Whether the radiation streaming approximation is on
+
+        Returns:
+        --------
+        tuple
+            (metric_h_prime, metric_eta_prime, y)
+        """
+        a  = jnp.exp(lna)
+        aH = BG.aH(lna, params)
+        metric_eta = y[0]
+        rsa_species = self.rsa_species() # False if tuple is empty. Otherwise rsa_species is a tuple ocntaining RSA species objects.
+
+        sum_rho_delta = 0.
+        sum_rho_plus_P_theta = 0.
+
+        # A loop to get metric_h_prime first.
+        for s in self.species_list:
+            # If species has density perturbation, add to total.
+            sum_rho_delta += jnp.where(
+                rsa_on & s.use_rsa,
+                0, # RSA species delta are ignored when RSA is on.
+                s.rho_delta(lna, y, params)
+            )
+        metric_h_prime = 2./aH**2 * (k**2*metric_eta + 4.*jnp.pi*cnst.G*a**2/cnst.c_Mpc_over_s**2 * sum_rho_delta)
+
+        def get_substituted_y(y_in, metric_h_prime):
+            # If RSA is on, the RSA species entries in y are bogus from the ODE solver.
+            # Go through them and substitude for the analytic expressions.
+            # Output y_in will have all corrected entries at this time step. 
+            species_args = (BG, params, self.species_list, self.species_dict)
+            for s in rsa_species:
+                y_in = jnp.where(
+                    rsa_on, 
+                    s.rsa_substitute(k, lna, metric_h_prime, metric_eta, y_in, species_args), 
+                    y_in
+                )
+            return y_in
+        y = get_substituted_y(y, metric_h_prime)
+        
+        # Now even if RSA is on, the velocity perturbations theta of the RSA species are correctly recorded in y.
+        # We can then obtain an accurate metric_eta_prime to move on.
+        sum_rho_plus_P_theta = sum(s.rho_plus_P_theta(lna, y, params) for s in self.species_list)
+        metric_eta_prime = 4.*jnp.pi*cnst.G*a**2/aH/k**2 * sum_rho_plus_P_theta / cnst.c_Mpc_over_s**2
+
+        # Also return the substituted array y, so e.g. Baryon can access the corrected Photon velocity if RSA is on
+        return metric_h_prime, metric_eta_prime, y
+
     def get_derivatives(self, lna, y, args):
         """
         Compute time derivatives for perturbation evolution.
@@ -212,40 +289,72 @@ class PerturbationEvolver(eqx.Module):
         y : array
             Current perturbation state vector
         args : tuple
-            Wavenumber k and background cosmology (k, BG, params)
+            Wavenumber k and background cosmology (k, BG, params), plus the
+            RSA switch lna_rsa as a fourth entry if any species has an RSA
 
         Returns:
         --------
         array
             Time derivatives of perturbation state
         """
-        k, BG, params = args
-        a  = jnp.exp(lna)
-        aH = BG.aH(lna, params)
-        metric_eta = y[0]
+        k, BG, params = args[:3]
+        rsa_species = self.rsa_species() # Check for RSA species. Tuple is non-empty if so.
+        rsa_on = lna > args[3] if rsa_species else False
 
-        # Metric perturbation derivatives
-        sum_rho_delta = 0.
-        sum_rho_plus_P_theta = 0.
-        
-        for i in range(len(self.species_list)):
-            species = self.species_list[i]
-            # If species has density perturbation, add to total.
-            sum_rho_delta += species.rho_delta(lna, y, params)
-            # If species has velocity perturbation, add to total.
-            sum_rho_plus_P_theta += species.rho_plus_P_theta(lna, y, params)
-
-        metric_h_prime   = 2./aH**2 * (k**2*metric_eta + 4.*jnp.pi*cnst.G*a**2/cnst.c_Mpc_over_s**2 * sum_rho_delta)
-        metric_eta_prime = 4.*jnp.pi*cnst.G*a**2/aH/k**2 * sum_rho_plus_P_theta / cnst.c_Mpc_over_s**2
+        # In this step, obtain metric perturbations at the current time step.
+        # We get a returned y state vector. It is identical to the one passed in if RSA is off.
+        # Otherwise, this function also updates RSA entries with the correct analytic expressions in place
+        # and returns it for other species to use (e.g. Baryon need Photon's theta_g, definition changes w/ RSA).
+        metric_h_prime, metric_eta_prime, y = self.get_metric_derivatives(k, lna, y, BG, params, rsa_on)
 
         # Now loop over all species and assemble their respective y_primes
         args = (BG, params, self.species_list, self.species_dict)
         y_prime = jnp.array([metric_eta_prime])
         for i in range(len(self.species_list)):
             species = self.species_list[i]
-            y_prime = jnp.concatenate((y_prime, species.y_prime(k, lna, metric_h_prime, metric_eta_prime, y, args)))
+            species_y_prime = species.y_prime(k, lna, metric_h_prime, metric_eta_prime, y, args)
+            if species.use_rsa:
+                species_y_prime = jnp.where(rsa_on, 0., species_y_prime) # Mask out RSA species derivaties after approximation kicks in.
+            y_prime = jnp.concatenate((y_prime, species_y_prime))
 
         return y_prime
+
+    def get_rsa_switch(self, k, args):
+        """
+        Determine when the radiation streaming approximation switches on.
+        CLASS conditions: k*tau > specs["rsa_ktau_trigger"] and
+        tau_c/tau > specs["rsa_tau_c_over_tau"]. The first lna at which both hold is
+        used and RSA stays on afterwards.
+        
+        Parameters:
+        -----------
+        k : float
+            Wavenumber (units: Mpc^{-1})
+        args : tuple
+            Background cosmology and cosmological parameters (BG, params)
+
+        Returns:
+        --------
+        float
+            lna_rsa: RSA is on for lna > lna_rsa. 1 (never) if the conditions are never met.
+        """
+        BG, params = args
+        lna_range = jnp.linspace(-10., 0., 5000)
+        tau = BG.tau(lna_range)
+        on = (k*tau > self.specs["rsa_ktau_trigger"]) \
+            & (BG.tau_c(lna_range, params)/tau > self.specs["rsa_tau_c_over_tau"])
+        return jnp.where(jnp.any(on), lna_range[jnp.argmax(on)], 1.)
+
+    def rsa_species(self):
+        """
+        Species with a radiation streaming approximation.
+
+        Returns:
+        --------
+        tuple
+            The species in species_list with use_rsa = True (empty unless specs["rsa"])
+        """
+        return tuple(s for s in self.species_list if s.use_rsa)
 
     def evolution_one_k(self, k, lna, args):
         """
@@ -309,6 +418,12 @@ class PerturbationEvolver(eqx.Module):
         )
 
         stepsize_controller = diffrax.PIDController(pcoeff=self.specs["pcoeff_PE"], icoeff=self.specs["icoeff_PE"], dcoeff=self.specs["dcoeff_PE"], rtol=rtol, atol=atol, dtmax=self.specs["dtmax_PE"])
+        solver_args = (k, *args)
+        if self.rsa_species():
+            # The derivatives jump at the RSA switch: step exactly onto it.
+            lna_rsa = self.get_rsa_switch(k, args)
+            stepsize_controller = diffrax.ClipStepSizeController(stepsize_controller, jump_ts=jnp.atleast_1d(lna_rsa))
+            solver_args = (k, *args, lna_rsa)
         saveat = diffrax.SaveAt(ts=lna)
         adjoint=self.adjoint()
 
@@ -318,7 +433,7 @@ class PerturbationEvolver(eqx.Module):
             stepsize_controller=stepsize_controller,
             max_steps=self.specs["max_steps_PE"],
             saveat=saveat,
-            args=(k,*args),
+            args=solver_args,
             adjoint=adjoint
         )
 
@@ -349,6 +464,15 @@ class PerturbationEvolver(eqx.Module):
         """
         k = self.k_axis_perturbations
         BG, params = args
+
+        if self.rsa_species():
+            # After the switch the saved RSA modes are frozen; replace them by their RSA values
+            # (with the matching h') at every (lna, k) before deriving anything from them.
+            lna_rsa = vmap(self.get_rsa_switch, in_axes=(0, None))(k, args)
+            def substitute(lna_i, y, k_j, lna_rsa_j):
+                return self.get_metric_derivatives(k_j, lna_i, y, BG, params, lna_i > lna_rsa_j)[2]
+            modes = vmap(vmap(substitute, in_axes=(None, 1, 0, 0), out_axes=1),
+                         in_axes=(0, 1, None, None), out_axes=1)(lna, modes, k, lna_rsa)
 
         metric_eta = modes[0]
 
