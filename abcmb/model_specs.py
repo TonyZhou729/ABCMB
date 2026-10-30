@@ -122,6 +122,21 @@ def load_specs(input_specs):
     specs["dcoeff_PE"]       = input_specs.get("dcoeff_PE", 0.)
     specs["dtmax_PE"]        = input_specs.get("dtmax_PE", 0.03)
 
+    ### Perturbation solver ###
+    # "kvaerno" for diffrax.Kvaerno5 (settings above), or "kencarp" for the linearly implicit
+    # KenCarp4 in abcmb.kencarp: one exact linear solve per stage, no Newton iterations.
+    specs["PE_solver"] = input_specs.get("PE_solver", "kvaerno")
+    # KenCarp step policy. The global cap is looser than dtmax_PE; recombination keeps a fine cap.
+    specs["dtmax_kencarp"]          = input_specs.get("dtmax_kencarp", 0.1)
+    specs["dtmax_rec_kencarp"]      = input_specs.get("dtmax_rec_kencarp", 0.03) # 0 or None to turn off.
+    specs["lna_rec_window_kencarp"] = input_specs.get("lna_rec_window_kencarp", (-7.7, -6.3))
+    # Small-k tier for KenCarp, replacing rtol/atol_small_k_PE. The limiting variables at small k are
+    # the tiny, tightly coupled photon moments near atol_small_k_PE; the spectra do not need them.
+    specs["rtol_small_k_kencarp"]   = input_specs.get("rtol_small_k_kencarp", 1.e-4)
+    specs["atol_small_k_kencarp"]   = input_specs.get("atol_small_k_kencarp", 1.e-9)
+    # Filter the embedded error estimate of stiff, decaying modes (see kencarp.LinearKenCarp4).
+    specs["kencarp_filter_error"]   = input_specs.get("kencarp_filter_error", True)
+
     ### Physical contributions to CMB temperature transfer function ###
     specs["scale_sw"]  = input_specs.get("scale_sw", 1)
     specs["scale_isw"] = input_specs.get("scale_isw", 1)
