@@ -394,12 +394,11 @@ class PerturbationEvolver(eqx.Module):
         # Solver choice.
         term = diffrax.ODETerm(self.get_derivatives)
         kencarp_solver = self.specs["PE_solver"] == "kencarp"
+        dtmax = self.specs["dtmax_PE"]
         if kencarp_solver:
             solver = kencarp.LinearKenCarp4()
-            dtmax = self.specs["dtmax_kencarp"]
         else:
             solver = diffrax.Kvaerno5()
-            dtmax = self.specs["dtmax_PE"] # Kvaerno needs the finer dtmax always
 
         # Three tiers: small k, large k, and the lensing-only extension above
         # specs["k_limber_start"] (inf unless the k-grid was extended for the
@@ -427,9 +426,9 @@ class PerturbationEvolver(eqx.Module):
         stepsize_controller = diffrax.PIDController(pcoeff=self.specs["pcoeff_PE"], icoeff=self.specs["icoeff_PE"], dcoeff=self.specs["dcoeff_PE"], rtol=rtol, atol=atol, dtmax=dtmax)
         if kencarp_solver:
             # For KenCarp we tighten step size controller during recombination for better accuracy. 
-            # Hence during this window we use the tighter dtmax_PE rather than dtmax_kencarp, which is generically looser. 
+            # Hence during this window we use the tighter dtmax_rec_kencarp rather than dtmax_PE, which is generically looser.
             lo, hi = self.specs["lna_rec_window_kencarp"]
-            stepsize_controller = kencarp.WindowedDtmax(stepsize_controller, ((lo, hi, self.specs["dtmax_PE"]),))
+            stepsize_controller = kencarp.WindowedDtmax(stepsize_controller, ((lo, hi, self.specs["dtmax_rec_kencarp"]),))
         solver_args = (k, *args)
         if self.rsa_species():
             # The derivatives jump at the RSA switch: step exactly onto it.
