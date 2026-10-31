@@ -100,20 +100,11 @@ class LinearKenCarp4(diffrax.AbstractSolver):
     The result is only correct for vector fields linear in y, which all ABCMB perturbation
     equations are. A user species with nonlinear equations needs Kvaerno5.
 
-    Attributes:
-    -----------
-    filter_error : bool
-        Default = True
-        Filter the embedded error through (I - gamma dt A)^{-1} (Hairer & Wanner, Solving ODEs II,
-        IV.8). The raw embedded difference overstates the error of stiff, decaying modes.
-
     Methods:
     --------
     step : One step, returning the solution, error estimate and dense output data
     func : Vector field at (t0, y0)
     """
-    filter_error : bool = eqx.field(static=True, default=True)
-
     term_structure : ClassVar = diffrax.AbstractTerm
     interpolation_cls : ClassVar = KenCarpInterpolation
 
@@ -158,15 +149,13 @@ class LinearKenCarp4(diffrax.AbstractSolver):
             # A does not depend on y (linear equations), so differentiating at y0 is exact.
             A = jax.jacfwd(lambda y: terms.vf(ts[i], y, args))(y0)
             rhs = y0 + dt*sum(_AI[i][j]*f[j] for j in range(i))
+            # On GPU jnp.linalg.solve is ~2.5x faster than lu_factor + lu_solve for these small
+            # batched systems.
             x = jnp.linalg.solve(eye - gdt*A, rhs)
             f.append((x - rhs)/gdt)
         y1 = x
 
         y_error = dt*sum(_B_ERR[j]*f[j] for j in range(6))
-        if self.filter_error:
-            # jnp.linalg.solve again rather than reusing an LU factorisation: on GPU it is ~2.5x
-            # faster than lu_factor + lu_solve for these small batched systems.
-            y_error = jnp.linalg.solve(eye - gdt*A, y_error)
 
         dense_info = dict(y0=y0, y1=y1, f0=f[0], f1=f[5])
         return y1, y_error, dense_info, None, diffrax.RESULTS.successful

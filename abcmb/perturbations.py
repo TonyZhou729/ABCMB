@@ -388,22 +388,18 @@ class PerturbationEvolver(eqx.Module):
         # at the very least.
         lna_start = jnp.minimum(lna_start, -10.)
     
-        # Initial conditions for tight coupling
+        # Superhorizon initial conditions.
         y_ini = self.initial_conditions_one_k(k, lna_start, args)
 
-        # Settings for post-tight coupling
+        # Solver choice.
         term = diffrax.ODETerm(self.get_derivatives)
         kencarp_solver = self.specs["PE_solver"] == "kencarp"
         if kencarp_solver:
-            solver = kencarp.LinearKenCarp4(filter_error=self.specs["kencarp_filter_error"])
+            solver = kencarp.LinearKenCarp4()
             dtmax = self.specs["dtmax_kencarp"]
-            rtol_small_k = self.specs["rtol_small_k_kencarp"]
-            atol_small_k = self.specs["atol_small_k_kencarp"]
         else:
             solver = diffrax.Kvaerno5()
-            dtmax = self.specs["dtmax_PE"]
-            rtol_small_k = self.specs["rtol_small_k_PE"]
-            atol_small_k = self.specs["atol_small_k_PE"]
+            dtmax = self.specs["dtmax_PE"] # Kvaerno needs the finer dtmax always
 
         # Three tiers: small k, large k, and the lensing-only extension above
         # specs["k_limber_start"] (inf unless the k-grid was extended for the
@@ -414,7 +410,7 @@ class PerturbationEvolver(eqx.Module):
             jnp.where(
                 k > self.specs["k_split_PE"],
                 self.specs["rtol_large_k_PE"],
-                rtol_small_k
+                self.specs["rtol_small_k_PE"]
             )
         )
 
@@ -424,15 +420,16 @@ class PerturbationEvolver(eqx.Module):
             jnp.where(
                 k > self.specs["k_split_PE"],
                 self.specs["atol_large_k_PE"],
-                atol_small_k
+                self.specs["atol_small_k_PE"]
             )
         )
 
         stepsize_controller = diffrax.PIDController(pcoeff=self.specs["pcoeff_PE"], icoeff=self.specs["icoeff_PE"], dcoeff=self.specs["dcoeff_PE"], rtol=rtol, atol=atol, dtmax=dtmax)
-        if kencarp_solver and self.specs["dtmax_rec_kencarp"]:
-            # Resolve recombination: cap the steps starting inside the window.
+        if kencarp_solver:
+            # For KenCarp we tighten step size controller during recombination for better accuracy. 
+            # Hence during this window we use the tighter dtmax_PE rather than dtmax_kencarp, which is generically looser. 
             lo, hi = self.specs["lna_rec_window_kencarp"]
-            stepsize_controller = kencarp.WindowedDtmax(stepsize_controller, ((lo, hi, self.specs["dtmax_rec_kencarp"]),))
+            stepsize_controller = kencarp.WindowedDtmax(stepsize_controller, ((lo, hi, self.specs["dtmax_PE"]),))
         solver_args = (k, *args)
         if self.rsa_species():
             # The derivatives jump at the RSA switch: step exactly onto it.
