@@ -48,9 +48,20 @@ def load_specs(input_specs):
     specs["l_max_pol_g"] = input_specs.get("l_max_pol_g", 10)
     specs["l_max_massless_nu"]    = input_specs.get("l_max_massless_nu", 17)
     specs["l_max_massive_nu"]  = input_specs.get("l_max_massive_nu", 17)
+
+    ### CLASS Fluid Approximations ###
+
+    # Massless Neutrino UFA.
     specs["ufa_ktau_trigger"] = input_specs.get("ufa_ktau_trigger", 30) # CLASS default k*tau above which UFA kicks in.  
                                                                         # 0 or None to turn off.
+
+    # Massive Neutrion 3EFA
     specs["3efa_ktau_trigger"] = input_specs.get("3efa_ktau_trigger", 31.) # CLASS default k*tau above which 3-equation fluid approx kicks in.  
+
+    # Photon and Massless Neutrino RSA
+    specs["rsa"]                = input_specs.get("rsa", True) # Explicit flag to turn RSA on or off. 
+    specs["rsa_ktau_trigger"]   = input_specs.get("rsa_ktau_trigger", 240.) # Higher than CLASS default, much more accuracy at almost no additional cost
+    specs["rsa_tau_c_over_tau"] = input_specs.get("rsa_tau_c_over_tau", 5.)
 
     ### Perturbation k-grid resolution ###
     specs["k_step_sub"]             = input_specs.get("k_step_sub", 5.e-2)
@@ -92,7 +103,19 @@ def load_specs(input_specs):
     specs["R_tc"] = input_specs.get("R_tc", 0.0015)
     specs["R_large"] = input_specs.get("R_large", 0.07)
 
-    ### Perturbation Evolver Diffrax Settings ###
+    ### Perturbation solver and settings ###
+    # "kvaerno" for diffrax.Kvaerno5, or "kencarp" for the linearly implicit
+    # KenCarp4 in abcmb.kencarp: one exact linear solve per stage, no Newton iterations.
+    # Note that KenCarp becomes very expensive without fluid approximations. Especially without
+    # RSA or 3EFA, in which case consider using Kvaerno5. 
+    specs["PE_solver"] = input_specs.get("PE_solver", "kencarp")
+    # Cap on dtmax. Looser requirement for Linear KenCarp, else use stricter cap for Kvaerno5 for high accuracy. 
+    specs["dtmax_PE"]          = input_specs.get("dtmax_PE", 0.1 if specs["PE_solver"]=="kencarp" else 0.03)
+    # In this lna interval, KenCarp uses the finer dtmax_rec_kencarp to keep recombination accurate.
+    specs["lna_rec_window_kencarp"] = input_specs.get("lna_rec_window_kencarp", (-7.7, -6.3))
+    # Finer than dtmax_PE. This cap is used only for KenCarp during recombination, afterwards solver returns to dtmax_PE.
+    specs["dtmax_rec_kencarp"]      = input_specs.get("dtmax_rec_kencarp", 0.015)
+
     specs["max_steps_PE"]    = input_specs.get("max_steps_PE", 2048)
     # Step size controller
     specs["k_split_PE"]      = input_specs.get("k_split_PE", 0.01)
@@ -109,7 +132,6 @@ def load_specs(input_specs):
     specs["pcoeff_PE"]       = input_specs.get("pcoeff_PE", 0.25)
     specs["icoeff_PE"]       = input_specs.get("icoeff_PE", 0.8)
     specs["dcoeff_PE"]       = input_specs.get("dcoeff_PE", 0.)
-    specs["dtmax_PE"]        = input_specs.get("dtmax_PE", 0.03)
 
     ### Physical contributions to CMB temperature transfer function ###
     specs["scale_sw"]  = input_specs.get("scale_sw", 1)
