@@ -253,20 +253,17 @@ class PerturbationEvolver(eqx.Module):
             )
         metric_h_prime = 2./aH**2 * (k**2*metric_eta + 4.*jnp.pi*cnst.G*a**2/cnst.c_Mpc_over_s**2 * sum_rho_delta)
 
-        def get_substituted_y(y_in, metric_h_prime):
-            # If RSA is on, the RSA species entries in y are bogus from the ODE solver.
-            # Go through them and substitude for the analytic expressions.
-            # Output y_in will have all corrected entries at this time step. 
-            species_args = (BG, params, self.species_list, self.species_dict)
-            for s in rsa_species:
-                y_in = jnp.where(
-                    rsa_on, 
-                    s.rsa_substitute(k, lna, metric_h_prime, metric_eta, y_in, species_args), 
-                    y_in
-                )
-            return y_in
-        y = get_substituted_y(y, metric_h_prime)
-        
+        # If RSA is on, the RSA species entries in y are bogus from the ODE solver.
+        # Go through them and substitude for the analytic expressions.
+        # y then has all corrected entries at this time step.
+        species_args = (BG, params, self.species_list, self.species_dict)
+        for s in rsa_species:
+            y = jnp.where(
+                rsa_on,
+                s.rsa_substitute(k, lna, metric_h_prime, metric_eta, y, species_args),
+                y
+            )
+
         # Now even if RSA is on, the velocity perturbations theta of the RSA species are correctly recorded in y.
         # We can then obtain an accurate metric_eta_prime to move on.
         sum_rho_plus_P_theta = sum(s.rho_plus_P_theta(lna, y, params) for s in self.species_list)
