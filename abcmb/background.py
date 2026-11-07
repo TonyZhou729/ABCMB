@@ -1085,7 +1085,7 @@ class ReionizationModel(eqx.Module):
         Passing in an lna array should get you the correct tanh patching based on the
         reionization parameter.
         """
-        fHe = params['YHe'] / 4 / (1-params['YHe'])
+        fHe = params['YHe'] / 3.97153 / (1-params['YHe'])
         z = 1/jnp.exp(lna) - 1
         y = (1+z)**(params["exp_reion"])
 
