@@ -48,9 +48,20 @@ def load_specs(input_specs):
     specs["l_max_pol_g"] = input_specs.get("l_max_pol_g", 10)
     specs["l_max_massless_nu"]    = input_specs.get("l_max_massless_nu", 17)
     specs["l_max_massive_nu"]  = input_specs.get("l_max_massive_nu", 17)
+
+    ### CLASS Fluid Approximations ###
+
+    # Massless Neutrino UFA.
     specs["ufa_ktau_trigger"] = input_specs.get("ufa_ktau_trigger", 30) # CLASS default k*tau above which UFA kicks in.  
                                                                         # 0 or None to turn off.
+
+    # Massive Neutrion 3EFA
     specs["3efa_ktau_trigger"] = input_specs.get("3efa_ktau_trigger", 31.) # CLASS default k*tau above which 3-equation fluid approx kicks in.  
+
+    # Photon and Massless Neutrino RSA
+    specs["rsa"]                = input_specs.get("rsa", True) # Explicit flag to turn RSA on or off. 
+    specs["rsa_ktau_trigger"]   = input_specs.get("rsa_ktau_trigger", 240.) # Higher than CLASS default, much more accuracy at almost no additional cost
+    specs["rsa_tau_c_over_tau"] = input_specs.get("rsa_tau_c_over_tau", 5.)
 
     ### Perturbation k-grid resolution ###
     specs["k_step_sub"]             = input_specs.get("k_step_sub", 5.e-2)
