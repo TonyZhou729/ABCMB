@@ -551,12 +551,19 @@ class Model(eqx.Module):
                 )
                 params['Neff'] = jax.device_put(Neff_vec[-1],device=jax.devices('gpu')[0])
                 YHe_BBN = jax.device_put(4*abundances[5],device=jax.devices('gpu')[0])
+                DoverH = jax.device_put(abundances[2]/abundances[1],device=jax.devices('gpu')[0])
             except: # no GPU
                 params['T_nu_massless'] = linxThermo.T_nu(rho_nu_vec[-1]) / linxThermo.T_g(rho_g_vec[-1])
                 params['Neff'] = Neff_vec[-1]
                 YHe_BBN = 4*abundances[5]
+                DoverH = abundances[2]/abundances[1]
                 pass
-        
+
+            # The BBN observables, for a BBN likelihood: Y_p in the BBN convention (4 x the He-4 number
+            # abundance, not the mass fraction params['YHe'] below) and D/H (deuterium over free protons).
+            params['Yp_BBN'] = YHe_BBN
+            params['DoverH'] = DoverH
+
             # CMB uses real mass fraction
             Yp_CMB = 1./(4*cnst.mH/cnst.mHe*(1/YHe_BBN - 1) + 1)
             params['YHe'] = Yp_CMB
@@ -629,7 +636,7 @@ class Model(eqx.Module):
             'h', 'H0', 'omega_cdm', 'omega_b', 'A_s', 'n_s', 'TCMB0',
             'tau_reion', 'z_reion', 'Delta_z_reion', 'z_reion_He', 'Delta_z_reion_He', 'exp_reion',
             'omega_Lambda', 'T_nu_massive', 'N_nu_massive', 'm_nu_massive',
-            'N_nu_massless', 'Neff', 'T_nu_massless', 'YHe',
+            'N_nu_massless', 'Neff', 'T_nu_massless', 'YHe', 'Yp_BBN', 'DoverH',
             'omega_m', 'omega_cb', 'R_b', 'omega_r', 'R_nu', 'om'
         }
         
