@@ -657,7 +657,8 @@ class SpectrumSolver(eqx.Module):
         Returns:
         --------
         tuple
-            (ClTT, ClTE, ClEE, Clpp, ClBB) lensed power spectra and lensing potential power spectrum
+            (ClTT, ClTE, ClEE, Clpp, ClBB) lensed power spectra and lensing potential power spectrum,
+            for ell = 2, ..., l_max (the output multipoles self.ells).
         """
 
         # The Wigner matrices are d^l_{m,n}(mu) 
@@ -818,9 +819,13 @@ class SpectrumSolver(eqx.Module):
         ksi, ksip, ksim, ksix = carry[2], carry[3], carry[4], carry[5] # Wraps up lensed correlation functions. 
 
         # ---- Loop 3: transform back to lensed Cl. At each l, sum over mu (Gauss-Legendre weights w)
-        # gives one number per spectrum. Still need some wigner matrices for this step. 
+        # gives one number per spectrum. Still need some wigner matrices for this step.
+        # Only up to the output l_max: lensed Cl above it are never used, so this loop has
+        # n_out steps instead of the N_l steps of loops 1 and 2.
+        n_out = self.ells.shape[0]              # output ells = 2, 3, ..., l_max
+        l_values_out = range(2, n_out + 2)
         mns = [(0, 0), (2, 0), (2, 2), (2, -2)]
-        a, b, c = wigner_coeffs(l_values, mns)
+        a, b, c = wigner_coeffs(l_values_out, mns)
         d, d_prev = wigner_d_ic(mu, mns)
         w = self.lensing_ws
 
@@ -837,9 +842,9 @@ class SpectrumSolver(eqx.Module):
             d_next = wigner_d_next(mu, l, d, d_prev, a, b, c, mns)
             return (d_next, d), (ClTT_l, ClTE_l, ClEE_l, ClBB_l)
 
-        _, (ClTT, ClTE, ClEE, ClBB) = lax.scan(step, (d, d_prev), (ells, a, b, c), unroll=4)
+        _, (ClTT, ClTE, ClEE, ClBB) = lax.scan(step, (d, d_prev), (ells[:n_out], a, b, c), unroll=4)
 
-        return (ClTT, ClTE, ClEE, Clpp, ClBB)
+        return (ClTT, ClTE, ClEE, Clpp[:n_out], ClBB)
 
     def get_Cl(self, PT, BG, params):
         """
