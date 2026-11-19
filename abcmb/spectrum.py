@@ -635,8 +635,6 @@ class SpectrumSolver(eqx.Module):
         Applies gravitational lensing corrections to unlensed temperature
         and polarization power spectra using Wigner rotation matrices.
 
-        Follows the fullsky formalism of astro-ph/0502425v2.
-
         Parameters:
         -----------
         ells : array
@@ -659,6 +657,11 @@ class SpectrumSolver(eqx.Module):
         tuple
             (ClTT, ClTE, ClEE, Clpp, ClBB) lensed power spectra and lensing potential power spectrum,
             for ell = 2, ..., l_max (the output multipoles self.ells).
+
+        Notes:
+        ------
+        Follows the fullsky formalism of astro-ph/0502425v2.
+        
         """
 
         # The Wigner matrices are d^l_{m,n}(mu) 
