@@ -260,7 +260,8 @@ class Model(eqx.Module):
         params_list : list of dict
             Cosmological parameters, one dict per cosmology
         k_chunk_size : int
-            Number of wavenumbers per compiled perturbation kernel
+            Number of wavenumbers per compiled perturbation kernel.  Defaults
+            to 100.
 
         Returns:
         --------
