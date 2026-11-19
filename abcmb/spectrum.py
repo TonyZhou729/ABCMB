@@ -689,12 +689,12 @@ class SpectrumSolver(eqx.Module):
             """
             Compute the coefficients for the Wigner d recurrence.
             """
-            a = np.zeros((len(l_values), len(mns))) # Shape safe against jit, mns inputs known at compile time. 
+            a = np.zeros((len(l_values), len(mns)))
             b = np.zeros((len(l_values), len(mns)))
             c = np.zeros((len(l_values), len(mns)))
             for i, l in enumerate(l_values):
                 for j, (m, n) in enumerate(mns):
-                    if l < m: # Safe against jit, compiler knows integers passed in unaffected by cosmo params.
+                    if l < m: 
                         continue  # family is zero below l = m: leave a, b, c = 0
                     a[i, j] = (l+1)*(2*l+1) / math.sqrt(((l+1)**2 - m**2) * ((l+1)**2 - n**2))
                     b[i, j] = m*n / (l*(l+1))
