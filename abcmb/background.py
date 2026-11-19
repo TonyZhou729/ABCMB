@@ -359,10 +359,13 @@ class BackgroundPreRecomb(eqx.Module):
 
         lna_end = self.lna_tau_tab[-1]
 
-        # ---- Diffrax solve (dense interpolation) ----
+        # ---- Diffrax solve ----
+        i0 = int(np.searchsorted(np.asarray(self.lna_tau_tab), lna_cut, side='right'))
         term = ODETerm(self._dtau_dlna)
         controller = PIDController(rtol=1e-8, atol=1e-8)
-        saveat = SaveAt(dense=True)
+        # previously we had dense output here evaluated at 10000 points, making a (10000, max_steps)
+        # intermediate state that was impossible to vmap over
+        saveat = SaveAt(ts=self.lna_tau_tab[i0:])
         adjoint=self.adjoint()
 
         sol = diffeqsolve(
@@ -378,22 +381,7 @@ class BackgroundPreRecomb(eqx.Module):
             adjoint=adjoint,
         )
 
-        # Numerical jitter causes this interpolation to go out of bounds on
-        # some machines, so we do some extra work to safeguard that here:
-
-        # Strictly inside [lna_cut, lna_end); avoid touching internal sol.ts (may be None).
-        # nextafter gets the next representable float below lna_end to ensure in-bounds.
-        lna_hi = jnp.nextafter(lna_end, -jnp.inf)
-
-        def _tau_from_sol(l):
-            l_in = jnp.clip(l, lna_cut, lna_hi)
-            return sol.evaluate(l_in)
-
-        def _tau_combined(l):
-            # cond is faster than where since untaken branch is not evaluated
-            return lax.cond(l > lna_cut, _tau_from_sol, tau_approx, l)
-
-        tau_tab = vmap(_tau_combined)(self.lna_tau_tab)
+        tau_tab = jnp.concatenate([vmap(tau_approx)(self.lna_tau_tab[:i0]), sol.ys])
 
         # Replace any remaining non-finite entries with analytic fallback
         tau_tab = jnp.where(jnp.isfinite(tau_tab), tau_tab, vmap(tau_approx)(self.lna_tau_tab))
