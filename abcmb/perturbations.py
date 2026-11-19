@@ -83,7 +83,8 @@ class PerturbationEvolver(eqx.Module):
         Parameters:
         -----------
         k    : jnp.array
-            1D axis of wavenumbers k. Perturbations are computed and stored at these values.
+            1D axis of wavenumbers k. Perturbations are computed and stored at these values.  
+            (units: Mpc^{-1})
         args : tuple
             Background cosmology and cosmological parameters (BG, params)
 
@@ -116,6 +117,87 @@ class PerturbationEvolver(eqx.Module):
 
         PT = self.make_output_table(lna, res, args)
         return PT
+
+    def full_evolution_batched(self, args, k_chunk_size=100):
+        """
+        Evolve perturbations for multiple wavenumber modes, for multiple cosmologies at once.
+
+        Refactored so that a chunk of k is evaluated in parallel across all cosmologies,
+        saving time (chunks with larger k finish quickly, expensive small k modes only
+        evaluated once per batch).
+
+        Parameters:
+        -----------
+        args : tuple
+            Background cosmology and cosmological parameters (BG, params)
+        k_chunk_size : int, optional
+            Number of wavenumbers per compiled kernel.  Defaults to 100.
+
+        Returns:
+        --------
+        PerturbationTable
+            Interpolatable table of perturbation evolution, with a leading 
+            batch axis on every field.
+
+        Notes:
+        ------
+        Thanks to the anonymous reviewer of https://arxiv.org/abs/2602.15104 for
+        this suggestion.
+        """
+        BG, params = args
+        lna = vmap(lambda bg: jnp.linspace(bg.lna_transfer_start, 0., 500))(BG)
+        k_axis = self.k_axis_perturbations
+        tables = []
+        for i in range(0, len(k_axis), k_chunk_size):
+            k = k_axis[i:i + k_chunk_size]
+            tables.append(self._table_chunk(k, lna, self._evolve_chunk(k, lna, args), args))
+        # Every field is pointwise in k (last axis) except lna, which is per cosmology.
+        PT = jax.tree_util.tree_map(lambda *xs: jnp.concatenate(xs, axis=-1), *tables)
+        return eqx.tree_at(lambda t: t.lna, PT, tables[0].lna)
+
+    def _evolve_chunk(self, k, lna, args):
+        """
+        Modes for the wavenumbers k and a batch of cosmologies, shape (len(k), B, Nlna, Ny).
+        
+        Parameters:
+        -----------
+        k    : jnp.array
+            1D axis of wavenumbers k for one chunk (units: Mpc^{-1})
+        lna : array
+            Logarithm of scale factor grid for output
+        args : tuple
+            Background cosmology and cosmological parameters (BG, params)
+
+        Returns:
+        --------
+        array of diffrax.Solution
+            Dense solution object for k chunk
+        """
+        BG, params = args
+        per_k = lambda ki: vmap(self.evolution_one_k, in_axes=(None, 0, (0, 0)))(ki, lna, (BG, params))
+        return vmap(per_k)(k)
+
+    @eqx.filter_jit
+    def _table_chunk(self, k, lna, modes, args):
+        """
+        Output table for the wavenumbers k from _evolve_chunk's modes, batched over cosmologies.
+        
+        Parameters:
+        -----------
+        k    : jnp.array
+            1D axis of wavenumbers k for one chunk (units: Mpc^{-1})
+        lna : array
+            Logarithm of scale factor grid for output
+        args : tuple
+            Background cosmology and cosmological parameters (BG, params)
+
+        Returns:
+        --------
+        array of PerturbationTable
+            Organized perturbation data for interpolation for k chunk
+        """
+        return vmap(lambda l, m, a: self.make_output_table(l, m, a, k=k))(lna, modes.transpose(1, 3, 2, 0), args)
+
 
     def get_starting_time(self, k, args):
         """
@@ -437,7 +519,7 @@ class PerturbationEvolver(eqx.Module):
 
         return sol.ys
 
-    def make_output_table(self, lna, modes, args):
+    def make_output_table(self, lna, modes, args, k=None):
         """
         Create interpolatable perturbation table from evolution results.
 
@@ -451,6 +533,8 @@ class PerturbationEvolver(eqx.Module):
             Perturbation evolution results
         args : tuple
             Background cosmology and cosmological parameters (BG, params)
+        k : array, optional
+            Wavenumbers of the modes, if not the full k_axis_perturbations
 
         Returns:
         --------
@@ -458,7 +542,7 @@ class PerturbationEvolver(eqx.Module):
             Organized perturbation data for interpolation
 
         """
-        k = self.k_axis_perturbations
+        k = self.k_axis_perturbations if k is None else k
         BG, params = args
 
         if self.rsa_species():
