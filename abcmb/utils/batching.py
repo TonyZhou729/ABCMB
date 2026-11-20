@@ -35,3 +35,27 @@ def make_shardfn(shard=None):
         return jax.tree_util.tree_map(
             lambda x: jax.device_put(x, split if x.ndim >= 1 else replicated) if eqx.is_array(x) else x, tree)
     return shardfn, len(gpus)
+
+
+def jvp_stage(fn, primals, tangents):
+    """
+    Evaluate fn(*primals) and its forward-mode derivative along a stack of directions.
+
+    Parameters:
+    -----------
+    fn : callable
+        Pipeline stage
+    primals : tuple of pytrees
+        Inputs of fn; their inexact-array leaves are differentiated
+    tangents : tuple of pytrees
+        Tangents of the inexact-array leaves of primals, each with a leading direction axis
+
+    Returns:
+    --------
+    tuple
+        (fn(*primals), tangent of its inexact-array leaves with a leading direction axis)
+    """
+    diffs, statics = zip(*(eqx.partition(p, eqx.is_inexact_array) for p in primals))
+    f = lambda *ds: fn(*(eqx.combine(d, s) for d, s in zip(ds, statics)))
+    out, out_dot = jax.vmap(lambda *ts: jax.jvp(f, diffs, ts), out_axes=(None, 0))(*tangents)
+    return out, eqx.filter(out_dot, eqx.is_inexact_array)
