@@ -930,7 +930,7 @@ class SpectrumSolver(eqx.Module):
 
     def recomb_grid_weights(self, lna):
         """
-        Line-of-sight integration weights for integration if the non-uniform 
+        Line-of-sight weights for integration if the non-uniform 
         "recomb" lna grid was used. 
 
         Parameters:
