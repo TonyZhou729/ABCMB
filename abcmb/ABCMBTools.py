@@ -310,7 +310,7 @@ def fast_interp(x, xp_min, xp_max, fp):
 def fast_interp_cubic(x, xp_min, xp_max, fp):
     """
     Cubic version of fast_interp to avoid gradient discontinuities at 
-    grid points.
+    grid points.  Approximates slopes with central difference gradients.
 
     Parameters:
     -----------
@@ -340,6 +340,43 @@ def fast_interp_cubic(x, xp_min, xp_max, fp):
     p2 = fp[jnp.minimum(i1+1, n-1)]
     p3 = fp[jnp.minimum(i1+2, n-1)]
     return p1 + 0.5 * t * (p2 - p0 + t * (2.*p0 - 5.*p1 + 4.*p2 - p3 + t * (3.*(p1 - p2) + p3 - p0)))
+
+def fast_interp_hermite(x, xp_min, xp_max, fp, dfp):
+    """
+    Cubic Hermite version of fast_interp given exact slopes dfp.
+
+
+    Parameters:
+    -----------
+    x : float or array
+        Query points for interpolation
+    xp_min : float
+        Minimum value of interpolation grid
+    xp_max : float
+        Maximum value of interpolation grid
+    fp : array
+        Function values on uniform grid
+    dfp : array
+        Exact derivatives at every node of uniform grid
+
+    Returns:
+    --------
+    float or array
+        Interpolated values at query points
+
+    """
+
+    eps = 1.e-6
+    n = fp.shape[-1]
+    h = (xp_max - xp_min) / (n - 1)
+    i = jnp.clip((x - xp_min) / h, eps, n - 1.0 - eps)
+    i0 = jnp.floor(i).astype(jnp.int32)
+    i1 = jnp.minimum(i0 + 1, n - 1)
+    t = i - i0
+    t2 = t * t
+    t3 = t2 * t
+    return ((2. * t3 - 3. * t2 + 1.) * fp[i0] + (t3 - 2. * t2 + t) * h * dfp[i0]
+            + (3. * t2 - 2. * t3) * fp[i1] + (t3 - t2) * h * dfp[i1])
 
 
 def loglog_interp(x, xp, fp):
