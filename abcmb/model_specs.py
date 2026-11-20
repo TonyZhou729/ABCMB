@@ -106,7 +106,7 @@ def load_specs(input_specs):
     # batched evaluation.
     specs["lna_grid_mode"] = input_specs.get("lna_grid_mode", "uniform")
     if specs["lna_grid_mode"] not in ("uniform", "recomb"):
-        raise ValueError(f"lna_grid_mode must be 'uniform' or 'recomb', not {specs["lna_grid_mode"]!r}")
+        raise ValueError(f"lna_grid_mode must be 'uniform' or 'recomb', not {specs['lna_grid_mode']!r}")
     specs["n_lna_PE"] = input_specs.get("n_lna_PE", 300 if specs["lna_grid_mode"]=="recomb" else 500)
     
     # Base nodes are on [lna_start, 0] with density [density_floor + exp(-(lna - lna_center)^2 / 2 width^2)].
