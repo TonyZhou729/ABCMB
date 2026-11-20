@@ -1,3 +1,4 @@
+import math
 import numpy as np
 import jax.numpy as jnp
 import equinox as eqx
@@ -654,116 +655,264 @@ class SpectrumSolver(eqx.Module):
         Returns:
         --------
         tuple
-            (ClTT, ClTE, ClEE, Clpp, ClBB) lensed power spectra and lensing potential power spectrum
-        """
-        # CLASS samples angle uniformly
-        # 500 points is enough for lmax < 4000
-        #theta = jnp.linspace(0., jnp.pi/16., 500)
+            (ClTT, ClTE, ClEE, Clpp, ClBB) lensed power spectra and lensing potential power spectrum,
+            for ell = 2, ..., l_max (the output multipoles self.ells).
 
-        # Flip mu so that mu is in ascending order, works better for trapz.
-        #mu = jnp.flip(jnp.cos(self.lensing_theta))
+        Notes:
+        ------
+        Follows the fullsky formalism of astro-ph/0502425v2.
+        
+        """
+
+        # The Wigner matrices are d^l_{m,n}(mu) 
+        #
+        # Symmetry: d_{n,m} = (-1)^(m-n) d_{m,n} gives d_{-11} = d_{1-1}, d_{02} = d_{20},
+        # d_{-24} = d_{4-2}.
+        #
+        # Recurrence relation: d^{l+1}_{m,n} = a_l (mu - b_l) d^l_{m,n} - c_l d^{l-1}_{m,n}
+        # see below for coefficients a, b, c. 
+        #
+        # Each (m, n) "family" is zero for l < m and starts at l = m with d^m_{m,n} (wigner_d_start). 
+        #
+        # The four wigner helper functions are wigner_d_start, wigner_coeffs, wigner_d_ic, and wigner_d_next
+        # each called multiple times for the three loops, thus useful to define separately. 
+
+        def wigner_d_start(mu, m, n):
+            """
+            Compute the first non-zero element of a Wigner d family.
+
+            For l < m, d^l_{m,n} = 0; this returns d^m_{m,n}(mu), from which the
+            recurrence continues to higher l.
+
+            Parameters:
+            -----------
+            mu : array
+                Cosine of rotation angle
+            m : int
+                First index (m >= |n|)
+            n : int
+                Second index
+
+            Returns:
+            --------
+            array
+                d^m_{m,n}(mu), same shape as mu
+            """
+            beta = jnp.arccos(mu)
+            norm = math.sqrt(math.factorial(2*m) / (math.factorial(m+n) * math.factorial(m-n)))
+            return norm * jnp.cos(beta/2.)**(m+n) * (-jnp.sin(beta/2.))**(m-n)
+
+        def wigner_coeffs(l_values, mns):
+            """
+            Compute the coefficients for the Wigner d recurrence.
+
+            Parameters:
+            -----------
+            l_values : sequence of int
+                Multipole values, each >= 1
+            mns : list of (int, int)
+                (m, n) indices of the families, with m >= |n|
+
+            Returns:
+            --------
+            tuple
+                (a, b, c), each of shape (len(l_values), len(mns)); entry [i, j] is for
+                l = l_values[i] and (m, n) = mns[j]
+            """
+            a = np.zeros((len(l_values), len(mns)))
+            b = np.zeros((len(l_values), len(mns)))
+            c = np.zeros((len(l_values), len(mns)))
+            for i, l in enumerate(l_values):
+                for j, (m, n) in enumerate(mns):
+                    if l < m: 
+                        continue  # family is zero below l = m: leave a, b, c = 0
+                    a[i, j] = (l+1)*(2*l+1) / math.sqrt(((l+1)**2 - m**2) * ((l+1)**2 - n**2))
+                    b[i, j] = m*n / (l*(l+1))
+                    c[i, j] = (l+1) * math.sqrt((l**2 - m**2) * (l**2 - n**2)) / (l * math.sqrt(((l+1)**2 - m**2) * ((l+1)**2 - n**2)))
+            return jnp.array(a), jnp.array(b), jnp.array(c)
+
+        def wigner_d_ic(mu, mns):
+            """
+            Compute the initial conditions of the l-loops.
+
+            Returns d^2_{m,n}(mu) and d^1_{m,n}(mu) for every (m, n), the values the l-loops
+            start from. Families with m > 2 are zero at l = 1, 2 and are started inside the loop 
+            by wigner_d_next.
+
+            Parameters:
+            -----------
+            mu : array
+                Cosine of rotation angle
+            mns : list of (int, int)
+                (m, n) indices of the families, with m >= |n|
+
+            Returns:
+            --------
+            tuple
+                (d2, d1), two lists with one array (same shape as mu) per (m, n) in mns:
+                d2 = [d^2_{m,n}(mu)], d1 = [d^1_{m,n}(mu)].
+            """
+            d2, d1 = [], []
+            for m, n in mns:
+                if m == 0:      # Legendre polynomials: d^1_00 = P_1, d^2_00 = P_2
+                    d1.append(mu)
+                    d2.append((3*mu**2 - 1)/2)
+                elif m == 1:    # starts at l = 1, then one recurrence step to l = 2
+                    a, b, c = wigner_coeffs([1], [(m, n)])   # coefficients at l = 1, shape (1, 1)
+                    d1.append(wigner_d_start(mu, m, n))
+                    d2.append(a[0, 0]*(mu - b[0, 0])*d1[-1])
+                elif m == 2:    # starts at l = 2
+                    d1.append(jnp.zeros_like(mu))
+                    d2.append(wigner_d_start(mu, m, n))
+                else:           # m > 2: still zero at l = 1, 2; started inside the loop
+                    d1.append(jnp.zeros_like(mu))
+                    d2.append(jnp.zeros_like(mu))
+            return d2, d1
+
+        def wigner_d_next(mu, l, d, d_prev, a, b, c, mns):
+            """
+            Compute one step of the Wigner d recurrence:
+            d^{l+1}_{m,n}(mu) from d^l_{m,n}(mu) and d^{l-1}_{m,n}(mu) for every (m, n).
+
+            Parameters:
+            -----------
+            mu : array
+                Cosine of rotation angle
+            l : int
+                Current multipole (an array element traced inside lax.scan, not a Python int)
+            d : list of arrays
+                d^l_{m,n}(mu), one array per (m, n) in mns
+            d_prev : list of arrays
+                d^{l-1}_{m,n}(mu), one array per (m, n) in mns
+            a, b, c : array
+                Recurrence coefficients at this l (one row of wigner_coeffs), one number per (m, n)
+            mns : list of (int, int)
+                (m, n) indices of the families, with m >= |n|
+
+            Returns:
+            --------
+            list of arrays
+                d^{l+1}_{m,n}(mu), one array per (m, n) in mns
+            """
+            d_next = []
+            for j, (m, n) in enumerate(mns):
+                new = a[j]*(mu - b[j])*d[j] - c[j]*d_prev[j]
+                if m > 2:   # this family starts at l = m > 2, inside the loop
+                    new = jnp.where(l + 1 == m, wigner_d_start(mu, m, n), new)
+                d_next.append(new)
+            return d_next
+
         mu = self.lensing_mus
+        l_values = range(2, self.l_top + 1)     # ells = 2, 3, ..., l_top
+        if ells.shape[0] != len(l_values):
+            raise ValueError("lensed_Cls expects ells = 2, 3, ..., l_top")
 
         # Compute lensing Cl
         Clpp = self.lensing_Cl(ells, PT, BG, params)
 
-        # Wigner matrices needed in general and for temperature
-        # Note that for all wigner matrices, the symmetry relation is dnm = (-1)^(m-n) x dmn
-        d00 = tools.d00(mu, ells)
-        d11 = tools.d1n(mu, ells, 1)
-        d1m1 = tools.d1n(mu, ells, -1)
-        d2m2 = tools.d2n(mu, ells, -2)
-        dm11 = d1m1
+        # ---- Loop 1: lensing angular correlation functions Cgl (d11) and Cgl2 (d1-1)
+        mns_loop1 = [(1, 1), (1, -1)]
+        a_loop1, b_loop1, c_loop1 = wigner_coeffs(l_values, mns_loop1)
+        d_loop1, d_prev_loop1 = wigner_d_ic(mu, mns_loop1)
 
-        # Wigner matrices needed for polarization
-        d22 = tools.d2n(mu, ells, 2)
-        d31 = tools.d3n(mu, ells, 1)
-        d40 = tools.d4n(mu, ells, 0)
-        d3m3 = tools.d3n(mu, ells, -3)
-        d4m4 = tools.d4n(mu, ells, -4)
-        d20 = tools.d2n(mu, ells, 0)
-        d3m1 = tools.d3n(mu, ells, -1)
-        d4m2 = tools.d4n(mu, ells, -2)
-        d02 = d20
-        dm24 = d4m2
+        def step_loop1(carry, x):
+            d, d_prev, Cgl, Cgl2 = carry
+            l, Clpp_l, a, b, c = x # Clpp, and coefficients, at one l.
+            d11, d1m1 = d
 
-        # Lensing angular correlation function
-        Cgl  = 1./4./jnp.pi * jnp.sum(
-            (2.*ells+1)*ells*(ells+1)*Clpp*d11, axis=1
-        ) # Nmu
-        Cgl2 = 1./4./jnp.pi * jnp.sum(
-            (2.*ells+1)*ells*(ells+1)*Clpp*dm11, axis=1
-        ) # Nmu
-        sigma2     = Cgl[-1] - Cgl
-        Cgl    = Cgl[:, None]
-        Cgl2   = Cgl2[:, None]
-        sigma2 = sigma2[:, None]
+            Cgl  = Cgl  + 1./4./jnp.pi * (2.*l+1)*l*(l+1)*Clpp_l*d11
+            Cgl2 = Cgl2 + 1./4./jnp.pi * (2.*l+1)*l*(l+1)*Clpp_l*d1m1
 
-        llp1   = ells*(ells+1)
+            d_next = wigner_d_next(mu, l, d, d_prev, a, b, c, mns_loop1)
+            return (d_next, d, Cgl, Cgl2), None
 
-        X000       = jnp.exp(-llp1*sigma2/4)
-        X000_prime = -llp1/4.*X000
-        X220       = 1./4.*jnp.sqrt((ells+2)*(ells-1)*ells*(ells+1))*jnp.exp(-(llp1-2)*sigma2/4.)
-        X022       = jnp.exp(-(llp1-4)*sigma2/4)
-        X022_prime = -(llp1-4)/4*X022
-        X121       = -1./2.*jnp.sqrt((ells+2)*(ells-1))*jnp.exp(-(llp1-8./3.)*sigma2/4.)
-        X132       = -1./2.*jnp.sqrt((ells+3)*(ells-2))*jnp.exp(-(llp1-20./3.)*sigma2/4.)
-        X242       = 1./4.*jnp.sqrt((ells+4)*(ells+3)*(ells-2)*(ells-3))*jnp.exp(-(llp1-10.)*sigma2/4.)
+        zero = jnp.zeros_like(mu)
+        carry_loop1, _ = lax.scan(step_loop1, (d_loop1, d_prev_loop1, zero, zero),
+                                  (ells, Clpp, a_loop1, b_loop1, c_loop1), unroll=4)
+        Cgl, Cgl2 = carry_loop1[2], carry_loop1[3] # Eq. (35)
+        sigma2 = Cgl[-1] - Cgl # Defined right below Eq. (35)
 
-        # Correlation functions
-        ksi = 1./4./jnp.pi * jnp.sum(
-            (2.*ells+1)*ClTT_unlensed * (
+        # ---- Loop 2: lensed correlation functions ksi, ksip, ksim, ksix, in angular space. 
+
+        # First set up required m, n entries, recurrence coefficients, and recurrence initial conditions. 
+        mns_loop2 = [(0, 0), (1, 1), (1, -1), (2, 2), (2, -2), (2, 0),
+                     (3, 1), (3, -1), (3, -3), (4, 0), (4, -2), (4, -4)]
+        a_loop2, b_loop2, c_loop2 = wigner_coeffs(l_values, mns_loop2)
+        d_loop2, d_prev_loop2 = wigner_d_ic(mu, mns_loop2)
+
+        def step_loop2(carry, x):
+            d, d_prev, ksi, ksip, ksim, ksix = carry
+            l, ClTT_l, ClTE_l, ClEE_l, a, b, c = x # Unlensed Cls, and coefficients, at one l. 
+            d00, d11, d1m1, d22, d2m2, d20, d31, d3m1, d3m3, d40, d4m2, d4m4 = d
+            d02  = d20
+            dm24 = d4m2
+
+            llp1       = l*(l+1)
+            X000       = jnp.exp(-llp1*sigma2/4) # Eq. (39)
+            X000_prime = -llp1/4.*X000 # primes are w.r.t. sigma2
+            X220       = 1./4.*jnp.sqrt((l+2)*(l-1)*l*(l+1))*jnp.exp(-(llp1-2)*sigma2/4.) # Eq. (40)
+            X022       = jnp.exp(-(llp1-4)*sigma2/4) # Eq. (57)
+            X022_prime = -(llp1-4)/4*X022
+            X121       = -1./2.*jnp.sqrt((l+2)*(l-1))*jnp.exp(-(llp1-8./3.)*sigma2/4.) # Eq. (58)
+            X132       = -1./2.*jnp.sqrt((l+3)*(l-2))*jnp.exp(-(llp1-20./3.)*sigma2/4.) # Eq. (59)
+            X242       = 1./4.*jnp.sqrt((l+4)*(l+3)*(l-2)*(l-3))*jnp.exp(-(llp1-10.)*sigma2/4.) # Eq. (60)
+
+            ksi = ksi + 1./4./jnp.pi * (2.*l+1)*ClTT_l * (
                 X000**2 * d00 \
-                + 8./ells/(ells+1)*Cgl2*X000_prime**2*d1m1 \
-                + Cgl2**2 * (X000_prime**2*d00 + X220**2*d2m2) \
-                #- d00
-            ), 
-            axis=1
-        )
-
-        ksip = 1./4./jnp.pi * jnp.sum(
-            (2.*ells+1)*ClEE_unlensed * (
+                + 8./l/(l+1)*Cgl2*X000_prime**2*d1m1 \
+                + Cgl2**2 * (X000_prime**2*d00 + X220**2*d2m2)
+            ) # Eq. (38)
+            ksip = ksip + 1./4./jnp.pi * (2.*l+1)*ClEE_l * (
                 X022**2 * d22 \
                 + 2*Cgl2*X132*X121*d31 \
-                + Cgl2**2 * (X022_prime**2*d22 + X242*X220*d40) \
-                #- d22
-            ), 
-            axis=1
-        )
-
-        ksim = 1./4./jnp.pi * jnp.sum(
-            (2.*ells+1)*ClEE_unlensed * (
+                + Cgl2**2 * (X022_prime**2*d22 + X242*X220*d40)
+            ) # Eq. (51)
+            ksim = ksim + 1./4./jnp.pi * (2.*l+1)*ClEE_l * (
                 X022**2 * d2m2 \
                 + Cgl2*(X121**2*d1m1 + X132**2*d3m3) \
-                + 1./2.*Cgl2**2 * (2*X022_prime**2*d2m2 + X220**2*d00 + X242**2*d4m4) \
-                #- d2m2
-            ), 
-            axis=1
-        )
-
-        ksix = 1./4./jnp.pi * jnp.sum(
-            (2.*ells+1)*ClTE_unlensed * (
+                + 1./2.*Cgl2**2 * (2*X022_prime**2*d2m2 + X220**2*d00 + X242**2*d4m4)
+            ) # Eq. (52)
+            ksix = ksix + 1./4./jnp.pi * (2.*l+1)*ClTE_l * (
                 X022*X000*d02 \
                 + Cgl2 * 2*X000_prime/jnp.sqrt(llp1) * (X121*d11 + X132*d3m1) \
-                + 1./2.*Cgl2**2 * ((2*X022_prime*X000_prime+X220**2)*d20+X220*X242*dm24) \
-                #- d02
-            ), 
-            axis=1
-        )
-        
-        #ClTT = 2.*jnp.pi * jnp.trapezoid(ksi[:, None]*d00, mu, axis=0) + ClTT_unlensed
-        #ClTE = 2.*jnp.pi * jnp.trapezoid(ksix[:, None]*d20, mu, axis=0) + ClTE_unlensed
-        #ClEE = 1./2. * 2.*jnp.pi * jnp.trapezoid(ksip[:, None]*d22+ksim[:, None]*d2m2, mu, axis=0) + ClEE_unlensed
-        w = self.lensing_ws[:, None]
-        ClTT = 2*jnp.pi * jnp.sum(ksi[:, None]*d00*w, axis=0)
-        ClTE = 2*jnp.pi * jnp.sum(ksix[:, None]*d20*w, axis=0)
-        ClEE = 1./2. * 2*jnp.pi * jnp.sum(
-            (ksip[:, None]*d22 + ksim[:, None]*d2m2)*w,
-            axis=0
-        )
-        ClBB = 1./2. * 2*jnp.pi * jnp.sum((ksip[:, None]*d22 - ksim[:, None]*d2m2)*w, axis=0)
+                + 1./2.*Cgl2**2 * ((2*X022_prime*X000_prime+X220**2)*d20+X220*X242*dm24)
+            ) # Eq. (53)
 
-        return (ClTT, ClTE, ClEE, Clpp, ClBB)
+            d_next = wigner_d_next(mu, l, d, d_prev, a, b, c, mns_loop2)
+            return (d_next, d, ksi, ksip, ksim, ksix), None
+
+        carry_loop2, _ = lax.scan(step_loop2, (d_loop2, d_prev_loop2, zero, zero, zero, zero),
+                                  (ells, ClTT_unlensed, ClTE_unlensed, ClEE_unlensed, a_loop2, b_loop2, c_loop2), unroll=4)
+        ksi, ksip, ksim, ksix = carry_loop2[2], carry_loop2[3], carry_loop2[4], carry_loop2[5] # Wraps up lensed correlation functions. 
+
+        # ---- Loop 3: transform back to lensed Cl. At each l, sum over mu (Gauss-Legendre weights w)
+        # gives one number per spectrum. Still need some wigner matrices for this step.
+        # Only up to the output l_max: lensed Cl above it are never used, so this loop has
+        # n_out steps instead of the N_l steps of loops 1 and 2.
+        n_out = self.ells.shape[0]              # output ells = 2, 3, ..., l_max
+        l_values_out = range(2, n_out + 2)
+        mns_loop3 = [(0, 0), (2, 0), (2, 2), (2, -2)]
+        a_loop3, b_loop3, c_loop3 = wigner_coeffs(l_values_out, mns_loop3)
+        d_loop3, d_prev_loop3 = wigner_d_ic(mu, mns_loop3)
+        w = self.lensing_ws
+
+        def step_loop3(carry, x):
+            d, d_prev = carry
+            l, a, b, c = x # Coefficients at one l.
+            d00, d20, d22, d2m2 = d
+
+            ClTT_l = 2*jnp.pi * jnp.sum(ksi*d00*w) # Eq. (63)
+            ClTE_l = 2*jnp.pi * jnp.sum(ksix*d20*w) # Eq. (66)
+            ClEE_l = 1./2. * 2*jnp.pi * jnp.sum((ksip*d22 + ksim*d2m2)*w) # (Eq.(65)+Eq.(64))/2
+            ClBB_l = 1./2. * 2*jnp.pi * jnp.sum((ksip*d22 - ksim*d2m2)*w) # (Eq.(65)-Eq.(64))/2
+
+            d_next = wigner_d_next(mu, l, d, d_prev, a, b, c, mns_loop3)
+            return (d_next, d), (ClTT_l, ClTE_l, ClEE_l, ClBB_l)
+
+        _, (ClTT, ClTE, ClEE, ClBB) = lax.scan(step_loop3, (d_loop3, d_prev_loop3),
+                                               (ells[:n_out], a_loop3, b_loop3, c_loop3), unroll=4)
+
+        return (ClTT, ClTE, ClEE, Clpp[:n_out], ClBB)
 
     def get_Cl(self, PT, BG, params):
         """
