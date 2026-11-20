@@ -6,6 +6,7 @@ import equinox as eqx
 
 import diffrax
 import jax
+from jax.sharding import Mesh, NamedSharding, PartitionSpec
 
 import sys
 import os
@@ -265,7 +266,7 @@ class Model(eqx.Module):
 
         return self._run_post_recomb(params, pre_BG, recomb_output)
 
-    def call_batched(self, params_list, k_chunk_size=100):
+    def call_batched(self, params_list, k_chunk_size=100, shard=None):
         """
         Batched evaluation of several cosmologies at once (uses a refactored pipeline
         for performance).
@@ -277,6 +278,11 @@ class Model(eqx.Module):
         k_chunk_size : int, optional
             Number of wavenumbers per compiled perturbation kernel.  Defaults
             to 100.
+        shard : bool or None, optional
+            Split cosmologies across visible GPUs (fails if no GPUs).  This will pad batches 
+            to a multiple of the number of GPUs by repeating the last cosmology (removed from 
+            output). True always attempts to shard, False restricts to one device, None shards 
+            if multiple devices are automatically detected.  Defaults to None.
 
         Returns:
         --------
@@ -284,22 +290,66 @@ class Model(eqx.Module):
             Spectra and parameters with a leading batch axis; BG and PT are None
 
         """
-        params, BG = self.get_BG_batched([self.add_derived_parameters(p) for p in params_list])
+        params_len_orig = len(params_list)
+        shardfn, n_dev = self._make_shardfn(shard)
+        if shardfn is not None and params_len_orig % n_dev:
+            params_list = list(params_list) + [params_list[-1]] * (n_dev - params_len_orig%n_dev)
+        params, BG = self.get_BG_batched([self.add_derived_parameters(p) for p in params_list], shardfn=shardfn)
+
         PT = self.PE.full_evolution_batched((BG, params), k_chunk_size=k_chunk_size)
-        Cls, Pk, Pk_nl = self._spectra_vmapped(PT, BG, params)
+        out = self._spectra_vmapped(PT, BG, params) + (params,)
+        if len(params_list) != params_len_orig: # len(params_list) may have been updated
+            out = jax.tree_util.tree_map(lambda x: x[:params_len_orig], out)
+
+        Cls, Pk, Pk_nl, params = out
         lensed = self.specs["lensing"]
         return Output(Cls[0], Cls[1], Cls[2], Cls[3] if lensed else None, Cls[4] if lensed else None,
                       Pk, self.SS.ells, self.SS.k_axis_Pk_output, None, None, params, Pk_nl=Pk_nl)
 
-    def get_BG_batched(self, params_list):
+    def _make_shardfn(self, shard=None):
         """
-        Batched evaluation of Backgrond module for a list of parameter dicts that
+        Make a sharding function that places every array of a pytree on all
+        visible GPUs.
+
+        Parameters:
+        -----------
+        shard: bool or None, optional
+            True always attempts to shard, False restricts to one device, None shards if
+            multiple devices are automatically detected.  Defaults to None.
+
+        Returns:
+        --------
+        tuple (callable, int)
+            (shardfn, n_dev). shardfn places every array of a pytree on all visible
+            GPUs, split along its leading (batch) axis; shardfn is None if not sharding.
+            n_dev is the number of GPUs visible to ABCMB.
+        """
+        try:
+            gpus = jax.devices('gpu')
+        except Exception:
+            gpus = []
+        if not (shard or (shard is None and len(gpus) > 1)):
+            return None, len(gpus)
+        mesh = Mesh(np.asarray(gpus), axis_names=('batch',))
+        split, replicated = NamedSharding(mesh, PartitionSpec('batch')), NamedSharding(mesh, PartitionSpec())
+
+        def shardfn(tree):
+            return jax.tree_util.tree_map(
+                lambda x: jax.device_put(x, split if x.ndim >= 1 else replicated) if eqx.is_array(x) else x, tree)
+        return shardfn, len(gpus)
+
+
+    def get_BG_batched(self, params_list, shardfn=None):
+        """
+        Batched evaluation of Background module for a list of parameter dicts that
         already contain derived parameters.
 
         Parameters:
         -----------
         params_list : list of dict
             Cosmological parameters, one dict per cosmology
+        shardfn : callable
+            Sharding function to distribute over GPUs.  Defaults to None (no sharding).
 
         Returns:
         --------
@@ -307,15 +357,20 @@ class Model(eqx.Module):
             (params, BG), stacked along a leading batch axis
         """
         params = _to_float(jax.tree_util.tree_map(lambda *xs: jnp.stack(xs), *params_list)) # need another tree map to stack the dicts to be converted
+        if shardfn is not None:
+            params = shardfn(params)
         pre_BG = self._get_BG_pre_recomb_vmapped(params)
         cpu_dev = jax.devices('cpu')[0]
-        recomb_output =eqx.filter_jit(eqx.filter_vmap(self.RecModel), backend='cpu')((jax.device_put(pre_BG.recomb_inputs, cpu_dev), jax.device_put(params, cpu_dev)))
-        try:
-            recomb_output = jax.device_put(recomb_output, jax.devices('gpu')[0])
-        except Exception:
-            pass
+        recomb_output = eqx.filter_jit(eqx.filter_vmap(self.RecModel), backend='cpu')(
+            (jax.device_put(pre_BG.recomb_inputs, cpu_dev), jax.device_put(params, cpu_dev)))
+        if shardfn is not None:
+            recomb_output = shardfn(recomb_output)
+        else:
+            try:
+                recomb_output = jax.device_put(recomb_output, jax.devices('gpu')[0])
+            except Exception:
+                pass
         return params, self._get_BG_vmapped(params, pre_BG, _to_float(recomb_output))
-
     @eqx.filter_jit
     def _get_BG_pre_recomb_vmapped(self, params):
         """
