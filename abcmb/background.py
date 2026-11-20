@@ -32,6 +32,8 @@ class BackgroundPreRecomb(eqx.Module):
         Log scale factor axis used to tabulate conformal time 
     tau_tab : jnp.array
         Tabulated conformal time.
+    dtau_tab : jnp.array
+        tau_tab's derivative dtau/dlna = 1/aH on the same axis.
     tau0 : float
         Conformal time today in Mpc.
     recomb_inputs : RecombInputs
@@ -61,6 +63,7 @@ class BackgroundPreRecomb(eqx.Module):
 
     lna_tau_tab = jnp.linspace(-33.0, 0.0, 10000) # Axis for tabulating conformal time.
     tau_tab : jnp.array # Tabulated conformal time. 
+    dtau_tab : jnp.array # dtau/dlna = 1/aH on lna_tau_tab.
     tau0 : float # Conformal time today
 
     recomb_inputs : "RecombInputs"
@@ -89,6 +92,7 @@ class BackgroundPreRecomb(eqx.Module):
         self.species_list = species_list
 
         self.tau_tab = self._tabulate_conformal_time(params)
+        self.dtau_tab = vmap(lambda l: 1. / self.aH(l, params))(self.lna_tau_tab)
         self.tau0 = self.tau(0.)
 
         # Bundle the background quantities HyRex needs onto its sampling
@@ -414,7 +418,7 @@ class BackgroundPreRecomb(eqx.Module):
         radiation approximation, and starting diffrax integration at the
         early time with appropriate initial conditions.
         """
-        return tools.fast_interp(lna, self.lna_tau_tab[0], self.lna_tau_tab[-1], self.tau_tab)
+        return tools.fast_interp_hermite(lna, self.lna_tau_tab[0], self.lna_tau_tab[-1], self.tau_tab, self.dtau_tab)
 
     def nH(self, lna, params):
         """
@@ -505,6 +509,8 @@ class Background(BackgroundPreRecomb):
         Log scale factor axis used to tabulate conformal time 
     tau_tab : jnp.array
         Tabulated conformal time.
+    dtau_tab : jnp.array
+        tau_tab's derivative dtau/dlna = 1/aH on the same axis.
     tau0 : float
         Conformal time today in Mpc.
     recomb_inputs : RecombInputs
@@ -520,8 +526,10 @@ class Background(BackgroundPreRecomb):
         Tabulated matter temperature Tm during recombination.
     lna_Tm_tab : array_with_padding
         Log scale factor axis corresponding to tabulated Tm values.
-    kappa_func : diffrax.solution
-        Optical depth function (dense interpolation).
+    expmkappa_tab : jnp.array
+        exp(-optical depth) on lna_tau_tab.
+    dexpmkappa_tab : jnp.array
+        expmkappa_tab derivative with respect to lna, exp(-kappa)/(tau_c aH).
     z_reion : float
         Redshift of hydrogen reionization in the CAMB parameterization.
     tau_reion : float
@@ -561,7 +569,8 @@ class Background(BackgroundPreRecomb):
     lna_xe_tab : "array_with_padding"
     Tm_tab     : "array_with_padding"
     lna_Tm_tab : "array_with_padding"
-    kappa_func : "diffrax.solution"
+    expmkappa_tab : jnp.array
+    dexpmkappa_tab : jnp.array
     z_reion    : float
     tau_reion  : float
     lna_rec    : float
@@ -593,6 +602,7 @@ class Background(BackgroundPreRecomb):
         self.adjoint = pre_BG.adjoint
         self.species_list = pre_BG.species_list
         self.tau_tab = pre_BG.tau_tab
+        self.dtau_tab = pre_BG.dtau_tab
         self.tau0 = pre_BG.tau0
         self.recomb_inputs = pre_BG.recomb_inputs
 
@@ -622,7 +632,10 @@ class Background(BackgroundPreRecomb):
         self.Tm_tab     = _finite_pad(self._Tm_through_reionization(params))
         self.lna_Tm_tab = _finite_pad(self.lna_Tm_tab)
 
-        self.kappa_func = self._tabulate_optical_depth(params)
+        kappa = self._tabulate_optical_depth(params)
+        lna_tab = jnp.clip(self.lna_tau_tab, -10., 0.)
+        self.expmkappa_tab = jnp.where(self.lna_tau_tab < -10., 0., jnp.exp(-vmap(kappa.evaluate)(lna_tab)))
+        self.dexpmkappa_tab = self.expmkappa_tab * vmap(lambda l: 1. / (self.tau_c(l, params) * self.aH(l, params)))(lna_tab)
 
         # Find approximate maximum of visibility function.
         lna_vals = jnp.linspace(-8.0, -4.0, 1500)  # Decoupling falls in here.
@@ -854,7 +867,8 @@ class Background(BackgroundPreRecomb):
         return jnp.where(
             lna < -10.,
             0.,
-            jnp.exp(-self.kappa_func.evaluate(lna))
+            tools.fast_interp_hermite(lna, self.lna_tau_tab[0], self.lna_tau_tab[-1],
+                                      self.expmkappa_tab, self.dexpmkappa_tab)
         )
 
     def visibility(self, lna, params):
@@ -882,6 +896,25 @@ class Background(BackgroundPreRecomb):
         Used in computing source functions for CMB anisotropies.
         """
         return self.expmkappa(lna)/self.tau_c(lna, params)
+
+    def visibility_prime(self, lna, params):
+        """
+        Analytic derivative of the visibility function with respect to lna.
+
+        Parameters:
+        -----------
+        lna : float
+            Logarithm of scale factor
+        params : dict
+            Cosmological parameters
+
+        Returns:
+        --------
+        float
+            dg/dlna (units: Mpc^{-1})
+        """
+        tau_c, dtau_c = jax.value_and_grad(self.tau_c, argnums=0)(lna, params)
+        return self.expmkappa(lna) / tau_c * (1. / (tau_c * self.aH(lna, params)) - dtau_c / tau_c)
 
     ###########################################
     ### tools for computing decoupling time ###
