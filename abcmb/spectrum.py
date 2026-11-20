@@ -676,7 +676,24 @@ class SpectrumSolver(eqx.Module):
 
         def wigner_d_start(mu, m, n):
             """
-            d^l_{m,n}(mu) at l = m, the first non-zero element of the family.
+            Compute the first non-zero element of a Wigner d family.
+
+            For l < m, d^l_{m,n} = 0; this returns d^m_{m,n}(mu), from which the
+            recurrence continues to higher l.
+
+            Parameters:
+            -----------
+            mu : array
+                Cosine of rotation angle
+            m : int
+                First index (m >= |n|)
+            n : int
+                Second index
+
+            Returns:
+            --------
+            array
+                d^m_{m,n}(mu), same shape as mu
             """
             beta = jnp.arccos(mu)
             norm = math.sqrt(math.factorial(2*m) / (math.factorial(m+n) * math.factorial(m-n)))
@@ -685,6 +702,19 @@ class SpectrumSolver(eqx.Module):
         def wigner_coeffs(l_values, mns):
             """
             Compute the coefficients for the Wigner d recurrence.
+
+            Parameters:
+            -----------
+            l_values : sequence of int
+                Multipole values, each >= 1
+            mns : list of (int, int)
+                (m, n) indices of the families, with m >= |n|
+
+            Returns:
+            --------
+            tuple
+                (a, b, c), each of shape (len(l_values), len(mns)); entry [i, j] is for
+                l = l_values[i] and (m, n) = mns[j]
             """
             a = np.zeros((len(l_values), len(mns))) # Shape safe against jit, mns inputs known at compile time. 
             b = np.zeros((len(l_values), len(mns)))
@@ -700,10 +730,24 @@ class SpectrumSolver(eqx.Module):
 
         def wigner_d_ic(mu, mns):
             """
-            Returns the l=1 and l=2 entries for every (m, n). These are the values the l-loop
-            starts from. Returns two lists of arrays (one array per (m, n)).
+            Compute the initial conditions of the l-loops.
 
-            Not to be confused with wigner_d_start, which is the first non-zero entrie for arbitrary l.
+            Returns d^2_{m,n}(mu) and d^1_{m,n}(mu) for every (m, n), the values the l-loops
+            start from. Families with m > 2 are zero at l = 1, 2 and are started inside the loop 
+            by wigner_d_next.
+
+            Parameters:
+            -----------
+            mu : array
+                Cosine of rotation angle
+            mns : list of (int, int)
+                (m, n) indices of the families, with m >= |n|
+
+            Returns:
+            --------
+            tuple
+                (d2, d1), two lists with one array (same shape as mu) per (m, n) in mns:
+                d2 = [d^2_{m,n}(mu)], d1 = [d^1_{m,n}(mu)].
             """
             d2, d1 = [], []
             for m, n in mns:
@@ -724,9 +768,28 @@ class SpectrumSolver(eqx.Module):
 
         def wigner_d_next(mu, l, d, d_prev, a, b, c, mns):
             """
-            One step of the recurrence: d^{l+1}_{mn}(mu) for every family, from
-            d = [d^l_{mn}] and d_prev = [d^{l-1}_{mn}] (lists, one array per family).
-            a, b, c are the coefficients at this l, one number per family.
+            Compute one step of the Wigner d recurrence:
+            d^{l+1}_{m,n}(mu) from d^l_{m,n}(mu) and d^{l-1}_{m,n}(mu) for every (m, n).
+
+            Parameters:
+            -----------
+            mu : array
+                Cosine of rotation angle
+            l : int
+                Current multipole (an array element traced inside lax.scan, not a Python int)
+            d : list of arrays
+                d^l_{m,n}(mu), one array per (m, n) in mns
+            d_prev : list of arrays
+                d^{l-1}_{m,n}(mu), one array per (m, n) in mns
+            a, b, c : array
+                Recurrence coefficients at this l (one row of wigner_coeffs), one number per (m, n)
+            mns : list of (int, int)
+                (m, n) indices of the families, with m >= |n|
+
+            Returns:
+            --------
+            list of arrays
+                d^{l+1}_{m,n}(mu), one array per (m, n) in mns
             """
             d_next = []
             for j, (m, n) in enumerate(mns):
