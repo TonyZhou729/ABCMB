@@ -1,0 +1,37 @@
+import numpy as np
+import jax
+import equinox as eqx
+from jax.sharding import Mesh, NamedSharding, PartitionSpec
+
+
+def make_shardfn(shard=None):
+    """
+    Make a sharding function that places every array of a pytree on all
+    visible GPUs.
+
+    Parameters:
+    -----------
+    shard: bool or None, optional
+        True always attempts to shard, False restricts to one device, None shards if
+        multiple devices are automatically detected.  Defaults to None.
+
+    Returns:
+    --------
+    tuple (callable, int)
+        (shardfn, n_dev). shardfn places every array of a pytree on all visible
+        GPUs, split along its leading (batch) axis; shardfn is None if not sharding.
+        n_dev is the number of GPUs visible to ABCMB.
+    """
+    try:
+        gpus = jax.devices('gpu')
+    except Exception:
+        gpus = []
+    if not (shard or (shard is None and len(gpus) > 1)):
+        return None, len(gpus)
+    mesh = Mesh(np.asarray(gpus), axis_names=('batch',))
+    split, replicated = NamedSharding(mesh, PartitionSpec('batch')), NamedSharding(mesh, PartitionSpec())
+
+    def shardfn(tree):
+        return jax.tree_util.tree_map(
+            lambda x: jax.device_put(x, split if x.ndim >= 1 else replicated) if eqx.is_array(x) else x, tree)
+    return shardfn, len(gpus)

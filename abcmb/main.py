@@ -5,6 +5,7 @@ import numpy as np
 import equinox as eqx
 
 import diffrax
+import jax
 
 import os
 file_dir = os.path.dirname(__file__)
@@ -12,6 +13,7 @@ file_dir = os.path.dirname(__file__)
 from .hyrex import hyrex
 from . import background, perturbations, spectrum, model_specs
 from .utils.deprecation import deprecated
+from .utils.batching import make_shardfn
 
 from .linx.background import BackgroundModel
 from .linx.abundances import AbundanceModel
@@ -223,7 +225,7 @@ class Model(eqx.Module):
         full_params = self.add_derived_parameters(params)
         return self.run_cosmology_abbr(full_params)
 
-    def run_parallel_cosmologies(self, params_list, k_chunk_size=100):
+    def run_parallel_cosmologies(self, params_list, k_chunk_size=100, shard=None):
         """
         Batched evaluation of several cosmologies at once (uses a refactored pipeline
         for performance).
@@ -235,6 +237,11 @@ class Model(eqx.Module):
         k_chunk_size : int, optional
             Number of wavenumbers per compiled perturbation kernel.  Defaults
             to 100.
+        shard : bool or None, optional
+            Split cosmologies across visible GPUs (fails if no GPUs).  This will pad batches 
+            to a multiple of the number of GPUs by repeating the last cosmology (removed from 
+            output). True always attempts to shard, False restricts to one device, None shards 
+            if multiple devices are automatically detected.  Defaults to None.
 
         Returns:
         --------
@@ -242,9 +249,18 @@ class Model(eqx.Module):
             Spectra and parameters with a leading batch axis; BG and PT are None
 
         """
-        params, BG = self.get_BG_batched([self.add_derived_parameters(p) for p in params_list])
+        params_len_orig = len(params_list)
+        shardfn, n_dev = make_shardfn(shard)
+        if shardfn is not None and params_len_orig % n_dev:
+            params_list = list(params_list) + [params_list[-1]] * (n_dev - params_len_orig%n_dev)
+        params, BG = self.get_BG_batched([self.add_derived_parameters(p) for p in params_list], shardfn=shardfn)
+
         PT = self.PE.full_evolution_batched((BG, params), k_chunk_size=k_chunk_size)
-        Cls, Pk, Pk_nl = self._spectra_vmapped(PT, BG, params)
+        out = self._spectra_vmapped(PT, BG, params) + (params,)
+        if len(params_list) != params_len_orig: # len(params_list) may have been updated
+            out = jax.tree_util.tree_map(lambda x: x[:params_len_orig], out)
+
+        Cls, Pk, Pk_nl, params = out
         lensed = self.specs["lensing"]
         return Output(Cls[0], Cls[1], Cls[2], Cls[3] if lensed else None, Cls[4] if lensed else None,
                       Pk, self.SS.ells, self.SS.k_axis_Pk_output, None, None, params, Pk_nl=Pk_nl)
