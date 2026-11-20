@@ -556,3 +556,23 @@ def _spectra_vmapped(self, PT, BG, params):
     if self.SS.nonlinear == 'halofit':
         Pk_nl = jax.vmap(self.SS.Pk_nonlinear, in_axes=(None, None, 0, 0, 0))(k, 0., PT, BG, params)
     return Cls, Pk, Pk_nl
+
+
+@eqx.filter_jit
+def _cls_vmapped(self, PT, BG, params):
+    """
+    TT, TE and EE vmapped over the leading axis of params (lensed Clpp and BB are
+    dropped inside the same jit, so neither they nor their tangents are computed).
+
+    Parameters:
+    -----------
+    PT, BG, params :
+        Perturbation tables, backgrounds and cosmological parameters with a leading
+        batch axis
+
+    Returns:
+    --------
+    tuple
+        (ClTT, ClTE, ClEE)
+    """
+    return jax.vmap(self.SS.get_Cl)(PT, BG, params)[:3]

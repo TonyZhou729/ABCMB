@@ -4,7 +4,7 @@ import equinox as eqx
 from jax.sharding import Mesh, NamedSharding, PartitionSpec
 
 
-def make_shardfn(shard=None):
+def make_shardfn(shard=None, axis=0):
     """
     Make a sharding function that places every array of a pytree on all
     visible GPUs.
@@ -14,12 +14,14 @@ def make_shardfn(shard=None):
     shard: bool or None, optional
         True always attempts to shard, False restricts to one device, None shards if
         multiple devices are automatically detected.  Defaults to None.
+    axis: int, optional
+         Batch axis of the arrays.  Defaults to 0.
 
     Returns:
     --------
     tuple (callable, int)
         (shardfn, n_dev). shardfn places every array of a pytree on all visible
-        GPUs, split along its leading (batch) axis; shardfn is None if not sharding.
+        GPUs, split along its batch axis; shardfn is None if not sharding.
         n_dev is the number of GPUs visible to ABCMB.
     """
     try:
@@ -29,11 +31,11 @@ def make_shardfn(shard=None):
     if not (shard or (shard is None and len(gpus) > 1)):
         return None, len(gpus)
     mesh = Mesh(np.asarray(gpus), axis_names=('batch',))
-    split, replicated = NamedSharding(mesh, PartitionSpec('batch')), NamedSharding(mesh, PartitionSpec())
-
+    split = NamedSharding(mesh, PartitionSpec(*([None] * axis), 'batch'))
+    replicated = NamedSharding(mesh, PartitionSpec())
     def shardfn(tree):
         return jax.tree_util.tree_map(
-            lambda x: jax.device_put(x, split if x.ndim >= 1 else replicated) if eqx.is_array(x) else x, tree)
+            lambda x: jax.device_put(x, split if x.ndim > axis else replicated) if eqx.is_array(x) else x, tree)
     return shardfn, len(gpus)
 
 
