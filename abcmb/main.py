@@ -15,7 +15,7 @@ file_dir = os.path.dirname(__file__)
 from .hyrex import hyrex
 from . import background, perturbations, spectrum, model_specs
 from . import constants as cnst
-from .ABCMBTools import bilinear_interp
+from .ABCMBTools import bilinear_interp, jvp_stage
 from .background import BackgroundPreRecomb, Background, ReionizationModelFromZ, ReionizationModelFromTau
 
 from .linx.background import BackgroundModel
@@ -306,7 +306,82 @@ class Model(eqx.Module):
         return Output(Cls[0], Cls[1], Cls[2], Cls[3] if lensed else None, Cls[4] if lensed else None,
                       Pk, self.SS.ells, self.SS.k_axis_Pk_output, None, None, params, Pk_nl=Pk_nl)
 
-    def _make_shardfn(self, shard=None):
+    def call_batched_jvp(self, params_list, params_dots, k_chunk_size=100, shard=None, spectra_chunk=None):
+        """
+        Batched TT, TE and EE and their forward-mode derivatives along several directions.
+
+        Runs the stages of call_batched one at a time under jax.jvp, with all
+        directions pushed through each stage together, so the pipeline is solved
+        once per call and keeps call_batched's batching, k-chunking and sharding.
+
+        Parameters:
+        -----------
+        params_list : list of dict
+            Cosmological parameters including the derived ones (add_derived_parameters),
+            one dict per cosmology
+        params_dots : list of dict
+            One dict per direction: tangents of entries of params_list, each a scalar
+            or an array with a leading axis over the cosmologies; missing entries are
+            zero. For a direction in the input parameters, take jax.jvp of
+            add_derived_parameters for each cosmology.
+        k_chunk_size : int, optional
+            Number of wavenumbers per compiled perturbation kernel.  Defaults to 100.
+        shard : bool or None, optional
+            As in call_batched.  Defaults to None.
+        spectra_chunk : int or None, optional
+            Cosmologies per device in each call of the spectrum stage, which sets the
+            memory peak.  Defaults to None (all at once).
+
+        Returns:
+        --------
+        tuple
+            (Cls, Cls_dot): Cls = (TT, TE, EE), each of shape (n_cosmologies, n_l);
+            Cls_dot the same with a leading direction axis
+        """
+        num_cosmologies = len(params_list)
+        shardfn, n_dev = self._make_shardfn(shard)
+        pad = (-num_cosmologies) % n_dev if shardfn is not None else 0
+        params = _to_float(jax.tree_util.tree_map(lambda *xs: jnp.stack(xs), *(list(params_list) + [params_list[-1]] * pad)))
+
+        def tangent(d):
+            t = {k: jnp.broadcast_to(jnp.asarray(0. if d.get(k) is None else d[k], v.dtype), (num_cosmologies,) + v.shape[1:])
+                 for k, v in params.items()}
+            return jax.tree_util.tree_map(lambda x: jnp.concatenate([x, jnp.repeat(x[-1:], pad, axis=0)]), t)
+        params_dot = jax.tree_util.tree_map(lambda *xs: jnp.stack(xs), *[tangent(d) for d in params_dots])
+        if shardfn is not None:
+            dir_shardfn = self._make_shardfn(shard, axis=1)[0]
+            params, params_dot = shardfn(params), dir_shardfn(params_dot)
+        pre_BG, pre_BG_dot = jvp_stage(self._get_BG_pre_recomb_vmapped, (params,), (params_dot,))
+        cpu_dev = jax.devices('cpu')[0]
+        hyrex = eqx.filter_jit(eqx.filter_vmap(self.RecModel), backend='cpu')
+        recomb, recomb_dot = jvp_stage(lambda ri, p: hyrex((ri, p)),
+                                        jax.device_put((pre_BG.recomb_inputs, params), cpu_dev),
+                                        jax.device_put((pre_BG_dot.recomb_inputs, params_dot), cpu_dev))
+        if shardfn is not None:
+            recomb, recomb_dot = shardfn(recomb), dir_shardfn(recomb_dot)
+        else:
+            try:
+                recomb, recomb_dot = jax.device_put((recomb, recomb_dot), jax.devices('gpu')[0])
+            except Exception:
+                pass
+        BG, BG_dot = jvp_stage(self._get_BG_vmapped, (params, pre_BG, recomb), (params_dot, pre_BG_dot, recomb_dot))
+        PT, PT_dot = jvp_stage(lambda bg, p: self.PE.full_evolution_batched((bg, p), k_chunk_size=k_chunk_size),
+                                (BG, params), (BG_dot, params_dot))
+
+        step = num_cosmologies + pad if spectra_chunk is None else spectra_chunk * (n_dev if shardfn is not None else 1)
+        parts = []
+        for s in range(0, num_cosmologies + pad, step):
+            prim = jax.tree_util.tree_map(lambda x: x[s:s + step] if eqx.is_array(x) and x.ndim > 0 else x, (PT, BG, params))
+            tang = jax.tree_util.tree_map(lambda x: x[:, s:s + step] if eqx.is_array(x) and x.ndim > 1 else x,
+                                          (PT_dot, BG_dot, params_dot))
+            if shardfn is not None:
+                prim, tang = shardfn(prim), dir_shardfn(tang)
+            parts.append(jvp_stage(self._cls_vmapped, prim, tang))
+        Cls = tuple(jnp.concatenate([c[i] for c, _ in parts])[:num_cosmologies] for i in range(3))
+        Cls_dot = tuple(jnp.concatenate([d[i] for _, d in parts], axis=1)[:, :num_cosmologies] for i in range(3))
+        return Cls, Cls_dot
+
+    def _make_shardfn(self, shard=None, axis=0):
         """
         Make a sharding function that places every array of a pytree on all
         visible GPUs.
@@ -316,12 +391,14 @@ class Model(eqx.Module):
         shard: bool or None, optional
             True always attempts to shard, False restricts to one device, None shards if
             multiple devices are automatically detected.  Defaults to None.
+        axis: int, optional
+             Batch axis of the arrays.  Defaults to 0.
 
         Returns:
         --------
         tuple (callable, int)
             (shardfn, n_dev). shardfn places every array of a pytree on all visible
-            GPUs, split along its leading (batch) axis; shardfn is None if not sharding.
+            GPUs, split along its batch axis; shardfn is None if not sharding.
             n_dev is the number of GPUs visible to ABCMB.
         """
         try:
@@ -331,11 +408,11 @@ class Model(eqx.Module):
         if not (shard or (shard is None and len(gpus) > 1)):
             return None, len(gpus)
         mesh = Mesh(np.asarray(gpus), axis_names=('batch',))
-        split, replicated = NamedSharding(mesh, PartitionSpec('batch')), NamedSharding(mesh, PartitionSpec())
-
+        split = NamedSharding(mesh, PartitionSpec(*([None] * axis), 'batch'))
+        replicated = NamedSharding(mesh, PartitionSpec())
         def shardfn(tree):
             return jax.tree_util.tree_map(
-                lambda x: jax.device_put(x, split if x.ndim >= 1 else replicated) if eqx.is_array(x) else x, tree)
+                lambda x: jax.device_put(x, split if x.ndim > axis else replicated) if eqx.is_array(x) else x, tree)
         return shardfn, len(gpus)
 
 
@@ -430,6 +507,25 @@ class Model(eqx.Module):
         if self.SS.nonlinear == 'halofit':
             Pk_nl = jax.vmap(self.SS.Pk_nonlinear, in_axes=(None, None, 0, 0, 0))(k, 0., PT, BG, params)
         return Cls, Pk, Pk_nl
+
+    @eqx.filter_jit
+    def _cls_vmapped(self, PT, BG, params):
+        """
+        TT, TE and EE vmapped over the leading axis of params (lensed Clpp and BB are
+        dropped inside the same jit, so neither they nor their tangents are computed).
+
+        Parameters:
+        -----------
+        PT, BG, params :
+            Perturbation tables, backgrounds and cosmological parameters with a leading
+            batch axis
+
+        Returns:
+        --------
+        tuple
+            (ClTT, ClTE, ClEE)
+        """
+        return jax.vmap(self.SS.get_Cl)(PT, BG, params)[:3]
 
     @eqx.filter_jit
     def get_BG_pre_recomb(self, params : dict):
