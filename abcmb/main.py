@@ -323,8 +323,9 @@ class Model(eqx.Module):
 
         Parameters:
         -----------
-        params : array like of dict
-            Cosmological parameters, one dict per cosmology
+        params : dict
+            Cosmological parameters, one dict per cosmology.  dict arrays carry
+            leading batch axis
 
         Returns:
         --------
@@ -340,8 +341,9 @@ class Model(eqx.Module):
 
         Parameters:
         -----------
-        params : array like of dict
-            Cosmological parameters, one dict per cosmology
+        params : dict
+            Cosmological parameters, one dict per cosmology.  dict arrays carry
+            leading batch axis
 
         Returns:
         --------
@@ -357,8 +359,9 @@ class Model(eqx.Module):
 
         Parameters:
         -----------
-        params : array like of dict
-            Cosmological parameters, one dict per cosmology
+        params : dict
+            Cosmological parameters, one dict per cosmology.  dict arrays carry
+            leading batch axis
 
         Returns:
         --------
