@@ -103,7 +103,7 @@ def load_specs(input_specs):
     # to today, or "recomb" for grid whose density increases near the peak of the visibility 
     # function, allowing a smaller n_lna_PE (faster, less memory) for roughly the same accuracy
     specs["lna_grid_mode"] = input_specs.get("lna_grid_mode", "recomb") # CG should discuss if we want this default
-    if specs["ln_grid_mode"] not in ("uniform", "recomb"):
+    if specs["lna_grid_mode"] not in ("uniform", "recomb"):
         raise ValueError(f"lna_grid_mode must be 'uniform' or 'recomb', not {specs["lna_grid_mode"]!r}")
     specs["n_lna_PE"] = input_specs.get("n_lna_PE", 300 if specs["lna_grid_mode"]=="recomb" else 500)
     
