@@ -306,10 +306,10 @@ class Model(eqx.Module):
         tuple
             (params, BG), stacked along a leading batch axis
         """
-        params = _to_float(jax.tree_utils.tree_map(lambda *xs: jnp.stack(xs), *params_list)) # need another tree map to stack the dicts to be converted
+        params = _to_float(jax.tree_util.tree_map(lambda *xs: jnp.stack(xs), *params_list)) # need another tree map to stack the dicts to be converted
         pre_BG = self._get_BG_pre_recomb_vmapped(params)
         cpu_dev = jax.devices('cpu')[0]
-        recomb_output =eqx.filter_jit(eqx.filter_vmap(self.RecModel), backup='cpu')(jax.device_put(pre_BG.recomb_inputs, cpu_dev), jax.device_put(params, cpu_dev))
+        recomb_output =eqx.filter_jit(eqx.filter_vmap(self.RecModel), backend='cpu')((jax.device_put(pre_BG.recomb_inputs, cpu_dev), jax.device_put(params, cpu_dev)))
         try:
             recomb_output = jax.device_put(recomb_output, jax.devices('gpu')[0])
         except Exception:
@@ -367,7 +367,7 @@ class Model(eqx.Module):
         """
         k = self.SS.k_axis_Pk_output
         Cls = jax.vmap(self.SS.get_Cl)(PT, BG, params)
-        Pk = jax.vmap(self.SS.Pk_lin, in_axes=(None, None, 0, 0, 0))(k, 0., PT, BG, params)
+        Pk = jax.vmap(self.SS.Pk_lin, in_axes=(None, None, 0, 0))(k, 0., PT, params)
         Pk_nl = None
         if self.SS.nonlinear == 'halofit':
             Pk_nl = jax.vmap(self.SS.Pk_nonlinear, in_axes=(None, None, 0, 0, 0))(k, 0., PT, BG, params)
