@@ -98,6 +98,16 @@ def load_specs(input_specs):
     ### Pivot scale ###
     specs["k_pivot"]            = input_specs.get("k_pivot", 0.05)
 
+    ### lna grid settings ###
+    # "uniform" for a uniform grid of n_lna_PE lna values from the start of the transfer functions
+    # to today, or "recomb" for grid whose density increases near the peak of the visibility 
+    # function, allowing a smaller n_lna_PE (faster, less memory) for roughly the same accuracy
+    specs["lna_grid_mode"] = input_specs.get("lna_grid_mode", "recomb") # CG should discuss if we want this default
+    if specs["ln_grid_mode"] not in ("uniform", "recomb"):
+        raise ValueError(f"lna_grid_mode must be 'uniform' or 'recomb', not {specs["lna_grid_mode"]!r}")
+    specs["n_lna_PE"] = input_specs.get("n_lna_PE", 300 if specs["lna_grid_mode"]=="recomb" else 500)
+
+
     ### Set perturbations initial condition time ###
     specs["R_tc"] = input_specs.get("R_tc", 0.0015)
     specs["R_large"] = input_specs.get("R_large", 0.07)
