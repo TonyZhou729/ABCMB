@@ -811,35 +811,36 @@ class SpectrumSolver(eqx.Module):
         Clpp = self.lensing_Cl(ells, PT, BG, params)
 
         # ---- Loop 1: lensing angular correlation functions Cgl (d11) and Cgl2 (d1-1)
-        mns = [(1, 1), (1, -1)]
-        a, b, c = wigner_coeffs(l_values, mns)
-        d, d_prev = wigner_d_ic(mu, mns)
+        mns_loop1 = [(1, 1), (1, -1)]
+        a_loop1, b_loop1, c_loop1 = wigner_coeffs(l_values, mns_loop1)
+        d_loop1, d_prev_loop1 = wigner_d_ic(mu, mns_loop1)
 
-        def step(carry, x):
+        def step_loop1(carry, x):
             d, d_prev, Cgl, Cgl2 = carry
-            l, Clpp_l, a, b, c = x
+            l, Clpp_l, a, b, c = x # Clpp, and coefficients, at one l.
             d11, d1m1 = d
 
             Cgl  = Cgl  + 1./4./jnp.pi * (2.*l+1)*l*(l+1)*Clpp_l*d11
             Cgl2 = Cgl2 + 1./4./jnp.pi * (2.*l+1)*l*(l+1)*Clpp_l*d1m1
 
-            d_next = wigner_d_next(mu, l, d, d_prev, a, b, c, mns)
+            d_next = wigner_d_next(mu, l, d, d_prev, a, b, c, mns_loop1)
             return (d_next, d, Cgl, Cgl2), None
 
         zero = jnp.zeros_like(mu)
-        carry, _ = lax.scan(step, (d, d_prev, zero, zero), (ells, Clpp, a, b, c), unroll=4)
-        Cgl, Cgl2 = carry[2], carry[3] # Eq. (35)
+        carry_loop1, _ = lax.scan(step_loop1, (d_loop1, d_prev_loop1, zero, zero),
+                                  (ells, Clpp, a_loop1, b_loop1, c_loop1), unroll=4)
+        Cgl, Cgl2 = carry_loop1[2], carry_loop1[3] # Eq. (35)
         sigma2 = Cgl[-1] - Cgl # Defined right below Eq. (35)
 
         # ---- Loop 2: lensed correlation functions ksi, ksip, ksim, ksix, in angular space. 
 
         # First set up required m, n entries, recurrence coefficients, and recurrence initial conditions. 
-        mns = [(0, 0), (1, 1), (1, -1), (2, 2), (2, -2), (2, 0),
-                (3, 1), (3, -1), (3, -3), (4, 0), (4, -2), (4, -4)]
-        a, b, c = wigner_coeffs(l_values, mns)
-        d, d_prev = wigner_d_ic(mu, mns)
+        mns_loop2 = [(0, 0), (1, 1), (1, -1), (2, 2), (2, -2), (2, 0),
+                     (3, 1), (3, -1), (3, -3), (4, 0), (4, -2), (4, -4)]
+        a_loop2, b_loop2, c_loop2 = wigner_coeffs(l_values, mns_loop2)
+        d_loop2, d_prev_loop2 = wigner_d_ic(mu, mns_loop2)
 
-        def step(carry, x):
+        def step_loop2(carry, x):
             d, d_prev, ksi, ksip, ksim, ksix = carry
             l, ClTT_l, ClTE_l, ClEE_l, a, b, c = x # Unlensed Cls, and coefficients, at one l. 
             d00, d11, d1m1, d22, d2m2, d20, d31, d3m1, d3m3, d40, d4m2, d4m4 = d
@@ -877,12 +878,12 @@ class SpectrumSolver(eqx.Module):
                 + 1./2.*Cgl2**2 * ((2*X022_prime*X000_prime+X220**2)*d20+X220*X242*dm24)
             ) # Eq. (53)
 
-            d_next = wigner_d_next(mu, l, d, d_prev, a, b, c, mns)
+            d_next = wigner_d_next(mu, l, d, d_prev, a, b, c, mns_loop2)
             return (d_next, d, ksi, ksip, ksim, ksix), None
 
-        carry, _ = lax.scan(step, (d, d_prev, zero, zero, zero, zero),
-                            (ells, ClTT_unlensed, ClTE_unlensed, ClEE_unlensed, a, b, c), unroll=4)
-        ksi, ksip, ksim, ksix = carry[2], carry[3], carry[4], carry[5] # Wraps up lensed correlation functions. 
+        carry_loop2, _ = lax.scan(step_loop2, (d_loop2, d_prev_loop2, zero, zero, zero, zero),
+                                  (ells, ClTT_unlensed, ClTE_unlensed, ClEE_unlensed, a_loop2, b_loop2, c_loop2), unroll=4)
+        ksi, ksip, ksim, ksix = carry_loop2[2], carry_loop2[3], carry_loop2[4], carry_loop2[5] # Wraps up lensed correlation functions. 
 
         # ---- Loop 3: transform back to lensed Cl. At each l, sum over mu (Gauss-Legendre weights w)
         # gives one number per spectrum. Still need some wigner matrices for this step.
@@ -890,14 +891,14 @@ class SpectrumSolver(eqx.Module):
         # n_out steps instead of the N_l steps of loops 1 and 2.
         n_out = self.ells.shape[0]              # output ells = 2, 3, ..., l_max
         l_values_out = range(2, n_out + 2)
-        mns = [(0, 0), (2, 0), (2, 2), (2, -2)]
-        a, b, c = wigner_coeffs(l_values_out, mns)
-        d, d_prev = wigner_d_ic(mu, mns)
+        mns_loop3 = [(0, 0), (2, 0), (2, 2), (2, -2)]
+        a_loop3, b_loop3, c_loop3 = wigner_coeffs(l_values_out, mns_loop3)
+        d_loop3, d_prev_loop3 = wigner_d_ic(mu, mns_loop3)
         w = self.lensing_ws
 
-        def step(carry, x):
+        def step_loop3(carry, x):
             d, d_prev = carry
-            l, a, b, c = x
+            l, a, b, c = x # Coefficients at one l.
             d00, d20, d22, d2m2 = d
 
             ClTT_l = 2*jnp.pi * jnp.sum(ksi*d00*w) # Eq. (63)
@@ -905,10 +906,11 @@ class SpectrumSolver(eqx.Module):
             ClEE_l = 1./2. * 2*jnp.pi * jnp.sum((ksip*d22 + ksim*d2m2)*w) # (Eq.(65)+Eq.(64))/2
             ClBB_l = 1./2. * 2*jnp.pi * jnp.sum((ksip*d22 - ksim*d2m2)*w) # (Eq.(65)-Eq.(64))/2
 
-            d_next = wigner_d_next(mu, l, d, d_prev, a, b, c, mns)
+            d_next = wigner_d_next(mu, l, d, d_prev, a, b, c, mns_loop3)
             return (d_next, d), (ClTT_l, ClTE_l, ClEE_l, ClBB_l)
 
-        _, (ClTT, ClTE, ClEE, ClBB) = lax.scan(step, (d, d_prev), (ells[:n_out], a, b, c), unroll=4)
+        _, (ClTT, ClTE, ClEE, ClBB) = lax.scan(step_loop3, (d_loop3, d_prev_loop3),
+                                               (ells[:n_out], a_loop3, b_loop3, c_loop3), unroll=4)
 
         return (ClTT, ClTE, ClEE, Clpp[:n_out], ClBB)
 
