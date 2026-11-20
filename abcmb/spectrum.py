@@ -635,8 +635,6 @@ class SpectrumSolver(eqx.Module):
         Applies gravitational lensing corrections to unlensed temperature
         and polarization power spectra using Wigner rotation matrices.
 
-        Follows the fullsky formalism of astro-ph/0502425v2.
-
         Parameters:
         -----------
         ells : array
@@ -659,6 +657,11 @@ class SpectrumSolver(eqx.Module):
         tuple
             (ClTT, ClTE, ClEE, Clpp, ClBB) lensed power spectra and lensing potential power spectrum,
             for ell = 2, ..., l_max (the output multipoles self.ells).
+
+        Notes:
+        ------
+        Follows the fullsky formalism of astro-ph/0502425v2.
+        
         """
 
         # The Wigner matrices are d^l_{m,n}(mu) 
@@ -716,12 +719,12 @@ class SpectrumSolver(eqx.Module):
                 (a, b, c), each of shape (len(l_values), len(mns)); entry [i, j] is for
                 l = l_values[i] and (m, n) = mns[j]
             """
-            a = np.zeros((len(l_values), len(mns))) # Shape safe against jit, mns inputs known at compile time. 
+            a = np.zeros((len(l_values), len(mns)))
             b = np.zeros((len(l_values), len(mns)))
             c = np.zeros((len(l_values), len(mns)))
             for i, l in enumerate(l_values):
                 for j, (m, n) in enumerate(mns):
-                    if l < m: # Safe against jit, compiler knows integers passed in unaffected by cosmo params.
+                    if l < m: 
                         continue  # family is zero below l = m: leave a, b, c = 0
                     a[i, j] = (l+1)*(2*l+1) / math.sqrt(((l+1)**2 - m**2) * ((l+1)**2 - n**2))
                     b[i, j] = m*n / (l*(l+1))
