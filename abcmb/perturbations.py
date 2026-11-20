@@ -155,7 +155,8 @@ class PerturbationEvolver(eqx.Module):
         # Every field is pointwise in k (last axis) except lna, which is per cosmology.
         PT = jax.tree_util.tree_map(lambda *xs: jnp.concatenate(xs, axis=-1), *tables)
         return eqx.tree_at(lambda t: t.lna, PT, tables[0].lna)
-
+        
+    @eqx.filter_jit
     def _evolve_chunk(self, k, lna, args):
         """
         Modes for the wavenumbers k and a batch of cosmologies, shape (len(k), B, Nlna, Ny).
