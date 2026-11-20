@@ -363,7 +363,7 @@ class Model(eqx.Module):
         Returns:
         --------
         array like
-            Grid of Cls
+            Grid of (Cls, Pk, Pk_nl)
         """
         k = self.SS.k_axis_Pk_output
         Cls = jax.vmap(self.SS.get_Cl)(PT, BG, params)

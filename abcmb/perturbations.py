@@ -172,8 +172,8 @@ class PerturbationEvolver(eqx.Module):
 
         Returns:
         --------
-        array of diffrax.Solution
-            Dense solution object for k chunk
+        array
+            (len(k), num_cosmologies, Nlna, Ny) array of saved modes
         """
         BG, params = args
         per_k = lambda ki: vmap(self.evolution_one_k, in_axes=(None, 0, (0, 0)))(ki, lna, (BG, params))
@@ -190,6 +190,9 @@ class PerturbationEvolver(eqx.Module):
             1D axis of wavenumbers k for one chunk (units: Mpc^{-1})
         lna : array
             Logarithm of scale factor grid for output
+        modes : array
+            Saved perturbation states from _evolve_chunk for these wavenumbers,
+            shape (len(k), num_cosmologies, Nlna, Ny)
         args : tuple
             Background cosmology and cosmological parameters (BG, params)
 
