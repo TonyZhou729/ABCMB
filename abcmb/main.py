@@ -168,6 +168,7 @@ class Model(eqx.Module):
             use_bessel_tables=specs["use_bessel_tables"],
             delta_l_max=specs["delta_l_max"],
             n_k_cmb=specs["k_size_cmb"],
+            recomb_lna_grid=self.PE.recomb_grid_base(specs["n_lna_PE"]) if specs["lna_grid_mode"] == "recomb" else None,
             nonlinear=specs["nonlinear"],
             halofit_prescription=specs["halofit_prescription"],
             # use only k that were computed for Pk_lin
