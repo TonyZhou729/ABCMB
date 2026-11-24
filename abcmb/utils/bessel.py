@@ -46,7 +46,7 @@ def j(l, x):
     """
     Large-x asymptotic spherical Bessel function j_l(x).
 
-    Debye's expansion of J_{l+1/2}(x) (DLMF 10.19.6), used beyond the
+    Debye's expansion of J_{l+1/2}(x), used beyond the
     end of the tabulated x range.
 
     Parameters:
@@ -60,6 +60,10 @@ def j(l, x):
     --------
     float or array
         j_l(x)
+
+    Notes:
+    ------
+    DLMF 10.19.6 https://dlmf.nist.gov/10.19
     """
     nu = l + 0.5
     s = jnp.sqrt(x**2 - nu**2)                      # nu tan(beta), x = nu sec(beta)
@@ -134,10 +138,8 @@ def phi_functions(idx):
     Multipole and radial functions for one tabulated multipole.
 
     Each function is tabulated between its smallest value (~1.e-10) out to the
-    fifth local maximum.  This is a different interval for each l, but the
-    tables share one shape so they can be stored as large 2D arrays.  Inside
-    this interval fast_interp_cubic is used; below it the function is set to 0,
-    and above it the large-x expansion j is used.
+    fifth local maximum.  Inside his interval fast_interp_cubic is used; below 
+    it the function is set to 0, and above it the large-x expansion j is used.
 
     Parameters:
     -----------
@@ -150,11 +152,6 @@ def phi_functions(idx):
         (l, phi0, phi1, phi2), the multipole and the radial functions of x:
         phi0 = j_l, phi1 = j_l', phi2 = (3 j_l'' + j_l)/2
 
-    Notes:
-    ------
-    Table columns are sliced here, once, so that a scan over x does not
-    re-index ..._tab[:, idx] at every step.  x_safe clips x into the
-    asymptotic branch to avoid the double-where NaN gotcha in reverse AD.
     """
     l = bessel_l_tab[idx]
     x0_min = xphi0_tab[0, idx]
