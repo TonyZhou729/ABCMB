@@ -2,7 +2,7 @@ import numpy as np
 import jax.numpy as jnp
 from jax import config, pure_callback, devices, device_put
 from jax.scipy.ndimage import map_coordinates
-from abcmb import constants as cnst
+from abcmb.utils import constants as cnst
 import os
 file_dir = os.path.dirname(__file__)
 config.update("jax_enable_x64", True)

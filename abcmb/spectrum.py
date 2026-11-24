@@ -10,8 +10,9 @@ from functools import partial
 from interpax import CubicSpline
 from scipy.special import spherical_jn
 
-from . import ABCMBTools as tools
-from . import constants as cnst
+from .utils import interpolators
+from .utils import quadrature
+from .utils import constants as cnst
 from . import halofit
 
 import os
@@ -92,7 +93,7 @@ def phi0(i, x):
         jnp.where(
             x >= xphi0_tab[-1, i],
             j(l, x_safe),
-            tools.fast_interp_cubic(x, xphi0_tab[:, i].min(), xphi0_tab[:, i].max(), phi0_tab[:, i])
+            interpolators.fast_interp_cubic(x, xphi0_tab[:, i].min(), xphi0_tab[:, i].max(), phi0_tab[:, i])
         )
     )
 
@@ -112,7 +113,7 @@ def phi1(i, x):
         jnp.where(
             x >= xphi1_tab[-1, i],
             l/x_safe*j(l, x_safe) - j(l+1, x_safe),
-            tools.fast_interp_cubic(x, xphi1_tab[:, i].min(), xphi1_tab[:, i].max(), phi1_tab[:, i])
+            interpolators.fast_interp_cubic(x, xphi1_tab[:, i].min(), xphi1_tab[:, i].max(), phi1_tab[:, i])
         )
     )
 
@@ -132,7 +133,7 @@ def phi2(i, x):
         jnp.where(
             x >= xphi2_tab[-1, i],
             ((3*l*(l-1)-2*x_safe**2)*j(l, x_safe)+6*x_safe*j(l+1, x_safe))/2/x_safe**2,
-            tools.fast_interp_cubic(x, xphi2_tab[:, i].min(), xphi2_tab[:, i].max(), phi2_tab[:, i])
+            interpolators.fast_interp_cubic(x, xphi2_tab[:, i].min(), xphi2_tab[:, i].max(), phi2_tab[:, i])
         )
     )
 
@@ -342,7 +343,7 @@ class SpectrumSolver(eqx.Module):
                 self.lensing_ells_indices = self.ells_indices # not read if not using bessel tables
             #self.lensing_theta = jnp.linspace(0., jnp.pi/16., lensing_ellmax // 8) # Size recommended by CLASS
             num_mu = lensing_ellmax + 70
-            mu, w = tools.gauss_legendre_weights(num_mu)
+            mu, w = quadrature.gauss_legendre_weights(num_mu)
             self.lensing_mus = jnp.concatenate((mu, jnp.array([1.])))
             self.lensing_ws = jnp.concatenate((w, jnp.array([0.])))
         else:
@@ -415,7 +416,7 @@ class SpectrumSolver(eqx.Module):
 
         # Now interpolate over k, in log-log. Log-log matters
         # above the CMB ceiling, where the grid is coarse (~10 nodes/decade).
-        delta_m = tools.loglog_interp(k, PT.k, jnp.abs(delta_m_lna))
+        delta_m = interpolators.loglog_interp(k, PT.k, jnp.abs(delta_m_lna))
 
         return delta_m**2 * self.primordial_spectrum(k, params)
 
@@ -452,7 +453,7 @@ class SpectrumSolver(eqx.Module):
         delta_cb_lna = interp_over_lna(PT.delta_cb)
 
         # Now interpolate over k, in log-log, as in Pk_lin.
-        delta_cb = tools.loglog_interp(k, PT.k, jnp.abs(delta_cb_lna))
+        delta_cb = interpolators.loglog_interp(k, PT.k, jnp.abs(delta_cb_lna))
 
         return delta_cb**2 * self.primordial_spectrum(k, params)
 
@@ -508,10 +509,10 @@ class SpectrumSolver(eqx.Module):
         Pk_tab = self._Pk_lin_table(lna, PT, params)
 
         k_grid = jnp.exp(self.halofit_lnk)
-        Delta2 = tools.loglog_interp(k_grid, PT.k, Pk_tab) * k_grid**3 / (2. * jnp.pi**2)
+        Delta2 = interpolators.loglog_interp(k_grid, PT.k, Pk_tab) * k_grid**3 / (2. * jnp.pi**2)
         k_sigma, n_eff, C = halofit.halofit_parameters(self.halofit_lnk, Delta2)
 
-        Pk_lin = tools.loglog_interp(k, PT.k, Pk_tab)
+        Pk_lin = interpolators.loglog_interp(k, PT.k, Pk_tab)
 
         # Fraction of the matter density in massive neutrinos; exactly 0 in their absence.
         f_nu = 1. - params['omega_cb'] / params['omega_m']
@@ -1021,7 +1022,7 @@ class SpectrumSolver(eqx.Module):
                 jnp.where(
                     x >= x0_max,
                     j(l, x_safe),
-                    tools.fast_interp_cubic(x, x0_min, x0_max, col_phi0_l)
+                    interpolators.fast_interp_cubic(x, x0_min, x0_max, col_phi0_l)
                 )
             )
 
@@ -1033,7 +1034,7 @@ class SpectrumSolver(eqx.Module):
                 jnp.where(
                     x >= x1_max,
                     l/x_safe*j(l, x_safe) - j(l+1, x_safe),
-                    tools.fast_interp_cubic(x, x1_min, x1_max, col_phi1_l)
+                    interpolators.fast_interp_cubic(x, x1_min, x1_max, col_phi1_l)
                 )
             )
 
@@ -1045,7 +1046,7 @@ class SpectrumSolver(eqx.Module):
                 jnp.where(
                     x >= x2_max,
                     ((3*l*(l-1)-2*x_safe**2)*j(l, x_safe)+6*x_safe*j(l+1, x_safe))/2/x_safe**2,
-                    tools.fast_interp_cubic(x, x2_min, x2_max, col_phi2_l)
+                    interpolators.fast_interp_cubic(x, x2_min, x2_max, col_phi2_l)
                 )
             )
 

@@ -9,7 +9,7 @@ from functools import partial
 from .hydrogen import hydrogen_model
 from .helium import helium_model
 from .array_with_padding import array_with_padding
-from ..ABCMBTools import fast_interp
+from ..utils.interpolators import fast_interp
 config.update("jax_enable_x64", True)
 
 
