@@ -8,134 +8,15 @@ from diffrax import diffeqsolve, ODETerm, Dopri5, Kvaerno3, Kvaerno5, Tsit5, Sav
 from jax.scipy.interpolate import RegularGridInterpolator
 from functools import partial
 from interpax import CubicSpline
-from scipy.special import spherical_jn
 
 from .utils import interpolators
 from .utils import quadrature
+from .utils import bessel
 from .utils import constants as cnst
 from . import halofit
 
-import os
-file_dir = os.path.dirname(__file__)
-
 config.update("jax_enable_x64", True)
 
-# 2D arrays of tabulated spherical functions over l and x axes.
-bessel_l_tab = jnp.array(np.loadtxt(file_dir+"/bessel_tab/l.txt"), dtype="int")
-xphi0_tab = jnp.array(np.loadtxt(file_dir+"/bessel_tab/xphi0.txt"))
-phi0_tab = jnp.array(np.loadtxt(file_dir+"/bessel_tab/phi0.txt"))
-xphi1_tab = jnp.array(np.loadtxt(file_dir+"/bessel_tab/xphi1.txt"))
-phi1_tab = jnp.array(np.loadtxt(file_dir+"/bessel_tab/phi1.txt"))
-xphi2_tab = jnp.array(np.loadtxt(file_dir+"/bessel_tab/xphi2.txt"))
-phi2_tab = jnp.array(np.loadtxt(file_dir+"/bessel_tab/phi2.txt"))
-
-try:
-    gpus = jax.devices('gpu')
-    bessel_l_tab = jax.device_put(
-        bessel_l_tab, device=gpus[0])
-    xphi0_tab = jax.device_put(
-        xphi0_tab, device=gpus[0])
-    phi0_tab = jax.device_put(
-        phi0_tab, device=gpus[0])
-    xphi1_tab = jax.device_put(
-        xphi1_tab, device=gpus[0])
-    phi1_tab = jax.device_put(
-        phi1_tab, device=gpus[0])
-    xphi2_tab = jax.device_put(
-        xphi2_tab, device=gpus[0])
-    phi2_tab = jax.device_put(
-        phi2_tab, device=gpus[0])
-except: 
-    pass
-
-# # large-x asymptotic expansion of spherical bessel functions
-# Q = lambda l, x : jnp.sqrt(x**2-l**2) - l*jnp.pi/2 + l * jnp.arcsin(l/x)
-# J = lambda l, x : jnp.sqrt(2/jnp.pi/jnp.sqrt(x**2-l**2)) * jnp.cos(Q(l, x) - jnp.pi/4)
-# j = lambda l, x : jnp.sqrt(jnp.pi/2/x) * J(l+1/2, x)
-# More accurate large-x asymptotic expansion of spherical Bessel functions.  Debye's expansion of
-# J_{l+1/2}(x), DLMF 10.19.6 https://dlmf.nist.gov/10.19.  
-def j(l, x):
-    nu = l + 0.5
-    s = jnp.sqrt(x**2 - nu**2)                      # nu tan(beta), x = nu sec(beta)
-    c = nu / s                                      # cot(beta)
-    c2 = c * c
-    xi = s - nu*jnp.pi/2 + nu*jnp.arcsin(nu/x) - jnp.pi/4
-    cos_t = 1. - c2*(81. + c2*(462. + 385.*c2))/1152./nu**2
-    sin_t = c*(3. + 5.*c2)/24./nu - c**3*(30375. + c2*(369603. + c2*(765765. + 425425.*c2)))/414720./nu**3
-    return jnp.sqrt(1./(x*s)) * (jnp.cos(xi)*cos_t + jnp.sin(xi)*sin_t)
-
-def _j1(x):
-    """
-    Spherical bessel j_1(x) = (sin(x) - x cos(x))/x^2. 
-
-    Notes:
-    ------
-    Uses small x series for x^2 < 1e-2.
-    """
-    # for small x
-    series = x/3. * (1 - x**2/10. + x**4/280. - x**6/15120. + x**8/1330560.)
-    return jnp.where(x**2 < 1.e-2, series, (jnp.sin(x) - x * jnp.cos(x))/x**2)
-
-def phi0(i, x):
-    """
-    New method for computing phi0 (or just jl)
-    We tabulated the bessel function between its smallest value (~1.e-10) out to the fifth local maximum.
-    This is a different interval for each l, but we kept identical shape so it can be a large 2D array.
-    If the incoming argument is within this interval, we use fast_interp_cubic. Otherwise we use the large x 
-    expansion above. 
-    """
-    l = bessel_l_tab[i]
-    # use x_safe to avoid double-where gotcha in reverse AD
-    x_safe = jnp.where(x >= xphi0_tab[-1, i], x, xphi0_tab[-1, i])
-    return jnp.where(
-        x < xphi0_tab[0, i],
-        0.,
-        jnp.where(
-            x >= xphi0_tab[-1, i],
-            j(l, x_safe),
-            interpolators.fast_interp_cubic(x, xphi0_tab[:, i].min(), xphi0_tab[:, i].max(), phi0_tab[:, i])
-        )
-    )
-
-def phi1(i, x):
-    """
-    New method for computing phi1, or jl'.
-    We tabulated the bessel function between its smallest value (~1.e-10) out to the fifth local maximum.
-    This is a different interval for each l, but we kept identical shape so it can be a large 2D array.
-    If the incoming argument is within this interval, we use fast_interp_cubic. Otherwise we use the large x 
-    expansion above. 
-    """
-    l = bessel_l_tab[i]
-    x_safe = jnp.where(x >= xphi1_tab[-1, i], x, xphi1_tab[-1, i])
-    return jnp.where(
-        x < xphi1_tab[0, i],
-        0.,
-        jnp.where(
-            x >= xphi1_tab[-1, i],
-            l/x_safe*j(l, x_safe) - j(l+1, x_safe),
-            interpolators.fast_interp_cubic(x, xphi1_tab[:, i].min(), xphi1_tab[:, i].max(), phi1_tab[:, i])
-        )
-    )
-
-def phi2(i, x):
-    """
-    New method for computing phi2 = (3 jl'' + jl)/2
-    We tabulated the bessel function between its smallest value (~1.e-10) out to the fifth local maximum.
-    This is a different interval for each l, but we kept identical shape so it can be a large 2D array.
-    If the incoming argument is within this interval, we use fast_interp_cubic. Otherwise we use the large x 
-    expansion above. 
-    """
-    l = bessel_l_tab[i]
-    x_safe = jnp.where(x >= xphi2_tab[-1, i], x, xphi2_tab[-1, i])
-    return jnp.where(
-        x < xphi2_tab[0, i],
-        0.,
-        jnp.where(
-            x >= xphi2_tab[-1, i],
-            ((3*l*(l-1)-2*x_safe**2)*j(l, x_safe)+6*x_safe*j(l+1, x_safe))/2/x_safe**2,
-            interpolators.fast_interp_cubic(x, xphi2_tab[:, i].min(), xphi2_tab[:, i].max(), phi2_tab[:, i])
-        )
-    )
 
 class SpectrumSolver(eqx.Module):
     """
@@ -327,9 +208,7 @@ class SpectrumSolver(eqx.Module):
 
         self.ells = jnp.arange(ellmin, ellmax+1)
         if self.use_bessel_tables:
-            ell_idx_min = jnp.where(bessel_l_tab<=ellmin)[0][-1]
-            ell_idx_max = jnp.where(bessel_l_tab>=ellmax)[0][0]
-            self.ells_indices = jnp.arange(ell_idx_min, ell_idx_max+1)
+            self.ells_indices = bessel.table_indices(ellmin, ellmax)
         else:
             self.ells_indices = jnp.array([0])
         
@@ -337,8 +216,7 @@ class SpectrumSolver(eqx.Module):
             lensing_ellmax = ellmax + delta_l_max
             self.lensing_ells = jnp.arange(ellmin, lensing_ellmax+1)
             if self.use_bessel_tables:
-                lensing_ell_idx_max = jnp.where(bessel_l_tab>=lensing_ellmax)[0][0]
-                self.lensing_ells_indices = jnp.arange(ell_idx_min, lensing_ell_idx_max+1)
+                self.lensing_ells_indices = bessel.table_indices(ellmin, lensing_ellmax)
             else:
                 self.lensing_ells_indices = self.ells_indices # not read if not using bessel tables
             #self.lensing_theta = jnp.linspace(0., jnp.pi/16., lensing_ellmax // 8) # Size recommended by CLASS
@@ -940,7 +818,7 @@ class SpectrumSolver(eqx.Module):
             tt_raw, te_raw, ee_raw = vmap(self.Cl_one_ell, in_axes=(0, None, None, None))(self.lensing_ells_indices, PT, BG, params)
 
             # Cubic spline for smooth Cl over user requested ells
-            lensing_ells = bessel_l_tab[self.lensing_ells_indices]
+            lensing_ells = bessel.table_ells(self.lensing_ells_indices)
             tt_unlensed = CubicSpline(lensing_ells, tt_raw, check=False)(self.lensing_ells)
             te_unlensed = CubicSpline(lensing_ells, te_raw, check=False)(self.lensing_ells)
             ee_unlensed = CubicSpline(lensing_ells, ee_raw, check=False)(self.lensing_ells)
@@ -990,7 +868,7 @@ class SpectrumSolver(eqx.Module):
         tuple
             (C_ℓ^TT, C_ℓ^TE, C_ℓ^EE) angular power spectra
         """
-        l = bessel_l_tab[idx]
+        l, phi0_local, phi1_local, phi2_local = bessel.phi_functions(idx)
         k_axis = self.k_axis_transfer
         (sourceT0, sourceT1, sourceT2, sourceE), aH_1d, tau, weights, tau0 = self._transfer_sources(PT, BG, params)
 
@@ -1001,54 +879,7 @@ class SpectrumSolver(eqx.Module):
         # avoids having to construct a full 2D tensor for each ell, instead just constructing the 1D (Nk) tensor
         # and accumulating down ell.  Clever "traingle term" added by hand is now handled by the trapezoid weights.
 
-        # Pre-slice bessel-table columns so the scan body doesn't re-index
-        # ..._tab[:, idx] every iteration.
-        x0_min = xphi0_tab[0, idx]
-        x0_max = xphi0_tab[-1, idx]
-        x1_min = xphi1_tab[0, idx]
-        x1_max = xphi1_tab[-1, idx]
-        x2_min = xphi2_tab[0, idx]
-        x2_max = xphi2_tab[-1, idx]
-        col_phi0_l = phi0_tab[:, idx]
-        col_phi1_l = phi1_tab[:, idx]
-        col_phi2_l = phi2_tab[:, idx]
         ell_eps_factor = jnp.sqrt(3./8.*(l+2)*(l+1)*l*(l-1))
-
-        def phi0_local(x):
-            x_safe = jnp.where(x >= x0_max, x, x0_max)
-            return jnp.where(
-                x < x0_min,
-                0.,
-                jnp.where(
-                    x >= x0_max,
-                    j(l, x_safe),
-                    interpolators.fast_interp_cubic(x, x0_min, x0_max, col_phi0_l)
-                )
-            )
-
-        def phi1_local(x):
-            x_safe = jnp.where(x >= x1_max, x, x1_max)
-            return jnp.where(
-                x < x1_min,
-                0.,
-                jnp.where(
-                    x >= x1_max,
-                    l/x_safe*j(l, x_safe) - j(l+1, x_safe),
-                    interpolators.fast_interp_cubic(x, x1_min, x1_max, col_phi1_l)
-                )
-            )
-
-        def phi2_local(x):
-            x_safe = jnp.where(x >= x2_max, x, x2_max)
-            return jnp.where(
-                x < x2_min,
-                0.,
-                jnp.where(
-                    x >= x2_max,
-                    ((3*l*(l-1)-2*x_safe**2)*j(l, x_safe)+6*x_safe*j(l+1, x_safe))/2/x_safe**2,
-                    interpolators.fast_interp_cubic(x, x2_min, x2_max, col_phi2_l)
-                )
-            )
 
         zero_k = jnp.zeros(k_axis.shape, dtype=sourceT0.dtype)
 
@@ -1218,7 +1049,7 @@ class SpectrumSolver(eqx.Module):
 
         # set up recursion
         Phi0 = jnp.sinc(x/jnp.pi)
-        Phi1 = _j1(x)
+        Phi1 = bessel.j1(x)
         Phi2 = 3. * inv_x * Phi1 - Phi0
 
         # e.g. w_l * sT0_l * inv_aH in Cl_one_ell is row l of SW0 here

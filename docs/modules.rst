@@ -10,6 +10,7 @@ Detailed API documentation
    abcmb.perturbations
    abcmb.species
    abcmb.spectrum
+   abcmb.utils.bessel
    abcmb.utils.constants
    abcmb.utils.interpolators
    abcmb.utils.quadrature
