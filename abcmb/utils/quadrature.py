@@ -6,8 +6,21 @@ config.update("jax_enable_x64", True)
 
 def _pn_and_pnm1_scan(z, n):
     """
-    Return P_n(z), P_{n-1}(z), Legendre polynomials for vector z using lax.scan.
-    Used in function below to find quadrature roots and weights.
+    Legendre polynomials P_n(z) and P_{n-1}(z) by upward recurrence.
+
+    Used by gauss_legendre_weights to find the quadrature roots and weights.
+
+    Parameters:
+    -----------
+    z : float or array
+        Points at which to evaluate the polynomials, -1 <= z <= 1
+    n : int
+        Degree of the highest polynomial, n >= 1
+
+    Returns:
+    --------
+    (p_n, p_nm1) : (jnp.array, jnp.array)
+        P_n(z) and P_{n-1}(z), each with the shape of z
     """
     z = jnp.asarray(z)
     p1 = jnp.ones_like(z)      # P_0
