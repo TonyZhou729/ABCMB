@@ -1,6 +1,8 @@
 import jax
 from jax import lax, config
 import jax.numpy as jnp
+import numpy as np
+from scipy.special import erf
 
 config.update("jax_enable_x64", True)
 
@@ -94,3 +96,115 @@ def gauss_legendre_weights(n, tol=1.e-16, max_it=50):
     w  = w.at[n-m:].set(w_half[::-1])
 
     return mu, w
+
+
+def peaked_grid(n, start, center, width, floor, core_below, core_above, taper_above):
+    """
+    Nodes and weights on [start, 0] with the node density concentrated around
+    center, plus a window for moving that concentration (see shift_peaked_grid).
+
+    The node density is floor + exp(-(t - center)^2 / 2 width^2).  Nodes are
+    found by inverting the cumulative density with bisection in NumPy, so the
+    grid is a fixed function of the arguments.
+
+    Parameters:
+    -----------
+    n : int
+        Number of grid points
+    start : float
+        First node; the last node is 0
+    center : float
+        Location of the density peak
+    width : float
+        Width (standard deviation) of the density peak
+    floor : float
+        Constant added to the peaked density
+    core_below, core_above : float
+        The shift window is 1 on [center - core_below, center + core_above]
+    taper_above : float
+        The shift window tapers (cosine) from 1 to 0 between center - core_below
+        and start, and between center + core_above and center + taper_above
+
+    Returns:
+    --------
+    tuple
+        (t0, w0, b, bp, jc):
+        t0 : array, nodes, increasing from start to 0
+        w0 : array, integration weights of the nodes (trapezoid rule in the
+            cumulative-density coordinate)
+        b : array, shift window at t0
+        bp : array, db/dt at t0
+        jc : int, index of a node where b = 1
+    """
+    r2 = np.sqrt(2.) * width
+    cdf = lambda t: floor * (t - start) + width * np.sqrt(np.pi / 2.) * (erf((t - center) / r2) - erf((start - center) / r2))
+    M = cdf(0.)
+    s = np.linspace(0., 1., n)
+    lo, hi = np.full(n, start), np.zeros(n)
+    for _ in range(80):  # bisection to machine precision
+        mid = 0.5 * (lo + hi)
+        below = cdf(mid) < s * M
+        lo, hi = np.where(below, mid, lo), np.where(below, hi, mid)
+    t0 = 0.5 * (lo + hi)
+    t0[0], t0[-1] = start, 0.
+    w0 = M / (n - 1) / (floor + np.exp(-0.5 * ((t0 - center) / width) ** 2))
+    w0[0] *= 0.5
+    w0[-1] *= 0.5
+    a0, a1 = start, center - core_below
+    a2, a3 = center + core_above, center + taper_above
+    b, bp = np.zeros(n), np.zeros(n)
+    m = (t0 > a0) & (t0 < a1)
+    b[m] = 0.5 * (1. - np.cos(np.pi * (t0[m] - a0) / (a1 - a0)))
+    bp[m] = 0.5 * np.pi / (a1 - a0) * np.sin(np.pi * (t0[m] - a0) / (a1 - a0))
+    b[(t0 >= a1) & (t0 <= a2)] = 1.
+    m = (t0 > a2) & (t0 < a3)
+    b[m] = 0.5 * (1. + np.cos(np.pi * (t0[m] - a2) / (a3 - a2)))
+    bp[m] = -0.5 * np.pi / (a3 - a2) * np.sin(np.pi * (t0[m] - a2) / (a3 - a2))
+    return t0, w0, b, bp, int(np.argmin(np.abs(t0 - center)))
+
+
+def shift_peaked_grid(t0, b, dmu):
+    """
+    Move the density peak of a peaked_grid by dmu.
+
+    Parameters:
+    -----------
+    t0 : array
+        Nodes from peaked_grid
+    b : array
+        Shift window from peaked_grid
+    dmu : float
+        Shift of the peak
+
+    Returns:
+    --------
+    array
+        Shifted nodes t0 + dmu * b(t0)
+    """
+    return jnp.asarray(t0) + dmu * jnp.asarray(b)
+
+
+def shifted_grid_weights(t0, w0, bp, jc, t):
+    """
+    Integration weights for nodes moved by shift_peaked_grid.
+
+    Parameters:
+    -----------
+    t0, w0, bp, jc :
+        Nodes, weights, shift-window derivative and index of a node where the
+        window is 1, from peaked_grid
+    t : array
+        Shifted nodes, t0 + dmu * b(t0)
+
+    Returns:
+    --------
+    array
+        Weight of each node, same shape as t
+
+    Notes:
+    ------
+    The shift is recovered at a node where the window is 1, dmu = t[jc] - t0[jc].
+    The weights are the base weights times the Jacobian of the map,
+    w0 * (1 + dmu * b'(t0)), so they remain exact as the nodes move.
+    """
+    return jnp.asarray(w0) * (1. + (t[jc] - t0[jc]) * jnp.asarray(bp))

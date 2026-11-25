@@ -5,9 +5,8 @@ from jax import vmap, lax
 import diffrax
 import equinox as eqx
 
-from scipy.special import erf
-
 from .utils import constants as cnst
+from .utils import quadrature
 
 import os
 file_dir = os.path.dirname(__file__)
@@ -51,7 +50,7 @@ class PerturbationEvolver(eqx.Module):
     get_rsa_switch : Determine Radiation streaming approximation switch time
     initial_conditions_one_k : Compute initial perturbation conditions
     lna_grid : compute lna grid values ("uniform" or "recomb" (faster))
-    recomb_grid_base : Nodes and weights of "recomb" lna_grid
+    recomb_grid_base : Nodes and weights of "recomb" lna_grid (utils.quadrature.peaked_grid with the recomb_grid_* specs)
     get_derivatives : Assemble all derivatives, including metric and all species
     get_metric_derivatives : Specific for metric perturbation derivatives, handles RSA case
     make_output_table : Create interpolatable perturbation table
@@ -314,35 +313,17 @@ class PerturbationEvolver(eqx.Module):
                 recomb_grid_lna_start and at recomb_grid_lna_center + recomb_grid_taper_above
             bp : array, db/dlna at t0
             jc : int, index of a node where b = 1
-          """
-        
-        start, mu0 = self.specs["recomb_grid_lna_start"], self.specs["recomb_grid_lna_center"]
-        width, floor = self.specs["recomb_grid_width"], self.specs["recomb_grid_density_floor"]
-        r2 = np.sqrt(2.) * width
-        cdf = lambda t: floor * (t - start) + width * np.sqrt(np.pi / 2.) * (erf((t - mu0) / r2) - erf((start - mu0) / r2))
-        M = cdf(0.)
-        s = np.linspace(0., 1., n)
-        lo, hi = np.full(n, start), np.zeros(n)
-        for _ in range(80):  # bisection to machine precision
-            mid = 0.5 * (lo + hi)
-            below = cdf(mid) < s * M
-            lo, hi = np.where(below, mid, lo), np.where(below, hi, mid)
-        t0 = 0.5 * (lo + hi)
-        t0[0], t0[-1] = start, 0.
-        w0 = M / (n - 1) / (floor + np.exp(-0.5 * ((t0 - mu0) / width) ** 2))
-        w0[0] *= 0.5
-        w0[-1] *= 0.5
-        a0, a1 = start, mu0 - self.specs["recomb_grid_core_below"]
-        a2, a3 = mu0 + self.specs["recomb_grid_core_above"], mu0 + self.specs["recomb_grid_taper_above"]
-        b, bp = np.zeros(n), np.zeros(n)
-        m = (t0 > a0) & (t0 < a1)
-        b[m] = 0.5 * (1. - np.cos(np.pi * (t0[m] - a0) / (a1 - a0)))
-        bp[m] = 0.5 * np.pi / (a1 - a0) * np.sin(np.pi * (t0[m] - a0) / (a1 - a0))
-        b[(t0 >= a1) & (t0 <= a2)] = 1.
-        m = (t0 > a2) & (t0 < a3)
-        b[m] = 0.5 * (1. + np.cos(np.pi * (t0[m] - a2) / (a3 - a2)))
-        bp[m] = -0.5 * np.pi / (a3 - a2) * np.sin(np.pi * (t0[m] - a2) / (a3 - a2))
-        return t0, w0, b, bp, int(np.argmin(np.abs(t0 - mu0)))
+        """
+        return quadrature.peaked_grid(
+            n,
+            self.specs["recomb_grid_lna_start"],
+            self.specs["recomb_grid_lna_center"],
+            self.specs["recomb_grid_width"],
+            self.specs["recomb_grid_density_floor"],
+            self.specs["recomb_grid_core_below"],
+            self.specs["recomb_grid_core_above"],
+            self.specs["recomb_grid_taper_above"],
+        )
 
     def lna_grid(self, BG, params):
         """
@@ -373,7 +354,7 @@ class PerturbationEvolver(eqx.Module):
             u = jnp.linspace(self.specs["recomb_grid_vis_lna_min"], self.specs["recomb_grid_vis_lna_max"], 1800)
             g = vmap(lambda l: BG.visibility(l, params) / BG.aH(l, params))(u)   # visibility per unit lna
             mu = jnp.sum(u * g) / jnp.sum(g)
-            return jnp.asarray(t0) + (mu - self.specs["recomb_grid_lna_center"]) * jnp.asarray(b)
+            return quadrature.shift_peaked_grid(t0, b, mu - self.specs["recomb_grid_lna_center"])
         return jnp.linspace(BG.lna_transfer_start,  0., n)
 
     def get_metric_derivatives(self, k, lna, y, BG, params, rsa_on):

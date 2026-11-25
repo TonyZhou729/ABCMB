@@ -928,32 +928,6 @@ class SpectrumSolver(eqx.Module):
         )
 
 
-    def recomb_grid_weights(self, lna):
-        """
-        Line-of-sight weights for integration if the non-uniform 
-        "recomb" lna grid was used. 
-
-        Parameters:
-        -----------
-        lna : array
-            "recomb" grid nodes (PerturbationTable.lna)
-
-        Returns:
-        --------
-        array
-            Weight of each node, same shape as lna
-
-        Notes:
-        ------
-        The nodes are lna = t0 + dmu * b(t0), with (t0, w0, b, bp, jc) from
-        PerturbationEvolver.recomb_grid_base and dmu = lna[jc] - t0[jc]. The
-        weights are the base weights times the Jacobian of this map
-        (w0 * (1 + dmu * b'(t0))); weights therefore remain exact as the 
-        nodes move.
-        """
-        t0, w0, b, bp, jc = self.recomb_lna_grid
-        return jnp.asarray(w0) * (1. + (lna[jc] - t0[jc]) * jnp.asarray(bp))
-
     def _transfer_sources(self, PT, BG, params):
             """
             Assemble the line-of-sight source functions on (lna, k_transfer) grid.
@@ -1037,7 +1011,8 @@ class SpectrumSolver(eqx.Module):
             sourceE  = jnp.sqrt(6) * g * (2*sigma_g + Gg0 + Gg2) / 8.
 
             if self.recomb_lna_grid is not None:
-                weights = self.recomb_grid_weights(PT.lna)[:-1].astype(sourceT0.dtype)
+                t0, w0, _, bp, jc = self.recomb_lna_grid
+                weights = quadrature.shifted_grid_weights(t0, w0, bp, jc, PT.lna)[:-1].astype(sourceT0.dtype)
             else:
                 Nlna = lna_axis.shape[0]
                 weights = jnp.full((Nlna,), delta_lna, dtype=sourceT0.dtype)
