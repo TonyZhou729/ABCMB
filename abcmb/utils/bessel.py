@@ -36,10 +36,6 @@ try:
 except:
     pass
 
-# # large-x asymptotic expansion of spherical bessel functions
-# Q = lambda l, x : jnp.sqrt(x**2-l**2) - l*jnp.pi/2 + l * jnp.arcsin(l/x)
-# J = lambda l, x : jnp.sqrt(2/jnp.pi/jnp.sqrt(x**2-l**2)) * jnp.cos(Q(l, x) - jnp.pi/4)
-# j = lambda l, x : jnp.sqrt(jnp.pi/2/x) * J(l+1/2, x)
 # More accurate large-x asymptotic expansion of spherical Bessel functions.  Debye's expansion of
 # J_{l+1/2}(x), DLMF 10.19.6 https://dlmf.nist.gov/10.19.
 def j(l, x):
