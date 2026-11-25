@@ -291,6 +291,7 @@ class Model(eqx.Module):
             (Cls, Cls_dot): Cls = (TT, TE, EE), each of shape (n_cosmologies, n_l);
             Cls_dot the same with a leading direction axis
         """
+        num_cosmologies = len(params_list)
         params, params_dot, shardfn, dir_shardfn, n_dev = stack_batch(params_list, params_dots, shard)
         BG, BG_dot = self.get_BG_batched(params, params_dot, shardfn, dir_shardfn)
         PT, PT_dot = jvp_stage(lambda bg, p: self.PE.full_evolution_batched((bg, p), k_chunk_size=k_chunk_size),
