@@ -6,7 +6,7 @@ import equinox as eqx
 
 from diffrax import diffeqsolve, SaveAt, ODETerm, Tsit5, Kvaerno3, PIDController, ForwardMode, Event
 
-from abcmb import constants as cnst
+from abcmb.utils import constants as cnst
 from . import recomb_functions
 from .array_with_padding import array_with_padding
 config.update("jax_enable_x64", True)

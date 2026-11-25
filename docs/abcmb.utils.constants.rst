@@ -1,8 +1,8 @@
-abcmb.constants
-===============
+abcmb.utils.constants
+=====================
 
 These are the physical and cosmological constants used throughout the codebase.
 
-.. literalinclude:: ../abcmb/constants.py
+.. literalinclude:: ../abcmb/utils/constants.py
    :language: python
    :linenos:

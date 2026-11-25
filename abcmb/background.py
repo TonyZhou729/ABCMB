@@ -9,8 +9,8 @@ import optimistix as optx
 from .hyrex.array_with_padding import array_with_padding
 from .hyrex import recomb_functions
 from .hyrex.hyrex import RecombInputs
-from . import ABCMBTools as tools
-from . import constants as cnst
+from .utils import interpolators
+from .utils import constants as cnst
 
 import os
 file_dir = os.path.dirname(__file__)
@@ -414,7 +414,7 @@ class BackgroundPreRecomb(eqx.Module):
         radiation approximation, and starting diffrax integration at the
         early time with appropriate initial conditions.
         """
-        return tools.fast_interp(lna, self.lna_tau_tab[0], self.lna_tau_tab[-1], self.tau_tab)
+        return interpolators.fast_interp(lna, self.lna_tau_tab[0], self.lna_tau_tab[-1], self.tau_tab)
 
     def nH(self, lna, params):
         """
@@ -676,7 +676,7 @@ class Background(BackgroundPreRecomb):
             jnp.where(
                 lna >= self.lna_xe_tab.lastval,
                 self.xe_tab.lastval,
-                tools.fast_interp_cubic(lna, self.lna_xe_tab.arr[0],
+                interpolators.fast_interp_cubic(lna, self.lna_xe_tab.arr[0],
                 self.lna_xe_tab.arr[0] + (len(self.lna_xe_tab.arr) - 1) * (self.lna_xe_tab.arr[1]-self.lna_xe_tab.arr[0]),
                 self.xe_tab.arr)
             )
@@ -766,7 +766,7 @@ class Background(BackgroundPreRecomb):
             jnp.where(
                 lna >= self.lna_Tm_tab.lastval,
                 self.Tm_tab.lastval,
-                tools.fast_interp(lna, self.lna_Tm_tab.arr[0],
+                interpolators.fast_interp(lna, self.lna_Tm_tab.arr[0],
                 self.lna_Tm_tab.arr[0] + (len(self.lna_Tm_tab.arr) - 1) * (self.lna_Tm_tab.arr[1]-self.lna_Tm_tab.arr[0]),
                 self.Tm_tab.arr)
             )

@@ -13,8 +13,8 @@ file_dir = os.path.dirname(__file__)
 
 from .hyrex import hyrex
 from . import background, perturbations, spectrum, model_specs
-from . import constants as cnst
-from .ABCMBTools import bilinear_interp
+from .utils import constants as cnst
+from .utils.interpolators import bilinear_interp
 from .background import BackgroundPreRecomb, Background, ReionizationModelFromZ, ReionizationModelFromTau
 
 from .linx.background import BackgroundModel

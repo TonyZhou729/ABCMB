@@ -16,7 +16,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from abcmb import model_specs
-from abcmb import ABCMBTools as tools
+from abcmb.utils import interpolators
 
 
 def test_loglog_interp_power_law():
@@ -24,9 +24,9 @@ def test_loglog_interp_power_law():
     k_tab = jnp.geomspace(1e-3, 1., 200)
     P_tab = 3. * k_tab**(-2.3)
     k = jnp.geomspace(1e-3, 1., 50)
-    P = tools.loglog_interp(k, k_tab, P_tab)
+    P = interpolators.loglog_interp(k, k_tab, P_tab)
     assert np.allclose(np.asarray(P), 3. * np.asarray(k)**(-2.3), rtol=1e-10)
-    P_out = tools.loglog_interp(jnp.array([1e-5, 100.]), k_tab, P_tab)
+    P_out = interpolators.loglog_interp(jnp.array([1e-5, 100.]), k_tab, P_tab)
     assert np.allclose(np.asarray(P_out), [float(P_tab[0]), float(P_tab[-1])], rtol=1e-12)
 
 

@@ -63,7 +63,7 @@ import numpy as np
 import jax.numpy as jnp
 from jax import config
 from jax.nn import sigmoid
-from .ABCMBTools import loglog_interp
+from .utils.interpolators import loglog_interp
 
 config.update("jax_enable_x64", True)
 

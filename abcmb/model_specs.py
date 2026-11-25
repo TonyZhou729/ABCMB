@@ -1,6 +1,5 @@
 import numpy as np
 import jax.numpy as jnp
-import equinox as eqx
 
 from . import species
 

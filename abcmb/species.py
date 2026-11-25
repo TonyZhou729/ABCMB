@@ -2,7 +2,7 @@
 from jax import config, lax, vmap, value_and_grad
 import jax.numpy as jnp
 import equinox as eqx
-from . import constants as cnst
+from .utils import constants as cnst
 
 config.update("jax_enable_x64", True)
 
