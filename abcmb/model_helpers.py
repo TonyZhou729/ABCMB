@@ -461,15 +461,17 @@ def add_derived_parameters(self, param_in : dict) -> dict:
     return params
 
 
-def get_BG_batched(self, params_list):
+def get_BG_batched(self, params_list, shardfn=None):
     """
-    Batched evaluation of Backgrond module for a list of parameter dicts that
+    Batched evaluation of Background module for a list of parameter dicts that
     already contain derived parameters.
 
     Parameters:
     -----------
     params_list : list of dict
         Cosmological parameters, one dict per cosmology
+    shardfn : callable
+        Sharding function to distribute over GPUs.  Defaults to None (no sharding).
 
     Returns:
     --------
@@ -477,13 +479,19 @@ def get_BG_batched(self, params_list):
         (params, BG), stacked along a leading batch axis
     """
     params = _to_float(jax.tree_util.tree_map(lambda *xs: jnp.stack(xs), *params_list)) # need another tree map to stack the dicts to be converted
+    if shardfn is not None:
+        params = shardfn(params)
     pre_BG = self._get_BG_pre_recomb_vmapped(params)
     cpu_dev = jax.devices('cpu')[0]
-    recomb_output =eqx.filter_jit(eqx.filter_vmap(self.RecModel), backend='cpu')((jax.device_put(pre_BG.recomb_inputs, cpu_dev), jax.device_put(params, cpu_dev)))
-    try:
-        recomb_output = jax.device_put(recomb_output, jax.devices('gpu')[0])
-    except Exception:
-        pass
+    recomb_output = eqx.filter_jit(eqx.filter_vmap(self.RecModel), backend='cpu')(
+        (jax.device_put(pre_BG.recomb_inputs, cpu_dev), jax.device_put(params, cpu_dev)))
+    if shardfn is not None:
+        recomb_output = shardfn(recomb_output)
+    else:
+        try:
+            recomb_output = jax.device_put(recomb_output, jax.devices('gpu')[0])
+        except Exception:
+            pass
     return params, self._get_BG_vmapped(params, pre_BG, _to_float(recomb_output))
 
 
