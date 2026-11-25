@@ -462,18 +462,18 @@ def add_derived_parameters(self, param_in : dict) -> dict:
     return params
 
 
-def get_BG_batched(self, params_list, params_dot=None, shardfn=None, dir_shardfn=None):
+def get_BG_batched(self, params_stack, params_dot=None, shardfn=None, dir_shardfn=None):
     """
-    Batched evaluation of Background module for a list of parameter dicts that
-    already contain derived parameters.  Optionally with forward-mode derivatives
-    along a stack of directions
+    Batched evaluation of Background module for a parameter dict with a leading 
+    batch axis that already contain derived parameters.  Optionally with 
+    forward-mode derivatives along a stack of directions.
 
     Parameters:
     -----------
-    params_list : dict
+    params_stack : dict
         Cosmological parameters, with a leading batch axis
     params_dot : dict or None, optional
-        Tangents of params_list with a leading direction axis.  Defaults to None
+        Tangents of params_stack with a leading direction axis.  Defaults to None
         (values only).
     shardfn, dir_shardfn : callable or None, optional
         Sharding functions to distribute over GPUs, from utils.batching.stack_batch.  
@@ -486,12 +486,12 @@ def get_BG_batched(self, params_list, params_dot=None, shardfn=None, dir_shardfn
         leading direction axis (None without params_dot)
     """
     dots = params_dot is not None
-    pre_BG, pre_BG_dot = jvp_stage(self._get_BG_pre_recomb_vmapped, (params_list,), (params_dot,) if dots else None)
+    pre_BG, pre_BG_dot = jvp_stage(self._get_BG_pre_recomb_vmapped, (params_stack,), (params_dot,) if dots else None)
     cpu_dev = jax.devices('cpu')[0]
     hyrex_out = eqx.filter_jit(eqx.filter_vmap(self.RecModel), backend='cpu')
     recomb, recomb_dot = jvp_stage(lambda ri, p: hyrex_out((ri, p)), 
-                                    jax.device_put((pre_BG.recomb_inputs, params_list), cpu_dev),
-                                    jax.device_put((pre_BG_dot.recomb_inputs, params_dot), cpu_dev) if does else None)
+                                    jax.device_put((pre_BG.recomb_inputs, params_stack), cpu_dev),
+                                    jax.device_put((pre_BG_dot.recomb_inputs, params_dot), cpu_dev) if dots else None)
     if shardfn is not None:
         recomb = shardfn(recomb)
         if dots:
@@ -504,7 +504,7 @@ def get_BG_batched(self, params_list, params_dot=None, shardfn=None, dir_shardfn
     if not dots:
         # convert integers to floats for reverse AD.  Forward AD they stay ints
         recomb = _to_float(recomb)
-    return jvp_stage(self._get_BG_vmapped, (params_list, pre_BG, recomb), (params_dot, pre_BG_dot, recomb_dot) if dots else None)
+    return jvp_stage(self._get_BG_vmapped, (params_stack, pre_BG, recomb), (params_dot, pre_BG_dot, recomb_dot) if dots else None)
 
 @eqx.filter_jit
 def _get_BG_pre_recomb_vmapped(self, params):
