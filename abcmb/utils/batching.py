@@ -76,8 +76,8 @@ def stack_batch(params_list, params_dots=None, shard=None):
     """
     num_cosmologies = len(params_list)
     shardfn, n_dev = make_shardfn(shard)
-    pad = (-num_cosmologies) % n_deve if shardfn is not None else 0
-    params_stacked = _to_float(jax.tree_util.tree_map(lambda *xs: jnp.stack(xs), *(list(params_list) + [params_list[-1]] * pad)))
+    pad = (-num_cosmologies) % n_dev if shardfn is not None else 0
+    params_stack = _to_float(jax.tree_util.tree_map(lambda *xs: jnp.stack(xs), *(list(params_list) + [params_list[-1]] * pad)))
 
     params_dot = None
     dir_shardfn = None
@@ -92,7 +92,7 @@ def stack_batch(params_list, params_dots=None, shard=None):
         if params_dot is not None:
             dir_shardfn = make_shardfn(shard, axis=1)[0]
             params_dot = dir_shardfn(params_dot)
-    return params_stack, params_dor, shardfn, dir_shardfn, n_dev
+    return params_stack, params_dot, shardfn, dir_shardfn, n_dev
 
 
 def jvp_stage(fn, primals, tangents=None):
@@ -116,7 +116,7 @@ def jvp_stage(fn, primals, tangents=None):
         (fn(*primals), tangent of its inexact-array leaves with a leading direction 
             axis, or None without tangents)
     """
-    if tangents if None:
+    if tangents is None:
         return fn(*primals), None
     diffs, statics = zip(*(eqx.partition(p, eqx.is_inexact_array) for p in primals))
     f = lambda *ds: fn(*(eqx.combine(d, s) for d, s in zip(ds, statics)))
