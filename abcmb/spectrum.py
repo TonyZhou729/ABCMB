@@ -106,6 +106,7 @@ class SpectrumSolver(eqx.Module):
     use_bessel_tables : bool = eqx.field(static=True)
     l_top : int = eqx.field(static=True)
     n_k_cmb : int = eqx.field(static=True)
+    recomb_lna_grid : tuple
 
     nonlinear : str = eqx.field(static=True)
     halofit_prescription : str = eqx.field(static=True)
@@ -134,6 +135,7 @@ class SpectrumSolver(eqx.Module):
                  use_bessel_tables=True,
                  delta_l_max=500,
                  n_k_cmb=-1,
+                 recomb_lna_grid=None,
                  nonlinear="",
                  halofit_prescription="takahashi2012",
                  halofit_k_min=1.e-4,
@@ -174,6 +176,8 @@ class SpectrumSolver(eqx.Module):
         n_k_cmb : int, optional
             Number of leading nodes of the perturbation k-grid that cover the CMB
             (transfer) range.
+        recomb_lna_grid : tuple or None, optional
+            Base of the "recomb" lna grid.  Defaults to None (uniform grid in lna).
         nonlinear : str, optional
             Non-linear correction to the matter power spectrum: "" or None for
             none (default), "halofit" for HALOFIT.
@@ -189,6 +193,7 @@ class SpectrumSolver(eqx.Module):
         self.lensing = lensing
         self.use_bessel_tables = bool(use_bessel_tables)
         self.n_k_cmb = int(n_k_cmb)
+        self.recomb_lna_grid = None if recomb_lna_grid is None else tuple(recomb_lna_grid)
 
         if nonlinear in (None, False, ""):
             self.nonlinear = ""
@@ -921,8 +926,8 @@ class SpectrumSolver(eqx.Module):
             jnp.trapezoid(integrandTE, k_axis),
             jnp.trapezoid(integrandEE, k_axis)
         )
-    
-    # CG: reorganizing this section into its own method
+
+
     def _transfer_sources(self, PT, BG, params):
             """
             Assemble the line-of-sight source functions on (lna, k_transfer) grid.
@@ -1005,9 +1010,13 @@ class SpectrumSolver(eqx.Module):
 
             sourceE  = jnp.sqrt(6) * g * (2*sigma_g + Gg0 + Gg2) / 8.
 
-            Nlna = lna_axis.shape[0]
-            weights = jnp.full((Nlna,), delta_lna, dtype=sourceT0.dtype)
-            weights = weights.at[0].set(0.5 * delta_lna)
+            if self.recomb_lna_grid is not None:
+                t0, w0, _, bp, jc = self.recomb_lna_grid
+                weights = quadrature.shifted_grid_weights(t0, w0, bp, jc, PT.lna)[:-1].astype(sourceT0.dtype)
+            else:
+                Nlna = lna_axis.shape[0]
+                weights = jnp.full((Nlna,), delta_lna, dtype=sourceT0.dtype)
+                weights = weights.at[0].set(0.5 * delta_lna)
 
             return (sourceT0, sourceT1, sourceT2, sourceE), aH_1d, tau, weights, tau0
 

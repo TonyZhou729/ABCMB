@@ -6,6 +6,7 @@ import diffrax
 import equinox as eqx
 
 from .utils import constants as cnst
+from .utils import quadrature
 
 import os
 file_dir = os.path.dirname(__file__)
@@ -42,11 +43,14 @@ class PerturbationEvolver(eqx.Module):
 
     Methods:
     --------
-    full_evolution : Evolve perturbations for multiple k modes
     evolution_one_k : Evolve perturbations for single k mode
+    full_evolution : Evolve perturbations for multiple k modes
+    full_evolution_batched : Evolve perturbations for multiple k modes, for multiple cosmologies
     get_starting_time : Determine superhorizon initial condition start time
     get_rsa_switch : Determine Radiation streaming approximation switch time
     initial_conditions_one_k : Compute initial perturbation conditions
+    lna_grid : compute lna grid values ("uniform" or "recomb" (faster))
+    recomb_grid_base : Nodes and weights of "recomb" lna_grid (utils.quadrature.peaked_grid with the recomb_grid_* specs)
     get_derivatives : Assemble all derivatives, including metric and all species
     get_metric_derivatives : Specific for metric perturbation derivatives, handles RSA case
     make_output_table : Create interpolatable perturbation table
@@ -99,7 +103,7 @@ class PerturbationEvolver(eqx.Module):
         Time integration runs from early times to z=1 (lna=-ln(2)).
         """
         BG, params = args
-        lna = jnp.linspace(BG.lna_transfer_start,  0., 500)
+        lna = self.lna_grid(BG, params)
 
         # This scan function is only used if on CPU.
         # For GPUs we vmap over the wavenumbers instead
@@ -145,7 +149,7 @@ class PerturbationEvolver(eqx.Module):
         this suggestion.
         """
         BG, params = args
-        lna = vmap(lambda bg: jnp.linspace(bg.lna_transfer_start, 0., 500))(BG)
+        lna = vmap(self.lna_grid)(BG, params)
         k_axis = self.k_axis_perturbations
         tables = []
         for i in range(0, len(k_axis), k_chunk_size):
@@ -201,7 +205,6 @@ class PerturbationEvolver(eqx.Module):
             Organized perturbation data for interpolation for k chunk
         """
         return vmap(lambda l, m, a: self.make_output_table(l, m, a, k=k))(lna, modes.transpose(1, 3, 2, 0), args)
-
 
     def get_starting_time(self, k, args):
         """
@@ -284,6 +287,75 @@ class PerturbationEvolver(eqx.Module):
         y_ini = jnp.concatenate((jnp.array([metric_eta_ini]), all_fluid_ini))
         
         return y_ini
+
+    def recomb_grid_base(self, n):
+        """
+        Cosmology-independent base of the "recomb" lna grid. Node density is
+
+        recomb_grid_density_floor + exp(-(lna - recomb_grid_lna_center)^2 / 2 recomb_grid_width^2)
+
+        on [recomb_grid_lna_start, 0].
+
+        Parameters:
+        -----------
+        n : int
+            Number of grid points
+
+        Returns:
+        --------
+        tuple
+            (t0, w0, b, bp, jc):
+            t0 : array, base nodes in lna, increasing from recomb_grid_lna_start to 0
+            w0 : array, line-of-sight weights of the base nodes (trapezoid rule
+                in the cumulative-density coordinate)
+            b : array, shift window at t0: 1 from recomb_grid_lna_center - recomb_grid_core_below
+                to recomb_grid_lna_center + recomb_grid_core_above, cosine tapers to 0 at
+                recomb_grid_lna_start and at recomb_grid_lna_center + recomb_grid_taper_above
+            bp : array, db/dlna at t0
+            jc : int, index of a node where b = 1
+        """
+        return quadrature.peaked_grid(
+            n,
+            self.specs["recomb_grid_lna_start"],
+            self.specs["recomb_grid_lna_center"],
+            self.specs["recomb_grid_width"],
+            self.specs["recomb_grid_density_floor"],
+            self.specs["recomb_grid_core_below"],
+            self.specs["recomb_grid_core_above"],
+            self.specs["recomb_grid_taper_above"],
+        )
+
+    def lna_grid(self, BG, params):
+        """
+        Grid in lna with specs["n_lna_PE"] points.  If specs["lna_grid_mode"]
+        is "uniform", returns a uniform grid from BG.lna_transfer_start to today
+        with self.specs["n_lna_PE"] points (default 500).  
+
+        If specs["lna_grid_mode"] is "recomb", self.specs["n_lna_PE"] defaults 
+        to 300 and the grid is tighter around recombination, estimated from
+        the visibility function by moving each node by recomb_grid_base's b(t0) times 
+        the offset of the cosmology's visibility mean from specs["recomb_grid_lna_center"].
+
+        Parameters:
+        -----------
+        BG : background.Background
+            Background cosmology
+        params : dict
+            Cosmological parameters
+
+        Returns:
+        --------
+        array
+            Increasing lna nodes ending at 0
+        """
+        n = self.specs["n_lna_PE"]
+        if self.specs["lna_grid_mode"] == "recomb":
+            t0, _, b, _, _ = self.recomb_grid_base(n)
+            u = jnp.linspace(self.specs["recomb_grid_vis_lna_min"], self.specs["recomb_grid_vis_lna_max"], 1800)
+            g = vmap(lambda l: BG.visibility(l, params) / BG.aH(l, params))(u)   # visibility per unit lna
+            mu = jnp.sum(u * g) / jnp.sum(g)
+            return quadrature.shift_peaked_grid(t0, b, mu - self.specs["recomb_grid_lna_center"])
+        return jnp.linspace(BG.lna_transfer_start,  0., n)
 
     def get_metric_derivatives(self, k, lna, y, BG, params, rsa_on):
         """

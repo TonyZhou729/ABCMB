@@ -98,6 +98,33 @@ def load_specs(input_specs):
     ### Pivot scale ###
     specs["k_pivot"]            = input_specs.get("k_pivot", 0.05)
 
+    ### lna grid settings ###
+    # "uniform" for a uniform grid of n_lna_PE lna values from the start of the transfer functions
+    # to today, or "recomb" for grid whose density increases near the peak of the visibility 
+    # function, allowing a smaller n_lna_PE (faster, less memory).  Slightly worse accuracy 
+    # (e.g. errors of 5e-4 vs 1e-4), so "uniform" is used by default.  "recomb" recommended for
+    # batched evaluation.
+    specs["lna_grid_mode"] = input_specs.get("lna_grid_mode", "uniform")
+    if specs["lna_grid_mode"] not in ("uniform", "recomb"):
+        raise ValueError(f"lna_grid_mode must be 'uniform' or 'recomb', not {specs['lna_grid_mode']!r}")
+    specs["n_lna_PE"] = input_specs.get("n_lna_PE", 300 if specs["lna_grid_mode"]=="recomb" else 500)
+    
+    # Base nodes are on [lna_start, 0] with density [density_floor + exp(-(lna - lna_center)^2 / 2 width^2)].
+    # Denser spacing is needed around the peak of the visibility function, from lna_center - core_below to 
+    # lna_center + core_above.  Center moves according to input parameters by mu - lna_center, where mu is
+    # the mean lna of the visibility over [vis_lna_min, vis_lna_max]. The shift tapers to 0 at lna_start
+    # and at lna_center + taper_above.
+    specs["recomb_grid_lna_start"]     = input_specs.get("recomb_grid_lna_start", -7.7)
+    specs["recomb_grid_lna_center"]    = input_specs.get("recomb_grid_lna_center", -6.99)
+    specs["recomb_grid_width"]         = input_specs.get("recomb_grid_width", 0.4)
+    specs["recomb_grid_density_floor"] = input_specs.get("recomb_grid_density_floor", 0.4)
+    specs["recomb_grid_core_below"]    = input_specs.get("recomb_grid_core_below", 0.3)
+    specs["recomb_grid_core_above"]    = input_specs.get("recomb_grid_core_above", 0.6)
+    specs["recomb_grid_taper_above"]   = input_specs.get("recomb_grid_taper_above", 1.6)
+    specs["recomb_grid_vis_lna_min"]   = input_specs.get("recomb_grid_vis_lna_min", -7.7)
+    specs["recomb_grid_vis_lna_max"]   = input_specs.get("recomb_grid_vis_lna_max", -5.9)
+
+
     ### Set perturbations initial condition time ###
     specs["R_tc"] = input_specs.get("R_tc", 0.0015)
     specs["R_large"] = input_specs.get("R_large", 0.07)
