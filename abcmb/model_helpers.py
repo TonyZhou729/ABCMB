@@ -7,6 +7,7 @@ import equinox as eqx
 
 from .utils import constants as cnst
 from .utils.interpolators import bilinear_interp
+from .utils.type_helpers import _to_float
 from .background import BackgroundPreRecomb, Background, ReionizationModelFromZ, ReionizationModelFromTau
 from .linx import const as linxconst
 from .linx import thermo as linxThermo
@@ -32,12 +33,7 @@ def run_cosmology_abbr(self, params : dict):
     # Cast int/bool params to float64 before entering any
     # ``eqx.filter_jit`` for custom_vjp/AD safety in
     # checkpointed_while_loop
-    def _to_float(v):
-        arr = jnp.asarray(v)
-        if arr.dtype.kind in 'iub':
-            return arr.astype(jnp.float64)
-        return arr
-    params = jax.tree_util.tree_map(_to_float, params)
+    params = _to_float(params)
 
     pre_BG = self.get_BG_pre_recomb(params)
 
@@ -58,7 +54,7 @@ def run_cosmology_abbr(self, params : dict):
     # run_post_recomb's diffrax solves trips an internal
     # _get_value_assert_unperturbed on int leaves under outer
     # AD; convert to float to avoid.
-    recomb_output = jax.tree_util.tree_map(_to_float, recomb_output)
+    recomb_output = _to_float(recomb_output)
 
     return self.run_post_recomb(params, pre_BG, recomb_output)
 
@@ -463,3 +459,92 @@ def add_derived_parameters(self, param_in : dict) -> dict:
             params[key] = jnp.array(value)
 
     return params
+
+
+def get_BG_batched(self, params_list):
+    """
+    Batched evaluation of Backgrond module for a list of parameter dicts that
+    already contain derived parameters.
+
+    Parameters:
+    -----------
+    params_list : list of dict
+        Cosmological parameters, one dict per cosmology
+
+    Returns:
+    --------
+    tuple
+        (params, BG), stacked along a leading batch axis
+    """
+    params = _to_float(jax.tree_util.tree_map(lambda *xs: jnp.stack(xs), *params_list)) # need another tree map to stack the dicts to be converted
+    pre_BG = self._get_BG_pre_recomb_vmapped(params)
+    cpu_dev = jax.devices('cpu')[0]
+    recomb_output =eqx.filter_jit(eqx.filter_vmap(self.RecModel), backend='cpu')((jax.device_put(pre_BG.recomb_inputs, cpu_dev), jax.device_put(params, cpu_dev)))
+    try:
+        recomb_output = jax.device_put(recomb_output, jax.devices('gpu')[0])
+    except Exception:
+        pass
+    return params, self._get_BG_vmapped(params, pre_BG, _to_float(recomb_output))
+
+
+@eqx.filter_jit
+def _get_BG_pre_recomb_vmapped(self, params):
+    """
+    get_BG_pre_recomb vmapped over the leading axis of params.
+
+    Parameters:
+    -----------
+    params : dict
+        Cosmological parameters, one dict per cosmology.  dict arrays carry
+        leading batch axis
+
+    Returns:
+    --------
+    array like
+        Grid of pre-recomb BG results
+    """
+    return jax.vmap(lambda p: BackgroundPreRecomb(p, self.species_list, self.RecModel, adjoint=self.adjoint))(params)
+
+
+@eqx.filter_jit
+def _get_BG_vmapped(self, params, pre_BG, recomb_output):
+    """
+    get_BG vmapped over the leading axis of params.
+
+    Parameters:
+    -----------
+    params : dict
+        Cosmological parameters, one dict per cosmology.  dict arrays carry
+        leading batch axis
+
+    Returns:
+    --------
+    array like
+        Grid of BG results
+    """
+    return jax.vmap(self.get_BG)(params, pre_BG, recomb_output)
+
+
+@eqx.filter_jit
+def _spectra_vmapped(self, PT, BG, params):
+    """
+    Cls vmapped over the leading axis of params.
+
+    Parameters:
+    -----------
+    params : dict
+        Cosmological parameters, one dict per cosmology.  dict arrays carry
+        leading batch axis
+
+    Returns:
+    --------
+    array like
+        Grid of (Cls, Pk, Pk_nl)
+    """
+    k = self.SS.k_axis_Pk_output
+    Cls = jax.vmap(self.SS.get_Cl)(PT, BG, params)
+    Pk = jax.vmap(self.SS.Pk_lin, in_axes=(None, None, 0, 0))(k, 0., PT, params)
+    Pk_nl = None
+    if self.SS.nonlinear == 'halofit':
+        Pk_nl = jax.vmap(self.SS.Pk_nonlinear, in_axes=(None, None, 0, 0, 0))(k, 0., PT, BG, params)
+    return Cls, Pk, Pk_nl
