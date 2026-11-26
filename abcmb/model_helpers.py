@@ -8,6 +8,7 @@ import equinox as eqx
 from .utils import constants as cnst
 from .utils.interpolators import bilinear_interp
 from .utils.type_helpers import _to_float
+from .utils.batching import jvp_stage
 from .background import BackgroundPreRecomb, Background, ReionizationModelFromZ, ReionizationModelFromTau
 from .linx import const as linxconst
 from .linx import thermo as linxThermo
@@ -461,39 +462,49 @@ def add_derived_parameters(self, param_in : dict) -> dict:
     return params
 
 
-def get_BG_batched(self, params_list, shardfn=None):
+def get_BG_batched(self, params_stack, params_dot=None, shardfn=None, dir_shardfn=None):
     """
-    Batched evaluation of Background module for a list of parameter dicts that
-    already contain derived parameters.
+    Batched evaluation of Background module for a parameter dict with a leading 
+    batch axis that already contain derived parameters.  Optionally with 
+    forward-mode derivatives along a stack of directions.
 
     Parameters:
     -----------
-    params_list : list of dict
-        Cosmological parameters, one dict per cosmology
-    shardfn : callable
-        Sharding function to distribute over GPUs.  Defaults to None (no sharding).
+    params_stack : dict
+        Cosmological parameters, with a leading batch axis
+    params_dot : dict or None, optional
+        Tangents of params_stack with a leading direction axis.  Defaults to None
+        (values only).
+    shardfn, dir_shardfn : callable or None, optional
+        Sharding functions to distribute over GPUs, from utils.batching.stack_batch.  
+        Defaults to None (no sharding).
 
     Returns:
     --------
     tuple
-        (params, BG), stacked along a leading batch axis
+        (BG, BG_dot): Background wtih a leading batch axis, and its tangent with a 
+        leading direction axis (None without params_dot)
     """
-    params = _to_float(jax.tree_util.tree_map(lambda *xs: jnp.stack(xs), *params_list)) # need another tree map to stack the dicts to be converted
-    if shardfn is not None:
-        params = shardfn(params)
-    pre_BG = self._get_BG_pre_recomb_vmapped(params)
+    dots = params_dot is not None
+    pre_BG, pre_BG_dot = jvp_stage(self._get_BG_pre_recomb_vmapped, (params_stack,), (params_dot,) if dots else None)
     cpu_dev = jax.devices('cpu')[0]
-    recomb_output = eqx.filter_jit(eqx.filter_vmap(self.RecModel), backend='cpu')(
-        (jax.device_put(pre_BG.recomb_inputs, cpu_dev), jax.device_put(params, cpu_dev)))
+    hyrex_out = eqx.filter_jit(eqx.filter_vmap(self.RecModel))
+    recomb, recomb_dot = jvp_stage(lambda ri, p: hyrex_out((ri, p)), 
+                                    jax.device_put((pre_BG.recomb_inputs, params_stack), cpu_dev),
+                                    jax.device_put((pre_BG_dot.recomb_inputs, params_dot), cpu_dev) if dots else None)
     if shardfn is not None:
-        recomb_output = shardfn(recomb_output)
+        recomb = shardfn(recomb)
+        if dots:
+            recomb_dot = dir_shardfn(recomb_dot)
     else:
         try:
-            recomb_output = jax.device_put(recomb_output, jax.devices('gpu')[0])
+            recomb, recomb_dot = jax.device_put((recomb, recomb_dot), jax.devices('gpu')[0])
         except Exception:
             pass
-    return params, self._get_BG_vmapped(params, pre_BG, _to_float(recomb_output))
-
+    if not dots:
+        # convert integers to floats for reverse AD.  Forward AD they stay ints
+        recomb = _to_float(recomb)
+    return jvp_stage(self._get_BG_vmapped, (params_stack, pre_BG, recomb), (params_dot, pre_BG_dot, recomb_dot) if dots else None)
 
 @eqx.filter_jit
 def _get_BG_pre_recomb_vmapped(self, params):
@@ -556,3 +567,23 @@ def _spectra_vmapped(self, PT, BG, params):
     if self.SS.nonlinear == 'halofit':
         Pk_nl = jax.vmap(self.SS.Pk_nonlinear, in_axes=(None, None, 0, 0, 0))(k, 0., PT, BG, params)
     return Cls, Pk, Pk_nl
+
+
+@eqx.filter_jit
+def _cls_vmapped(self, PT, BG, params):
+    """
+    TT, TE and EE vmapped over the leading axis of params (lensed Clpp and BB are
+    dropped inside the same jit, so neither they nor their tangents are computed).
+
+    Parameters:
+    -----------
+    PT, BG, params :
+        Perturbation tables, backgrounds and cosmological parameters with a leading
+        batch axis
+
+    Returns:
+    --------
+    tuple
+        (ClTT, ClTE, ClEE)
+    """
+    return jax.vmap(self.SS.get_Cl)(PT, BG, params)[:3]
