@@ -41,7 +41,8 @@ def run_cosmology_abbr(self, params : dict):
     recomb_inputs_cpu = jax.device_put(pre_BG.recomb_inputs, cpu_dev)
     params_cpu = jax.device_put(params, cpu_dev)
 
-    recomb_output = eqx.filter_jit(self.RecModel, backend='cpu')((recomb_inputs_cpu, params_cpu))
+    # jit will automatically run on the device of its inputs
+    recomb_output = eqx.filter_jit(self.RecModel)((recomb_inputs_cpu, params_cpu))
 
     try:
         recomb_output = jax.device_put(recomb_output, jax.devices('gpu')[0])
@@ -345,23 +346,24 @@ def add_derived_parameters(self, param_in : dict) -> dict:
         # Logic above has already accounted for this, since input_T and input_Neff must both be False
         # for LINX to execute.
         params['Delta_Neff_init'] = jnp.array(params.get('Delta_Neff_init', 0.))
+        cpu_dev = jax.devices('cpu')[0]
         (
             t_vec_ref, a_vec_ref, rho_g_vec, rho_nu_vec, rho_NP_vec, P_NP_vec, Neff_vec
-        ) = eqx.filter_jit(self.thermo_model_DNeff,backend='cpu')(params['Delta_Neff_init'])
+        ) = eqx.filter_jit(self.thermo_model_DNeff)(jax.device_put(params['Delta_Neff_init'], cpu_dev))
 
         # convert user input omega_b to eta_fac LINX expects
         eta_fac = params['omega_b'] * linxconst.Omegabh2_to_eta0/linxconst.eta0
 
-        abundances = eqx.filter_jit(self.abundanceModel,backend='cpu')(
+        abundances = eqx.filter_jit(self.abundanceModel)(
             rho_g_vec,
             rho_nu_vec,
             rho_NP_vec,
             P_NP_vec,
             t_vec=t_vec_ref,
             a_vec=a_vec_ref,
-            eta_fac = eta_fac,
-            tau_n_fac = jnp.asarray(params.get("tau_n_fac", 1.0)),
-            nuclear_rates_q = jnp.asarray( params.get("nuclear_rates_q", jnp.zeros( len(self.abundanceModel.nuclear_net.reactions) )) )
+            eta_fac = jax.device_put(eta_fac,cpu_dev),
+            tau_n_fac = jax.device_put(jnp.asarray(params.get("tau_n_fac", 1.0)),cpu_dev),
+            nuclear_rates_q = jax.device_put(jnp.asarray( params.get("nuclear_rates_q", jnp.zeros( len(self.abundanceModel.nuclear_net.reactions) )) ), cpu_dev)
             )
 
         # number abundance
@@ -483,7 +485,7 @@ def get_BG_batched(self, params_list, shardfn=None):
         params = shardfn(params)
     pre_BG = self._get_BG_pre_recomb_vmapped(params)
     cpu_dev = jax.devices('cpu')[0]
-    recomb_output = eqx.filter_jit(eqx.filter_vmap(self.RecModel), backend='cpu')(
+    recomb_output = eqx.filter_jit(eqx.filter_vmap(self.RecModel))(
         (jax.device_put(pre_BG.recomb_inputs, cpu_dev), jax.device_put(params, cpu_dev)))
     if shardfn is not None:
         recomb_output = shardfn(recomb_output)
