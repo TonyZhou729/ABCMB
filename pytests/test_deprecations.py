@@ -5,6 +5,8 @@ file_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(file_dir + '/../')
 
 import abcmb.main  # importing the module registers its @deprecated functions
+import abcmb.constants  # deprecated modules register when imported
+import abcmb.ABCMBTools
 from abcmb.utils.deprecation import _REGISTRY, _parse
 from abcmb.version import __version__
 
