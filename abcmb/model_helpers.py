@@ -488,7 +488,7 @@ def get_BG_batched(self, params_stack, params_dot=None, shardfn=None, dir_shardf
     dots = params_dot is not None
     pre_BG, pre_BG_dot = jvp_stage(self._get_BG_pre_recomb_vmapped, (params_stack,), (params_dot,) if dots else None)
     cpu_dev = jax.devices('cpu')[0]
-    hyrex_out = eqx.filter_jit(eqx.filter_vmap(self.RecModel), backend='cpu')
+    hyrex_out = eqx.filter_jit(eqx.filter_vmap(self.RecModel))
     recomb, recomb_dot = jvp_stage(lambda ri, p: hyrex_out((ri, p)), 
                                     jax.device_put((pre_BG.recomb_inputs, params_stack), cpu_dev),
                                     jax.device_put((pre_BG_dot.recomb_inputs, params_dot), cpu_dev) if dots else None)
